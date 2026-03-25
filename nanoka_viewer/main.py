@@ -121,7 +121,6 @@ class LoadThread(QThread):
         logger.info(f"All data loaded in {total_elapsed:.3f}s")
         self.load_finished.emit()
 
-
 class CardWidget(QFrame):
     def __init__(self, game, char_id, char_data, parent=None):
         super().__init__(parent)
@@ -155,8 +154,9 @@ class CardWidget(QFrame):
         top_row.setContentsMargins(0, 0, 0, 0)
 
         rarity_label = QLabel(f"{rarity}\u2605")
+        # ADDED: background-color: transparent
         rarity_label.setStyleSheet(
-            f"color: {rarity_color}; font-weight: bold; font-size: 12px;"
+            f"color: {rarity_color}; font-weight: bold; font-size: 12px; background-color: transparent;"
         )
         rarity_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
@@ -165,6 +165,8 @@ class CardWidget(QFrame):
         layout.addLayout(top_row)
 
         img_container = QWidget()
+        # ADDED: transparent background for the container holding the images
+        img_container.setStyleSheet("background-color: transparent;")
         img_layout = QVBoxLayout(img_container)
         img_layout.setContentsMargins(0, 0, 0, 0)
         img_layout.setSpacing(2)
@@ -176,9 +178,12 @@ class CardWidget(QFrame):
         char_pixmap = load_qt_image(char_img_url, (80, 80))
         if char_pixmap:
             char_img_label.setPixmap(char_pixmap)
+            # ADDED: transparent background
+            char_img_label.setStyleSheet("background-color: transparent;")
         else:
             char_img_label.setText("[No Img]")
-            char_img_label.setStyleSheet("color: #666; font-size: 10px;")
+            # ADDED: transparent background
+            char_img_label.setStyleSheet("color: #666; font-size: 10px; background-color: transparent;")
         img_layout.addWidget(char_img_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         icons_layout = QHBoxLayout()
@@ -191,9 +196,12 @@ class CardWidget(QFrame):
         element_pixmap = load_qt_image(element_img_url, (18, 18))
         if element_pixmap:
             element_label.setPixmap(element_pixmap)
+            # ADDED: transparent background
+            element_label.setStyleSheet("background-color: transparent;")
         else:
             element_label.setText(element[:3] if element else "N/A")
-            element_label.setStyleSheet("color: #888; font-size: 9px;")
+            # ADDED: transparent background
+            element_label.setStyleSheet("color: #888; font-size: 9px; background-color: transparent;")
         icons_layout.addWidget(element_label)
 
         specialty_label = QLabel()
@@ -201,6 +209,8 @@ class CardWidget(QFrame):
         specialty_pixmap = load_qt_image(specialty_img_url, (18, 18))
         if specialty_pixmap:
             specialty_label.setPixmap(specialty_pixmap)
+        # ADDED: transparent background
+        specialty_label.setStyleSheet("background-color: transparent;")
         icons_layout.addWidget(specialty_label)
 
         img_layout.addLayout(icons_layout)
@@ -208,7 +218,8 @@ class CardWidget(QFrame):
 
         display_name = name[:12] + ("..." if len(name) > 12 else "")
         name_label = QLabel(display_name)
-        name_label.setStyleSheet("color: white; font-weight: bold; font-size: 11px;")
+        # ADDED: transparent background
+        name_label.setStyleSheet("color: white; font-weight: bold; font-size: 11px; background-color: transparent;")
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(name_label)
 
@@ -236,7 +247,6 @@ class CardWidget(QFrame):
 
         layout.addStretch()
 
-
 class GameSection(QFrame):
     def __init__(self, game_name, parent=None):
         super().__init__(parent)
@@ -249,16 +259,19 @@ class GameSection(QFrame):
         main_layout.setSpacing(0)
 
         header = QFrame()
-        header.setStyleSheet("background-color: #252525; border-radius: 4px;")
+        # ADDED QFrame selector to safely scope the background color
+        header.setStyleSheet("QFrame { background-color: #252525; border-radius: 4px; }")
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(10, 8, 10, 8)
 
         title_label = QLabel(game_name)
-        title_label.setStyleSheet("color: white; font-weight: bold; font-size: 16px;")
+        # ADDED: background-color: transparent
+        title_label.setStyleSheet("color: white; font-weight: bold; font-size: 16px; background-color: transparent;")
         header_layout.addWidget(title_label)
 
         self.status_label = QLabel("Loading...")
-        self.status_label.setStyleSheet("color: #888; font-size: 12px;")
+        # ADDED: background-color: transparent
+        self.status_label.setStyleSheet("color: #888; font-size: 12px; background-color: transparent;")
         self.status_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
