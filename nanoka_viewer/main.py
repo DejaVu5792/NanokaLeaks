@@ -21,8 +21,10 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QEvent
 from PyQt6.QtGui import QPixmap, QImage
+
+PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
 logging.basicConfig(
     level=logging.INFO,
@@ -345,6 +347,8 @@ class NanokaViewer(QMainWindow):
         self.setWindowTitle("Nanoka Viewer")
         self.setMinimumSize(800, 600)
         self.resize(950, 750)
+        self._updating_theme = False
+        self.setStyleSheet(STYLESHEET)
 
         central = QWidget()
         central.setObjectName("centralWidget")
@@ -445,11 +449,17 @@ class NanokaViewer(QMainWindow):
         self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")
 
+    def changeEvent(self, event):
+        if event.type() == PALETTE_CHANGE_EVENT and not self._updating_theme:
+            self._updating_theme = True
+            self.setStyleSheet(STYLESHEET)
+            self._updating_theme = False
+        super().changeEvent(event)
+
 
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setStyleSheet(STYLESHEET)
 
     window = NanokaViewer()
     window.show()
