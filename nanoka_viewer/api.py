@@ -186,53 +186,19 @@ def is_released(game, char_data):
     return ts > 0
 
 
-def get_newest_characters(game, count=6):
+def get_newest_characters(game):
     data = fetch_characters(game)
     manifest = fetch_manifest()
     new_ids = manifest[game].get("new", {}).get("character", [])
 
     result = []
-    seen_ids = set()
-
     if new_ids:
         for char_id in new_ids:
             char_id_str = str(char_id)
-            if char_id_str in data and char_id_str not in seen_ids:
+            if char_id_str in data:
                 result.append((char_id_str, data[char_id_str]))
-                seen_ids.add(char_id_str)
 
-    released_chars = [
-        (id, char_data)
-        for id, char_data in data.items()
-        if is_released(game, char_data)
-    ]
-
-    if game == "zzz":
-        released_chars.sort(
-            key=lambda x: int(x[0]) if x[0].isdigit() else 0, reverse=True
-        )
-    else:
-        released_chars.sort(
-            key=lambda x: parse_release(game, x[1].get("release")), reverse=True
-        )
-
-    for char_id, char_data in released_chars:
-        if char_id not in seen_ids:
-            result.append((char_id, char_data))
-            seen_ids.add(char_id)
-        if len(result) >= count:
-            break
-
-    if len(result) < count:
-        unreleased = [
-            (id, char_data) for id, char_data in data.items() if id not in seen_ids
-        ]
-        for char_id, char_data in unreleased:
-            if len(result) >= count:
-                break
-            result.append((char_id, char_data))
-
-    return result[:count]
+    return result
 
 
 def clear_cache():

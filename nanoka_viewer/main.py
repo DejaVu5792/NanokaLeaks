@@ -203,7 +203,7 @@ class NanokaViewer(ctk.CTk):
 
         # Cards container
         cards_container = ctk.CTkFrame(section, fg_color="#1a1a1a")
-        cards_container.pack(fill="x", expand=True, padx=5, pady=(0, 4))
+        cards_container.pack(fill="x", expand=True, padx=5, pady=(0, 0))
 
         # Use native CTkScrollableFrame instead of Canvas for seamless horizontal scrolling
         card_frame = ctk.CTkScrollableFrame(
@@ -236,52 +236,46 @@ class NanokaViewer(ctk.CTk):
         for game in GAMES.keys():
             start = time.time()
             try:
-                chars = get_newest_characters(game, count=6)
+                chars = get_newest_characters(game)
                 self.game_data[game]["chars"] = chars
                 elapsed = time.time() - start
                 logger.info(
                     f"Loaded {len(chars)} characters for {game} in {elapsed:.3f}s"
                 )
+                self.after(0, self._update_game_ui, game)
             except Exception as e:
                 self.game_data[game]["chars"] = []
                 logger.error(f"Error loading {game}: {e}")
+                self.after(0, self._update_game_ui, game)
 
         total_elapsed = time.time() - total_start
         logger.info(f"All data loaded in {total_elapsed:.3f}s")
-        self.after(0, self._update_ui)
 
-    def _update_ui(self):
-        ui_start = time.time()
-        for game, info in self.game_data.items():
-            chars = info["chars"]
-            card_frame = info["card_frame"]
+    def _update_game_ui(self, game):
+        info = self.game_data[game]
+        chars = info["chars"]
+        card_frame = info["card_frame"]
 
-            for widget in card_frame.winfo_children():
-                widget.destroy()
+        for widget in card_frame.winfo_children():
+            widget.destroy()
 
-            if not chars:
-                ctk.CTkLabel(
-                    card_frame,
-                    text="Failed to load characters",
-                    fg_color="#1a1a1a",
-                ).pack()
-                continue
+        if not chars:
+            ctk.CTkLabel(
+                card_frame,
+                text="Failed to load characters",
+                fg_color="#1a1a1a",
+            ).pack()
+            return
 
-            count_released = sum(1 for _, c in chars if is_released_char(game, c))
+        info["loading_label"].configure(text=f"{len(chars)} newest")
 
-            info["loading_label"].configure(
-                text=f"{len(chars)} chars ({count_released} released)"
-            )
+        card_start = time.time()
+        for char_id, char_data in chars:
+            card = self._create_card(card_frame, game, char_id, char_data)
+            card.pack(side="left", padx=4, pady=2)
+        card_elapsed = time.time() - card_start
+        logger.info(f"Created {len(chars)} cards for {game} in {card_elapsed:.3f}s")
 
-            card_start = time.time()
-            for char_id, char_data in chars:
-                card = self._create_card(card_frame, game, char_id, char_data)
-                card.pack(side="left", padx=4, pady=4)
-            card_elapsed = time.time() - card_start
-            logger.info(f"Created {len(chars)} cards for {game} in {card_elapsed:.3f}s")
-
-        total_ui_elapsed = time.time() - ui_start
-        logger.info(f"UI update completed in {total_ui_elapsed:.3f}s")
         self.refresh_btn.configure(state="normal")
         self.status_label.configure(
             text=f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
@@ -365,16 +359,6 @@ class NanokaViewer(ctk.CTk):
             text_color=color,
             fg_color="#252525",
         ).place(x=165, y=5, anchor="ne")
-
-        # Unreleased badge (top left)
-        if not released:
-            ctk.CTkLabel(
-                card,
-                text="NEW",
-                font=ctk.CTkFont(size=8, weight="bold"),
-                text_color="#FF6B6B",
-                fg_color="#252525",
-            ).place(x=5, y=5)
 
         # Name (centered below image)
         ctk.CTkLabel(
