@@ -116,48 +116,21 @@ class NanokaViewer(ctk.CTk):
         loading_label.pack(side="right", padx=10)
         self.game_data[game]["loading_label"] = loading_label
 
-        # Cards container - horizontal scrolling with reduced padding
+        # Cards container
         cards_container = ctk.CTkFrame(section, fg_color="#1a1a1a")
-        cards_container.pack(fill="x", padx=5, pady=(0, 4))
+        cards_container.pack(fill="x", expand=True, padx=5, pady=(0, 4))
 
-        canvas_frame = ctk.CTkFrame(cards_container, fg_color="#1a1a1a")
-        canvas_frame.pack(fill="x", expand=True)
-
-        canvas = ctk.CTkCanvas(
-            canvas_frame,
-            bg="#1a1a1a",
-            highlightthickness=0,
-            height=260,
-        )
-        canvas.pack(side="top", fill="x")
-
-        h_scrollbar = ctk.CTkScrollbar(
-            canvas_frame,
+        # Use native CTkScrollableFrame instead of Canvas for seamless horizontal scrolling
+        card_frame = ctk.CTkScrollableFrame(
+            cards_container,
             orientation="horizontal",
-            command=canvas.xview,
-            button_color="#333333",
+            fg_color="#1a1a1a",
+            height=260,
+            scrollbar_button_color="#333333"
         )
-        h_scrollbar.pack(side="top", fill="x")
-        canvas.configure(xscrollcommand=h_scrollbar.set)
+        card_frame.pack(fill="x", expand=True)
 
-        card_frame = ctk.CTkFrame(canvas, fg_color="#1a1a1a")
-        canvas.create_window((0, 0), window=card_frame, anchor="nw")
-
-        def update_scrollregion(event=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        card_frame.bind("<Configure>", update_scrollregion)
-
-        def on_shift_scroll(event):
-            if event.state & 0x1:
-                canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
-                return "break"
-
-        canvas.bind("<MouseWheel>", on_shift_scroll)
-        card_frame.bind("<MouseWheel>", on_shift_scroll)
-        section.bind("<MouseWheel>", on_shift_scroll)
-
-        self.game_data[game]["canvas"] = canvas
+        self.game_data[game]["canvas"] = None
         self.game_data[game]["card_frame"] = card_frame
         self.game_data[game]["section"] = section
 
@@ -209,18 +182,6 @@ class NanokaViewer(ctk.CTk):
                 card = self._create_card(card_frame, game, char_id, char_data)
                 card.pack(side="left", padx=4, pady=4)
 
-                if info.get("canvas"):
-
-                    def make_handler(c=info["canvas"]):
-                        def handler(event):
-                            if event.state & 0x1:
-                                c.xview_scroll(int(-1 * (event.delta / 120)), "units")
-                                return "break"
-
-                        return handler
-
-                    card.bind("<MouseWheel>", make_handler())
-
         self.refresh_btn.configure(state="normal")
         self.status_label.configure(
             text=f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
@@ -228,6 +189,13 @@ class NanokaViewer(ctk.CTk):
 
     def _create_card(self, parent, game, char_id, char_data):
         card = ctk.CTkFrame(parent, fg_color="#252525", width=180, height=240)
+
+        # FIX 1: Force exact card dimensions for the scrollable canvas.
+        # By packing a dummy frame of the exact size, the canvas natively
+        # reserves this 180x240 space and prevents the background from collapsing.
+        dummy = ctk.CTkFrame(card, width=180, height=240, fg_color="#252525")
+        dummy.pack()
+        card.pack_propagate(False)
 
         name = get_name(game, char_data)
         rarity = get_rarity(game, char_data)
@@ -243,8 +211,9 @@ class NanokaViewer(ctk.CTk):
         element_img = load_image(element_img_url, (18, 18))
         specialty_img = load_image(specialty_img_url, (18, 18))
 
-        # Image container
-        img_container = ctk.CTkFrame(card, fg_color="transparent")
+        # FIX 2: Replaced fg_color="transparent" with "#252525"
+        # Transparent frames inside scrollable canvases cause severe smearing.
+        img_container = ctk.CTkFrame(card, fg_color="#252525")
         img_container.place(x=50, y=8)
 
         if char_img:
@@ -257,26 +226,26 @@ class NanokaViewer(ctk.CTk):
             ).pack()
 
         # Element and specialty below image
-        icons_frame = ctk.CTkFrame(img_container, fg_color="transparent")
+        icons_frame = ctk.CTkFrame(img_container, fg_color="#252525")
         icons_frame.pack(pady=(2, 0))
 
         if element_img:
             lbl = ctk.CTkLabel(
-                icons_frame, image=element_img, text="", fg_color="transparent"
+                icons_frame, image=element_img, text="", fg_color="#252525"
             )
             lbl.image = element_img
         else:
             lbl = ctk.CTkLabel(
                 icons_frame,
-                text=element[:3],
+                text=element[:3] if element else "N/A",
                 font=ctk.CTkFont(size=9),
-                fg_color="transparent",
+                fg_color="#252525",
             )
         lbl.pack(side="left", padx=2)
 
         if specialty_img:
             lbl = ctk.CTkLabel(
-                icons_frame, image=specialty_img, text="", fg_color="transparent"
+                icons_frame, image=specialty_img, text="", fg_color="#252525"
             )
             lbl.image = specialty_img
             lbl.pack(side="left", padx=2)
@@ -321,7 +290,6 @@ class NanokaViewer(ctk.CTk):
         ).place(x=90, y=155, anchor="n")
 
         return card
-
 
 def main():
     app = NanokaViewer()
