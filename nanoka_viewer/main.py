@@ -23,7 +23,6 @@ from nanoka_viewer.api import (
     get_element_image,
     get_specialty_image,
     is_released_char,
-    clear_cache,
     GAMES,
 )
 
@@ -57,79 +56,114 @@ class NanokaViewer(ctk.CTk):
 
         self.title("Nanoka Viewer")
         self.geometry("950x750")
+        self.configure(fg_color="#1a1a1a")
 
-        self.main_frame = ctk.CTkScrollableFrame(self)
-        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.header_frame = ctk.CTkFrame(self.main_frame)
-        self.header_frame.pack(fill="x", pady=(0, 10))
+        # Header
+        header = ctk.CTkFrame(self, fg_color="#1a1a1a")
+        header.pack(fill="x", padx=10, pady=(10, 0))
 
         ctk.CTkLabel(
-            self.header_frame,
+            header,
             text="Nanoka Viewer",
             font=ctk.CTkFont(size=20, weight="bold"),
-        ).pack(side="left", padx=10)
-
-        button_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
-        button_frame.pack(side="right", padx=10)
+        ).pack(side="left", pady=10)
 
         self.refresh_btn = ctk.CTkButton(
-            button_frame,
+            header,
             text="Refresh",
             command=self.load_data,
             width=80,
         )
-        self.refresh_btn.pack(side="left", padx=5)
+        self.refresh_btn.pack(side="right", pady=10, padx=(0, 10))
 
-        self.clear_cache_btn = ctk.CTkButton(
-            button_frame,
-            text="Clear Cache",
-            command=self._on_clear_cache,
-            fg_color="#444",
-            width=80,
+        self.status_label = ctk.CTkLabel(header, text="Ready")
+        self.status_label.pack(side="right", pady=10)
+
+        # Main scrollable frame (vertical)
+        self.main_frame = ctk.CTkScrollableFrame(
+            self,
+            fg_color="#1a1a1a",
+            scrollbar_button_color="#333333",
         )
-        self.clear_cache_btn.pack(side="left", padx=5)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.status_label = ctk.CTkLabel(button_frame, text="Ready")
-        self.status_label.pack(side="left", padx=5)
-
-        self.game_sections = {}
         self.game_data = {}
 
         for game, info in GAMES.items():
-            section = self._create_game_section(game, info["name"])
-            self.game_sections[game] = section
+            self.game_data[game] = {"chars": [], "loading": True}
+            self._create_game_section(game, info["name"])
 
         self.load_data()
 
     def _create_game_section(self, game, title):
-        section = ctk.CTkFrame(self.main_frame)
+        section = ctk.CTkFrame(self.main_frame, fg_color="#1a1a1a")
         section.pack(fill="x", pady=(0, 15))
 
-        header = ctk.CTkFrame(section)
-        header.pack(fill="x", padx=10, pady=10)
+        header = ctk.CTkFrame(section, fg_color="#252525")
+        header.pack(fill="x", padx=5, pady=5)
 
         ctk.CTkLabel(
             header,
             text=title,
             font=ctk.CTkFont(size=16, weight="bold"),
-        ).pack(side="left")
+        ).pack(side="left", padx=10, pady=8)
 
-        self.game_data[game] = {"chars": [], "loading": True}
-
-        loading = ctk.CTkLabel(
+        loading_label = ctk.CTkLabel(
             header,
             text="Loading...",
             font=ctk.CTkFont(size=12),
         )
-        loading.pack(side="right", padx=10)
-        self.game_data[game]["loading_label"] = loading
+        loading_label.pack(side="right", padx=10)
+        self.game_data[game]["loading_label"] = loading_label
 
-        chars_frame = ctk.CTkFrame(section, fg_color="transparent")
-        chars_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self.game_data[game]["frame"] = chars_frame
+        # Cards container - horizontal scrolling with frame
+        cards_container = ctk.CTkFrame(section, fg_color="#1a1a1a")
+        cards_container.pack(fill="x", padx=5, pady=(0, 5))
 
-        return section
+        # Create a canvas with horizontal scrollbar
+        canvas_frame = ctk.CTkFrame(cards_container, fg_color="#1a1a1a")
+        canvas_frame.pack(side="left", fill="x", expand=True)
+
+        canvas = ctk.CTkCanvas(
+            canvas_frame,
+            bg="#1a1a1a",
+            highlightthickness=0,
+            height=340,
+            width=850,
+        )
+        canvas.pack(side="top", fill="x")
+
+        h_scrollbar = ctk.CTkScrollbar(
+            canvas_frame,
+            orientation="horizontal",
+            command=canvas.xview,
+            button_color="#333333",
+        )
+        h_scrollbar.pack(side="top", fill="x")
+        canvas.configure(xscrollcommand=h_scrollbar.set)
+
+        card_frame = ctk.CTkFrame(canvas, fg_color="#1a1a1a")
+        card_window = canvas.create_window((0, 0), window=card_frame, anchor="nw")
+
+        def update_scrollregion(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        card_frame.bind("<Configure>", update_scrollregion)
+
+        # Bind shift+scroll to horizontal scroll
+        def on_shift_scroll(event):
+            if event.state & 0x1:  # Shift is pressed
+                canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+                return "break"
+
+        # Bind to canvas, card_frame, and section
+        canvas.bind("<MouseWheel>", on_shift_scroll)
+        card_frame.bind("<MouseWheel>", on_shift_scroll)
+        section.bind("<MouseWheel>", on_shift_scroll)
+
+        self.game_data[game]["canvas"] = canvas
+        self.game_data[game]["card_frame"] = card_frame
+        self.game_data[game]["section"] = section
 
     def load_data(self):
         self.refresh_btn.configure(state="disabled")
@@ -137,8 +171,7 @@ class NanokaViewer(ctk.CTk):
 
         for game in GAMES.keys():
             self.game_data[game]["loading"] = True
-            if "loading_label" in self.game_data[game]:
-                self.game_data[game]["loading_label"].configure(text="Loading...")
+            self.game_data[game]["loading_label"].configure(text="Loading...")
 
         thread = threading.Thread(target=self._load_data_thread)
         thread.start()
@@ -157,15 +190,17 @@ class NanokaViewer(ctk.CTk):
     def _update_ui(self):
         for game, info in self.game_data.items():
             chars = info["chars"]
-            frame = info["frame"]
+            card_frame = info["card_frame"]
+            canvas = info.get("canvas")
 
-            for widget in frame.winfo_children():
+            for widget in card_frame.winfo_children():
                 widget.destroy()
 
             if not chars:
                 ctk.CTkLabel(
-                    frame,
+                    card_frame,
                     text="Failed to load characters",
+                    fg_color="#1a1a1a",
                 ).pack()
                 continue
 
@@ -176,8 +211,21 @@ class NanokaViewer(ctk.CTk):
             )
 
             for char_id, char_data in chars:
-                card = self._create_card(frame, game, char_id, char_data)
+                card = self._create_card(card_frame, game, char_id, char_data)
                 card.pack(side="left", padx=8, pady=8)
+
+                # Bind scroll to card
+                if canvas:
+
+                    def make_handler(c=canvas):
+                        def handler(event):
+                            if event.state & 0x1:
+                                c.xview_scroll(int(-1 * (event.delta / 120)), "units")
+                                return "break"
+
+                        return handler
+
+                    card.bind("<MouseWheel>", make_handler())
 
         self.refresh_btn.configure(state="normal")
         self.status_label.configure(
@@ -185,7 +233,7 @@ class NanokaViewer(ctk.CTk):
         )
 
     def _create_card(self, parent, game, char_id, char_data):
-        card = ctk.CTkFrame(parent, width=260, height=300)
+        card = ctk.CTkFrame(parent, fg_color="#252525", width=260, height=300)
 
         name = get_name(game, char_data)
         rarity = get_rarity(game, char_data)
@@ -202,9 +250,13 @@ class NanokaViewer(ctk.CTk):
         specialty_img = load_image(specialty_img_url, (20, 20))
 
         if char_img:
-            ctk.CTkLabel(card, image=char_img, text="").pack(pady=(10, 5))
+            ctk.CTkLabel(card, image=char_img, text="", fg_color="#252525").pack(
+                pady=(10, 5)
+            )
         else:
-            ctk.CTkLabel(card, text="[No Image]", height=100).pack(pady=(10, 5))
+            ctk.CTkLabel(card, text="[No Image]", height=100, fg_color="#252525").pack(
+                pady=(10, 5)
+            )
 
         if not released:
             ctk.CTkLabel(
@@ -212,12 +264,14 @@ class NanokaViewer(ctk.CTk):
                 text="UNRELEASED",
                 font=ctk.CTkFont(size=9, weight="bold"),
                 text_color="#FF6B6B",
+                fg_color="#252525",
             ).pack(pady=(5, 0))
 
         ctk.CTkLabel(
             card,
             text=name,
             font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#252525",
         ).pack(pady=(5, 0))
 
         rarity_colors = {"S": "#FF6B6B", "5": "#FFD700", "4": "#9370DB", "A": "#FF6B6B"}
@@ -228,20 +282,30 @@ class NanokaViewer(ctk.CTk):
             text=f"{rarity}★",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color,
+            fg_color="#252525",
         ).pack()
 
         info_frame = ctk.CTkFrame(card, fg_color="transparent")
         info_frame.pack(pady=5)
 
         if element_img:
-            lbl = ctk.CTkLabel(info_frame, image=element_img, text="")
+            lbl = ctk.CTkLabel(
+                info_frame, image=element_img, text="", fg_color="transparent"
+            )
             lbl.image = element_img
         else:
-            lbl = ctk.CTkLabel(info_frame, text=element, font=ctk.CTkFont(size=11))
+            lbl = ctk.CTkLabel(
+                info_frame,
+                text=element,
+                font=ctk.CTkFont(size=11),
+                fg_color="transparent",
+            )
         lbl.pack(side="left", padx=8)
 
         if specialty_img:
-            lbl = ctk.CTkLabel(info_frame, image=specialty_img, text="")
+            lbl = ctk.CTkLabel(
+                info_frame, image=specialty_img, text="", fg_color="transparent"
+            )
             lbl.image = specialty_img
             lbl.pack(side="left", padx=8)
 
@@ -254,12 +318,6 @@ class NanokaViewer(ctk.CTk):
         ).pack(pady=5)
 
         return card
-
-    def _on_clear_cache(self):
-        clear_cache()
-        IMAGE_CACHE.clear()
-        self.status_label.configure(text="Cache cleared")
-        self.load_data()
 
 
 def main():

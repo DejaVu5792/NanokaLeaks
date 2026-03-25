@@ -1,13 +1,6 @@
 import requests
-import os
-import json
-import time
-from datetime import datetime
-from pathlib import Path
 
 BASE_URL = "https://static.nanoka.cc"
-CACHE_DIR = Path.home() / ".cache" / "nanoka_viewer"
-CACHE_TTL = 3600
 
 GAMES = {
     "zzz": {"name": "Zenless Zone Zero", "url": "https://zzz.nanoka.cc"},
@@ -15,45 +8,11 @@ GAMES = {
     "gi": {"name": "Genshin Impact", "url": "https://gi.nanoka.cc"},
 }
 
-_cache = {}
-
-
-def get_cache_path(game, data_type="characters"):
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"{game}_{data_type}.json"
-
-
-def fetch_with_cache(game, url, data_type="characters"):
-    cache_path = get_cache_path(game, data_type)
-
-    if cache_path.exists():
-        age = time.time() - cache_path.stat().st_mtime
-        if age < CACHE_TTL:
-            with open(cache_path) as f:
-                return json.load(f)
-
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-    data = response.json()
-
-    with open(cache_path, "w") as f:
-        json.dump(data, f)
-
-    return data
-
 
 def fetch_manifest():
-    if "manifest" in _cache:
-        age = time.time() - _cache.get("_manifest_time", 0)
-        if age < CACHE_TTL:
-            return _cache["manifest"]
-
     response = requests.get(f"{BASE_URL}/manifest.json", timeout=30)
     response.raise_for_status()
-    data = response.json()
-    _cache["manifest"] = data
-    _cache["_manifest_time"] = time.time()
-    return data
+    return response.json()
 
 
 def get_latest_version(game):
@@ -64,7 +23,9 @@ def get_latest_version(game):
 def fetch_characters(game):
     version = get_latest_version(game)
     url = f"{BASE_URL}/{game}/{version}/character.json"
-    return fetch_with_cache(game, url)
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def parse_release(game, release_data):
@@ -72,6 +33,8 @@ def parse_release(game, release_data):
         return 0
 
     if game == "gi":
+        from datetime import datetime
+
         try:
             dt = datetime.strptime(release_data, "%Y-%m-%d %H:%M:%S")
             ts = dt.timestamp()
@@ -88,8 +51,6 @@ def parse_release(game, release_data):
             return ts
         except:
             return 0
-    elif game == "zzz":
-        return 0
     return 0
 
 
@@ -270,11 +231,3 @@ def get_specialty_image(game, char_data):
         weapon = char_data.get("weapon", "")
         return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
     return ""
-
-
-def clear_cache():
-    import shutil
-
-    if CACHE_DIR.exists():
-        shutil.rmtree(CACHE_DIR)
-    _cache.clear()
