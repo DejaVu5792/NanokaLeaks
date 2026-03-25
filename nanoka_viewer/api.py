@@ -155,13 +155,11 @@ def get_newest_characters(game, count=6):
 
 def get_character_url(game, char_id, char_data):
     if game == "zzz":
-        code = char_data.get("code", "").lower().replace("_en", "")
-        return f"https://zzz.nanoka.cc/character/{code}"
+        return f"https://zzz.nanoka.cc/character/{char_id}/"
     elif game == "hsr":
         return f"https://hsr.nanoka.cc/character/{char_id}"
     elif game == "gi":
-        name = char_data.get("en", "").lower().replace(" ", "-")
-        return f"https://gi.nanoka.cc/character/{name}"
+        return f"https://gi.nanoka.cc/character/{char_id}"
     return ""
 
 
