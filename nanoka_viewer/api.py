@@ -1,6 +1,13 @@
 import requests
+import os
+import json
+import time
+from datetime import datetime
+from pathlib import Path
 
 BASE_URL = "https://static.nanoka.cc"
+CACHE_DIR = Path.home() / ".cache" / "nanoka_viewer"
+CACHE_TTL = 3600
 
 GAMES = {
     "zzz": {"name": "Zenless Zone Zero", "url": "https://zzz.nanoka.cc"},
@@ -8,11 +15,45 @@ GAMES = {
     "gi": {"name": "Genshin Impact", "url": "https://gi.nanoka.cc"},
 }
 
+_cache = {}
+
+
+def get_cache_path(game, data_type="characters"):
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return CACHE_DIR / f"{game}_{data_type}.json"
+
+
+def fetch_with_cache(game, url, data_type="characters"):
+    cache_path = get_cache_path(game, data_type)
+
+    if cache_path.exists():
+        age = time.time() - cache_path.stat().st_mtime
+        if age < CACHE_TTL:
+            with open(cache_path) as f:
+                return json.load(f)
+
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    data = response.json()
+
+    with open(cache_path, "w") as f:
+        json.dump(data, f)
+
+    return data
+
 
 def fetch_manifest():
-    response = requests.get(f"{BASE_URL}/manifest.json")
+    if "manifest" in _cache:
+        age = time.time() - _cache.get("_manifest_time", 0)
+        if age < CACHE_TTL:
+            return _cache["manifest"]
+
+    response = requests.get(f"{BASE_URL}/manifest.json", timeout=30)
     response.raise_for_status()
-    return response.json()
+    data = response.json()
+    _cache["manifest"] = data
+    _cache["_manifest_time"] = time.time()
+    return data
 
 
 def get_latest_version(game):
@@ -23,9 +64,7 @@ def get_latest_version(game):
 def fetch_characters(game):
     version = get_latest_version(game)
     url = f"{BASE_URL}/{game}/{version}/character.json"
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.json()
+    return fetch_with_cache(game, url)
 
 
 def parse_release(game, release_data):
@@ -33,13 +72,36 @@ def parse_release(game, release_data):
         return 0
 
     if game == "gi":
-        from datetime import datetime
-
         try:
-            return datetime.strptime(release_data, "%Y-%m-%d %H:%M:%S").timestamp()
+            dt = datetime.strptime(release_data, "%Y-%m-%d %H:%M:%S")
+            ts = dt.timestamp()
+            if ts < 100000000:
+                return 0
+            return ts
         except:
             return 0
-    return int(release_data)
+    elif game == "hsr":
+        try:
+            ts = int(release_data)
+            if ts < 100000000:
+                return 0
+            return ts
+        except:
+            return 0
+    elif game == "zzz":
+        return 0
+    return 0
+
+
+def is_released(game, char_data):
+    release = char_data.get("release")
+    if not release:
+        if game == "zzz":
+            return True
+        return False
+
+    ts = parse_release(game, release)
+    return ts > 0
 
 
 def get_newest_characters(game, count=6):
@@ -47,40 +109,48 @@ def get_newest_characters(game, count=6):
     manifest = fetch_manifest()
     new_ids = manifest[game].get("new", {}).get("character", [])
 
+    result = []
+    seen_ids = set()
+
     if new_ids:
-        new_ids_str = [str(id) for id in new_ids]
-        result = []
-        for char_id in new_ids_str:
-            if char_id in data:
-                result.append((char_id, data[char_id]))
-            elif char_id.lstrip("-").isdigit() and char_id in data:
-                result.append((char_id, data[char_id]))
+        for char_id in new_ids:
+            char_id_str = str(char_id)
+            if char_id_str in data and char_id_str not in seen_ids:
+                result.append((char_id_str, data[char_id_str]))
+                seen_ids.add(char_id_str)
 
-        if len(result) >= count:
-            return result[:count]
-
-        existing_new_ids = [id for id, _ in result]
-        remaining = count - len(result)
-
-        for char_id, char_data in data.items():
-            if char_id not in existing_new_ids and len(result) < count:
-                result.append((char_id, char_data))
-
-        return result[:count]
-
-    chars_with_release = [
-        (id, char_data) for id, char_data in data.items() if char_data.get("release")
+    released_chars = [
+        (id, char_data)
+        for id, char_data in data.items()
+        if is_released(game, char_data)
     ]
 
-    if chars_with_release:
-        sorted_chars = sorted(
-            chars_with_release,
-            key=lambda x: parse_release(game, x[1].get("release")),
-            reverse=True,
+    if game == "zzz":
+        released_chars.sort(
+            key=lambda x: int(x[0]) if x[0].isdigit() else 0, reverse=True
         )
-        return sorted_chars[:count]
+    else:
+        released_chars.sort(
+            key=lambda x: parse_release(game, x[1].get("release")), reverse=True
+        )
 
-    return list(data.items())[:count]
+    for char_id, char_data in released_chars:
+        if char_id not in seen_ids:
+            result.append((char_id, char_data))
+            seen_ids.add(char_id)
+        if len(result) >= count:
+            break
+
+    if len(result) < count:
+        unreleased = [
+            (id, char_data) for id, char_data in data.items() if id not in seen_ids
+        ]
+        for char_id, char_data in unreleased:
+            if len(result) >= count:
+                break
+            result.append((char_id, char_data))
+
+    return result[:count]
 
 
 def get_character_url(game, char_id, char_data):
@@ -147,3 +217,66 @@ def get_name(game, char_data):
     elif game == "gi":
         return char_data.get("en", "Unknown")
     return "Unknown"
+
+
+def is_released_char(game, char_data):
+    return is_released(game, char_data)
+
+
+def get_character_image(game, char_data, char_id=None):
+    icon = char_data.get("icon", "")
+    if game == "zzz":
+        return f"https://static.nanoka.cc/assets/zzz/{icon}.webp"
+    elif game == "hsr":
+        if char_id:
+            return f"https://static.nanoka.cc/assets/hsr/avatarshopicon/{char_id}.webp"
+        return f"https://static.nanoka.cc/assets/hsr/avatarshopicon/{icon}.webp"
+    elif game == "gi":
+        return f"https://static.nanoka.cc/assets/gi/{icon}.webp"
+    return ""
+
+
+def get_element_image(game, char_data):
+    element = get_element(game, char_data)
+    if game == "zzz":
+        element_map = {
+            "Physical": "Physical",
+            "Fire": "Fire",
+            "Ice": "Ice",
+            "Electric": "Electric",
+            "Ether": "Anomaly",
+        }
+        return f"https://static.nanoka.cc/assets/zzz/Icon{element_map.get(element, 'Physical')}.webp"
+    elif game == "hsr":
+        return f"https://static.nanoka.cc/assets/hsr/element/{element.lower()}.webp"
+    elif game == "gi":
+        return f"https://static.nanoka.cc/assets/gi/{element}.webp"
+    return ""
+
+
+def get_specialty_image(game, char_data):
+    if game == "zzz":
+        type_map = {
+            1: "Attack",
+            2: "Defense",
+            3: "Anomaly",
+            4: "Support",
+            5: "Star",
+        }
+        specialty = type_map.get(char_data.get("type", 1), "Attack")
+        return f"https://static.nanoka.cc/assets/zzz/Icon{specialty}.webp"
+    elif game == "hsr":
+        path = char_data.get("baseType", "")
+        return f"https://static.nanoka.cc/assets/hsr/pathicon/{path.lower()}.webp"
+    elif game == "gi":
+        weapon = char_data.get("weapon", "")
+        return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
+    return ""
+
+
+def clear_cache():
+    import shutil
+
+    if CACHE_DIR.exists():
+        shutil.rmtree(CACHE_DIR)
+    _cache.clear()
