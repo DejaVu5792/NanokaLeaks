@@ -56,4 +56,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.binary_name }}
-          generate_release_notes: true
+          generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
