@@ -6,7 +6,22 @@ import io
 import requests
 import sys
 import os
+import time
+import logging
 from datetime import datetime
+from pathlib import Path
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+# Image cache directory
+IMAGE_CACHE_DIR = Path.home() / ".cache" / "nanoka_leaks" / "images"
+IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 if __name__ == "__main__":
     _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,25 +48,58 @@ IMAGE_CACHE = {}
 
 
 def load_image(url, size=(100, 100)):
-    if not url or url in IMAGE_CACHE:
-        return IMAGE_CACHE.get(url)
+    if not url:
+        return None
 
+    # Check memory cache first
+    if url in IMAGE_CACHE:
+        return IMAGE_CACHE[url]
+
+    # Create cache filename from URL
+    import hashlib
+
+    url_hash = hashlib.md5(url.encode()).hexdigest()
+    cache_file = IMAGE_CACHE_DIR / f"{url_hash}.png"
+
+    # Check disk cache
+    if cache_file.exists():
+        try:
+            img = Image.open(cache_file)
+            img = img.resize(size, Image.Resampling.LANCZOS)
+            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
+            IMAGE_CACHE[url] = ctk_img
+            logger.debug(f"Loaded image from disk cache: {cache_file.name}")
+            return ctk_img
+        except Exception as e:
+            logger.error(f"Failed to load cached image {cache_file}: {e}")
+
+    # Download from network
     try:
+        logger.debug(f"Downloading image: {url}")
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
             img_data = response.content
             img = Image.open(io.BytesIO(img_data))
+
+            # Save to disk cache
+            try:
+                img.save(cache_file)
+            except Exception as e:
+                logger.error(f"Failed to save image to cache: {e}")
+
             img = img.resize(size, Image.Resampling.LANCZOS)
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=size)
             IMAGE_CACHE[url] = ctk_img
             return ctk_img
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to load image {url}: {e}")
     return None
 
 
 class NanokaViewer(ctk.CTk):
     def __init__(self):
+        logger.info("Initializing NanokaViewer...")
+        init_start = time.time()
         super().__init__()
 
         self.title("Nanoka Viewer")
@@ -93,6 +141,8 @@ class NanokaViewer(ctk.CTk):
             self.game_data[game] = {"chars": [], "loading": True}
             self._create_game_section(game, info["name"])
 
+        init_elapsed = time.time() - init_start
+        logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
 
     def _create_game_section(self, game, title):
@@ -126,7 +176,7 @@ class NanokaViewer(ctk.CTk):
             orientation="horizontal",
             fg_color="#1a1a1a",
             height=260,
-            scrollbar_button_color="#333333"
+            scrollbar_button_color="#333333",
         )
         card_frame.pack(fill="x", expand=True)
 
@@ -135,6 +185,7 @@ class NanokaViewer(ctk.CTk):
         self.game_data[game]["section"] = section
 
     def load_data(self):
+        logger.info("Starting data load...")
         self.refresh_btn.configure(state="disabled")
         self.status_label.configure(text="Loading...")
 
@@ -146,17 +197,26 @@ class NanokaViewer(ctk.CTk):
         thread.start()
 
     def _load_data_thread(self):
+        total_start = time.time()
         for game in GAMES.keys():
+            start = time.time()
             try:
                 chars = get_newest_characters(game, count=6)
                 self.game_data[game]["chars"] = chars
+                elapsed = time.time() - start
+                logger.info(
+                    f"Loaded {len(chars)} characters for {game} in {elapsed:.3f}s"
+                )
             except Exception as e:
                 self.game_data[game]["chars"] = []
-                print(f"Error loading {game}: {e}")
+                logger.error(f"Error loading {game}: {e}")
 
+        total_elapsed = time.time() - total_start
+        logger.info(f"All data loaded in {total_elapsed:.3f}s")
         self.after(0, self._update_ui)
 
     def _update_ui(self):
+        ui_start = time.time()
         for game, info in self.game_data.items():
             chars = info["chars"]
             card_frame = info["card_frame"]
@@ -178,10 +238,15 @@ class NanokaViewer(ctk.CTk):
                 text=f"{len(chars)} chars ({count_released} released)"
             )
 
+            card_start = time.time()
             for char_id, char_data in chars:
                 card = self._create_card(card_frame, game, char_id, char_data)
                 card.pack(side="left", padx=4, pady=4)
+            card_elapsed = time.time() - card_start
+            logger.info(f"Created {len(chars)} cards for {game} in {card_elapsed:.3f}s")
 
+        total_ui_elapsed = time.time() - ui_start
+        logger.info(f"UI update completed in {total_ui_elapsed:.3f}s")
         self.refresh_btn.configure(state="normal")
         self.status_label.configure(
             text=f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
@@ -207,9 +272,14 @@ class NanokaViewer(ctk.CTk):
         element_img_url = get_element_image(game, char_data)
         specialty_img_url = get_specialty_image(game, char_data)
 
+        img_start = time.time()
         char_img = load_image(char_img_url, (80, 80))
         element_img = load_image(element_img_url, (18, 18))
         specialty_img = load_image(specialty_img_url, (18, 18))
+        img_elapsed = time.time() - img_start
+
+        if img_elapsed > 0.1:  # Only log if image loading was slow
+            logger.debug(f"Image loading for {name} took {img_elapsed:.3f}s")
 
         # FIX 2: Replaced fg_color="transparent" with "#252525"
         # Transparent frames inside scrollable canvases cause severe smearing.
@@ -290,6 +360,7 @@ class NanokaViewer(ctk.CTk):
         ).place(x=90, y=155, anchor="n")
 
         return card
+
 
 def main():
     app = NanokaViewer()
