@@ -31,7 +31,6 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 IMAGE_CACHE = {}
-CHAR_IMAGE_CACHE = {}
 
 
 def load_image(url, size=(100, 100)):
@@ -57,35 +56,28 @@ class NanokaViewer(ctk.CTk):
         super().__init__()
 
         self.title("Nanoka Viewer")
-        self.geometry("950x700")
+        self.geometry("950x750")
 
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        self.main_frame = ctk.CTkScrollableFrame(self)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.tabs = {}
-        for game, info in GAMES.items():
-            self.tabs[game] = self.tabview.add(info["name"])
+        self.header_frame = ctk.CTkFrame(self.main_frame)
+        self.header_frame.pack(fill="x", pady=(0, 10))
 
-        self.game_frames = {}
-        self.game_data = {}
-        self.loading_labels = {}
+        ctk.CTkLabel(
+            self.header_frame,
+            text="Nanoka Viewer",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(side="left", padx=10)
 
-        for game in GAMES.keys():
-            frame = ctk.CTkFrame(self.tabs[game])
-            frame.pack(fill="both", expand=True, padx=10, pady=10)
-            self.game_frames[game] = frame
-
-            loading = ctk.CTkLabel(frame, text="Loading...", font=ctk.CTkFont(size=14))
-            loading.pack(pady=20)
-            self.loading_labels[game] = loading
-
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(fill="x", padx=10, pady=(0, 10))
+        button_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        button_frame.pack(side="right", padx=10)
 
         self.refresh_btn = ctk.CTkButton(
             button_frame,
             text="Refresh",
             command=self.load_data,
+            width=80,
         )
         self.refresh_btn.pack(side="left", padx=5)
 
@@ -94,22 +86,59 @@ class NanokaViewer(ctk.CTk):
             text="Clear Cache",
             command=self._on_clear_cache,
             fg_color="#444",
+            width=80,
         )
         self.clear_cache_btn.pack(side="left", padx=5)
 
         self.status_label = ctk.CTkLabel(button_frame, text="Ready")
         self.status_label.pack(side="left", padx=5)
 
+        self.game_sections = {}
+        self.game_data = {}
+
+        for game, info in GAMES.items():
+            section = self._create_game_section(game, info["name"])
+            self.game_sections[game] = section
+
         self.load_data()
+
+    def _create_game_section(self, game, title):
+        section = ctk.CTkFrame(self.main_frame)
+        section.pack(fill="x", pady=(0, 15))
+
+        header = ctk.CTkFrame(section)
+        header.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(
+            header,
+            text=title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(side="left")
+
+        self.game_data[game] = {"chars": [], "loading": True}
+
+        loading = ctk.CTkLabel(
+            header,
+            text="Loading...",
+            font=ctk.CTkFont(size=12),
+        )
+        loading.pack(side="right", padx=10)
+        self.game_data[game]["loading_label"] = loading
+
+        chars_frame = ctk.CTkFrame(section, fg_color="transparent")
+        chars_frame.pack(fill="x", padx=10, pady=(0, 10))
+        self.game_data[game]["frame"] = chars_frame
+
+        return section
 
     def load_data(self):
         self.refresh_btn.configure(state="disabled")
         self.status_label.configure(text="Loading...")
 
         for game in GAMES.keys():
-            if self.loading_labels[game]:
-                self.loading_labels[game].configure(text="Loading...")
-                self.loading_labels[game].pack(pady=20)
+            self.game_data[game]["loading"] = True
+            if "loading_label" in self.game_data[game]:
+                self.game_data[game]["loading_label"].configure(text="Loading...")
 
         thread = threading.Thread(target=self._load_data_thread)
         thread.start()
@@ -118,52 +147,45 @@ class NanokaViewer(ctk.CTk):
         for game in GAMES.keys():
             try:
                 chars = get_newest_characters(game, count=6)
-                self.game_data[game] = chars
+                self.game_data[game]["chars"] = chars
             except Exception as e:
-                self.game_data[game] = []
+                self.game_data[game]["chars"] = []
                 print(f"Error loading {game}: {e}")
 
         self.after(0, self._update_ui)
 
     def _update_ui(self):
-        for game, chars in self.game_data.items():
-            for widget in self.game_frames[game].winfo_children():
+        for game, info in self.game_data.items():
+            chars = info["chars"]
+            frame = info["frame"]
+
+            for widget in frame.winfo_children():
                 widget.destroy()
 
             if not chars:
-                label = ctk.CTkLabel(
-                    self.game_frames[game],
+                ctk.CTkLabel(
+                    frame,
                     text="Failed to load characters",
-                )
-                label.pack(pady=20)
+                ).pack()
                 continue
 
             count_released = sum(1 for _, c in chars if is_released_char(game, c))
 
-            header = ctk.CTkFrame(self.game_frames[game], fg_color="transparent")
-            header.pack(fill="x", pady=(0, 10))
+            info["loading_label"].configure(
+                text=f"{len(chars)} chars ({count_released} released)"
+            )
 
-            ctk.CTkLabel(
-                header,
-                text=f"Showing {len(chars)} characters ({count_released} released)",
-                font=ctk.CTkFont(size=12),
-            ).pack(side="left")
-
-            cards_frame = ctk.CTkFrame(self.game_frames[game], fg_color="transparent")
-            cards_frame.pack(fill="both", expand=True, pady=10)
-
-            cols_per_row = 3
-            for i, (char_id, char_data) in enumerate(chars):
-                card = self.create_card(game, char_id, char_data)
-                card.pack(in_=cards_frame, side="left", padx=10, pady=10)
+            for char_id, char_data in chars:
+                card = self._create_card(frame, game, char_id, char_data)
+                card.pack(side="left", padx=8, pady=8)
 
         self.refresh_btn.configure(state="normal")
         self.status_label.configure(
             text=f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
         )
 
-    def create_card(self, game, char_id, char_data):
-        card = ctk.CTkFrame(self.game_frames[game], width=280, height=340)
+    def _create_card(self, parent, game, char_id, char_data):
+        card = ctk.CTkFrame(parent, width=260, height=300)
 
         name = get_name(game, char_data)
         rarity = get_rarity(game, char_data)
@@ -175,75 +197,61 @@ class NanokaViewer(ctk.CTk):
         element_img_url = get_element_image(game, char_data)
         specialty_img_url = get_specialty_image(game, char_data)
 
-        char_img = load_image(char_img_url, (120, 120))
-        element_img = load_image(element_img_url, (24, 24))
-        specialty_img = load_image(specialty_img_url, (24, 24))
+        char_img = load_image(char_img_url, (100, 100))
+        element_img = load_image(element_img_url, (20, 20))
+        specialty_img = load_image(specialty_img_url, (20, 20))
 
         if char_img:
-            img_label = ctk.CTkLabel(card, image=char_img, text="")
-            img_label.pack(pady=(10, 5))
+            ctk.CTkLabel(card, image=char_img, text="").pack(pady=(10, 5))
         else:
-            img_label = ctk.CTkLabel(card, text="[No Image]", height=120)
-            img_label.pack(pady=(10, 5))
+            ctk.CTkLabel(card, text="[No Image]", height=100).pack(pady=(10, 5))
 
         if not released:
-            unreleased_badge = ctk.CTkLabel(
+            ctk.CTkLabel(
                 card,
                 text="UNRELEASED",
-                font=ctk.CTkFont(size=10, weight="bold"),
+                font=ctk.CTkFont(size=9, weight="bold"),
                 text_color="#FF6B6B",
-            )
-            unreleased_badge.pack(pady=(5, 0))
+            ).pack(pady=(5, 0))
 
-        name_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             card,
             text=name,
-            font=ctk.CTkFont(size=16, weight="bold"),
-        )
-        name_label.pack(pady=(5, 5))
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(pady=(5, 0))
 
-        rarity_colors = {
-            "S": "#FF6B6B",
-            "5": "#FFD700",
-            "4": "#9370DB",
-            "A": "#FF6B6B",
-        }
+        rarity_colors = {"S": "#FF6B6B", "5": "#FFD700", "4": "#9370DB", "A": "#FF6B6B"}
         color = rarity_colors.get(str(rarity), "#FFFFFF")
 
-        rarity_label = ctk.CTkLabel(
+        ctk.CTkLabel(
             card,
             text=f"{rarity}★",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color,
-        )
-        rarity_label.pack()
+        ).pack()
 
         info_frame = ctk.CTkFrame(card, fg_color="transparent")
         info_frame.pack(pady=5)
 
         if element_img:
-            element_label = ctk.CTkLabel(info_frame, image=element_img, text="")
-            element_label.image = element_img
+            lbl = ctk.CTkLabel(info_frame, image=element_img, text="")
+            lbl.image = element_img
         else:
-            element_label = ctk.CTkLabel(
-                info_frame,
-                text=element,
-                font=ctk.CTkFont(size=12),
-            )
-        element_label.pack(side="left", padx=10)
+            lbl = ctk.CTkLabel(info_frame, text=element, font=ctk.CTkFont(size=11))
+        lbl.pack(side="left", padx=8)
 
         if specialty_img:
-            specialty_label = ctk.CTkLabel(info_frame, image=specialty_img, text="")
-            specialty_label.image = specialty_img
-            specialty_label.pack(side="left", padx=10)
+            lbl = ctk.CTkLabel(info_frame, image=specialty_img, text="")
+            lbl.image = specialty_img
+            lbl.pack(side="left", padx=8)
 
-        open_btn = ctk.CTkButton(
+        ctk.CTkButton(
             card,
             text="View Page",
-            command=lambda: webbrowser.open(url),
-            width=120,
-        )
-        open_btn.pack(pady=10)
+            command=lambda u=url: webbrowser.open(u),
+            width=100,
+            height=28,
+        ).pack(pady=5)
 
         return card
 
