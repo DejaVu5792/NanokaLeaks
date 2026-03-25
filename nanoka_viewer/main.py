@@ -97,7 +97,7 @@ class NanokaViewer(ctk.CTk):
 
     def _create_game_section(self, game, title):
         section = ctk.CTkFrame(self.main_frame, fg_color="#1a1a1a")
-        section.pack(fill="x", pady=(0, 15))
+        section.pack(fill="x", pady=(0, 8))
 
         header = ctk.CTkFrame(section, fg_color="#252525")
         header.pack(fill="x", padx=5, pady=5)
@@ -116,20 +116,18 @@ class NanokaViewer(ctk.CTk):
         loading_label.pack(side="right", padx=10)
         self.game_data[game]["loading_label"] = loading_label
 
-        # Cards container - horizontal scrolling with frame
+        # Cards container - horizontal scrolling with reduced padding
         cards_container = ctk.CTkFrame(section, fg_color="#1a1a1a")
-        cards_container.pack(fill="x", padx=5, pady=(0, 5))
+        cards_container.pack(fill="x", padx=5, pady=(0, 4))
 
-        # Create a canvas with horizontal scrollbar
         canvas_frame = ctk.CTkFrame(cards_container, fg_color="#1a1a1a")
-        canvas_frame.pack(side="left", fill="x", expand=True)
+        canvas_frame.pack(fill="x", expand=True)
 
         canvas = ctk.CTkCanvas(
             canvas_frame,
             bg="#1a1a1a",
             highlightthickness=0,
-            height=340,
-            width=850,
+            height=260,
         )
         canvas.pack(side="top", fill="x")
 
@@ -143,20 +141,18 @@ class NanokaViewer(ctk.CTk):
         canvas.configure(xscrollcommand=h_scrollbar.set)
 
         card_frame = ctk.CTkFrame(canvas, fg_color="#1a1a1a")
-        card_window = canvas.create_window((0, 0), window=card_frame, anchor="nw")
+        canvas.create_window((0, 0), window=card_frame, anchor="nw")
 
         def update_scrollregion(event=None):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         card_frame.bind("<Configure>", update_scrollregion)
 
-        # Bind shift+scroll to horizontal scroll
         def on_shift_scroll(event):
-            if event.state & 0x1:  # Shift is pressed
+            if event.state & 0x1:
                 canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
                 return "break"
 
-        # Bind to canvas, card_frame, and section
         canvas.bind("<MouseWheel>", on_shift_scroll)
         card_frame.bind("<MouseWheel>", on_shift_scroll)
         section.bind("<MouseWheel>", on_shift_scroll)
@@ -191,7 +187,6 @@ class NanokaViewer(ctk.CTk):
         for game, info in self.game_data.items():
             chars = info["chars"]
             card_frame = info["card_frame"]
-            canvas = info.get("canvas")
 
             for widget in card_frame.winfo_children():
                 widget.destroy()
@@ -212,12 +207,11 @@ class NanokaViewer(ctk.CTk):
 
             for char_id, char_data in chars:
                 card = self._create_card(card_frame, game, char_id, char_data)
-                card.pack(side="left", padx=8, pady=8)
+                card.pack(side="left", padx=4, pady=4)
 
-                # Bind scroll to card
-                if canvas:
+                if info.get("canvas"):
 
-                    def make_handler(c=canvas):
+                    def make_handler(c=info["canvas"]):
                         def handler(event):
                             if event.state & 0x1:
                                 c.xview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -233,7 +227,7 @@ class NanokaViewer(ctk.CTk):
         )
 
     def _create_card(self, parent, game, char_id, char_data):
-        card = ctk.CTkFrame(parent, fg_color="#252525", width=260, height=300)
+        card = ctk.CTkFrame(parent, fg_color="#252525", width=180, height=240)
 
         name = get_name(game, char_data)
         rarity = get_rarity(game, char_data)
@@ -245,77 +239,86 @@ class NanokaViewer(ctk.CTk):
         element_img_url = get_element_image(game, char_data)
         specialty_img_url = get_specialty_image(game, char_data)
 
-        char_img = load_image(char_img_url, (100, 100))
-        element_img = load_image(element_img_url, (20, 20))
-        specialty_img = load_image(specialty_img_url, (20, 20))
+        char_img = load_image(char_img_url, (80, 80))
+        element_img = load_image(element_img_url, (18, 18))
+        specialty_img = load_image(specialty_img_url, (18, 18))
+
+        # Image container
+        img_container = ctk.CTkFrame(card, fg_color="transparent")
+        img_container.place(x=50, y=8)
 
         if char_img:
-            ctk.CTkLabel(card, image=char_img, text="", fg_color="#252525").pack(
-                pady=(10, 5)
-            )
-        else:
-            ctk.CTkLabel(card, text="[No Image]", height=100, fg_color="#252525").pack(
-                pady=(10, 5)
-            )
-
-        if not released:
             ctk.CTkLabel(
-                card,
-                text="UNRELEASED",
-                font=ctk.CTkFont(size=9, weight="bold"),
-                text_color="#FF6B6B",
-                fg_color="#252525",
-            ).pack(pady=(5, 0))
+                img_container, image=char_img, text="", fg_color="#252525"
+            ).pack()
+        else:
+            ctk.CTkLabel(
+                img_container, text="[No Img]", width=80, height=80, fg_color="#252525"
+            ).pack()
 
-        ctk.CTkLabel(
-            card,
-            text=name,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#252525",
-        ).pack(pady=(5, 0))
+        # Element and specialty below image
+        icons_frame = ctk.CTkFrame(img_container, fg_color="transparent")
+        icons_frame.pack(pady=(2, 0))
 
+        if element_img:
+            lbl = ctk.CTkLabel(
+                icons_frame, image=element_img, text="", fg_color="transparent"
+            )
+            lbl.image = element_img
+        else:
+            lbl = ctk.CTkLabel(
+                icons_frame,
+                text=element[:3],
+                font=ctk.CTkFont(size=9),
+                fg_color="transparent",
+            )
+        lbl.pack(side="left", padx=2)
+
+        if specialty_img:
+            lbl = ctk.CTkLabel(
+                icons_frame, image=specialty_img, text="", fg_color="transparent"
+            )
+            lbl.image = specialty_img
+            lbl.pack(side="left", padx=2)
+
+        # Rarity badge (top right)
         rarity_colors = {"S": "#FF6B6B", "5": "#FFD700", "4": "#9370DB", "A": "#FF6B6B"}
         color = rarity_colors.get(str(rarity), "#FFFFFF")
-
         ctk.CTkLabel(
             card,
             text=f"{rarity}★",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color,
             fg_color="#252525",
-        ).pack()
+        ).place(x=165, y=5, anchor="ne")
 
-        info_frame = ctk.CTkFrame(card, fg_color="transparent")
-        info_frame.pack(pady=5)
+        # Unreleased badge (top left)
+        if not released:
+            ctk.CTkLabel(
+                card,
+                text="NEW",
+                font=ctk.CTkFont(size=8, weight="bold"),
+                text_color="#FF6B6B",
+                fg_color="#252525",
+            ).place(x=5, y=5)
 
-        if element_img:
-            lbl = ctk.CTkLabel(
-                info_frame, image=element_img, text="", fg_color="transparent"
-            )
-            lbl.image = element_img
-        else:
-            lbl = ctk.CTkLabel(
-                info_frame,
-                text=element,
-                font=ctk.CTkFont(size=11),
-                fg_color="transparent",
-            )
-        lbl.pack(side="left", padx=8)
+        # Name (centered below image)
+        ctk.CTkLabel(
+            card,
+            text=name[:12] + ("..." if len(name) > 12 else ""),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#252525",
+        ).place(x=90, y=130, anchor="n")
 
-        if specialty_img:
-            lbl = ctk.CTkLabel(
-                info_frame, image=specialty_img, text="", fg_color="transparent"
-            )
-            lbl.image = specialty_img
-            lbl.pack(side="left", padx=8)
-
+        # View Page button
         ctk.CTkButton(
             card,
-            text="View Page",
+            text="View",
             command=lambda u=url: webbrowser.open(u),
-            width=100,
-            height=28,
-        ).pack(pady=5)
+            width=60,
+            height=20,
+            font=ctk.CTkFont(size=10),
+        ).place(x=90, y=155, anchor="n")
 
         return card
 
