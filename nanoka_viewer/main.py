@@ -136,14 +136,49 @@ class NanokaViewer(ctk.CTk):
         self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.game_data = {}
+        self._last_width = 0
+        self._last_height = 0
+        self._resize_job = None
 
         for game, info in GAMES.items():
             self.game_data[game] = {"chars": [], "loading": True}
             self._create_game_section(game, info["name"])
 
+        self.bind("<Configure>", self._on_resize)
+
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
+
+    def _on_resize(self, event):
+        if event.widget != self:
+            return
+
+        width = event.width
+        height = event.height
+
+        if width == self._last_width and height == self._last_height:
+            return
+
+        self._last_width = width
+        self._last_height = height
+
+        if self._resize_job:
+            self.after_cancel(self._resize_job)
+
+        self._resize_job = self.after(100, self._refresh_ui)
+
+    def _refresh_ui(self):
+        self._resize_job = None
+
+        self.main_frame.update_idletasks()
+
+        for game_data in self.game_data.values():
+            card_frame = game_data.get("card_frame")
+            if card_frame:
+                card_frame.update_idletasks()
+
+        self.update_idletasks()
 
     def _create_game_section(self, game, title):
         section = ctk.CTkFrame(self.main_frame, fg_color="#1a1a1a")
