@@ -20,12 +20,10 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QFrame,
-    QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize
-from PyQt6.QtGui import QPixmap, QImage, QFont, QColor, QPalette
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QImage
 
-# Set up logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -33,7 +31,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Image cache directory
 IMAGE_CACHE_DIR = Path.home() / ".cache" / "nanoka_leaks" / "images"
 IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +92,86 @@ def load_qt_image(url, size=(100, 100)):
         IMAGE_CACHE[url] = pixmap
         return pixmap
     return None
-    return None
+
+
+STYLESHEET = """
+QMainWindow, QWidget#centralWidget {
+    background: transparent;
+}
+
+QPushButton {
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    background: palette(button);
+    color: palette(button-text);
+    border: 1px solid palette(mid);
+}
+
+QPushButton:hover {
+    background: palette(light);
+}
+
+QPushButton:pressed {
+    background: palette(mid);
+}
+
+QPushButton#viewBtn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: palette(highlight);
+    color: palette(highlighted-text);
+    border: none;
+}
+
+QPushButton#viewBtn:hover {
+    background: palette(light);
+    color: palette(button-text);
+}
+
+QScrollArea {
+    border: none;
+    background: transparent;
+}
+
+QScrollBar:vertical {
+    width: 6px;
+    background: transparent;
+}
+QScrollBar::handle:vertical {
+    background: palette(mid);
+    border-radius: 3px;
+    min-height: 30px;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    height: 6px;
+    background: transparent;
+}
+QScrollBar::handle:horizontal {
+    background: palette(mid);
+    border-radius: 3px;
+    min-width: 30px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+
+QWidget#card {
+    border-radius: 10px;
+    background: palette(base);
+    border: 1px solid palette(mid);
+}
+
+QWidget#gameHeader {
+    border-radius: 8px;
+    background: palette(alternateBase);
+}
+"""
 
 
 class LoadThread(QThread):
@@ -121,22 +197,16 @@ class LoadThread(QThread):
         logger.info(f"All data loaded in {total_elapsed:.3f}s")
         self.load_finished.emit()
 
-class CardWidget(QFrame):
+
+class CardWidget(QWidget):
     def __init__(self, game, char_id, char_data, parent=None):
         super().__init__(parent)
+        self.setObjectName("card")
         self.setFixedSize(180, 220)
-        self.setStyleSheet(
-            """
-            CardWidget {
-                background-color: #252525;
-                border-radius: 8px;
-            }
-        """
-        )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
 
         name = get_name(game, char_data)
         rarity = get_rarity(game, char_data)
@@ -148,29 +218,14 @@ class CardWidget(QFrame):
         specialty_img_url = get_specialty_image(game, char_data)
 
         rarity_colors = {"S": "#FF6B6B", "5": "#FFD700", "4": "#9370DB", "A": "#FF6B6B"}
-        rarity_color = rarity_colors.get(str(rarity), "#FFFFFF")
-
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
+        rarity_color = rarity_colors.get(str(rarity), "palette(text)")
 
         rarity_label = QLabel(f"{rarity}\u2605")
-        # ADDED: background-color: transparent
         rarity_label.setStyleSheet(
-            f"color: {rarity_color}; font-weight: bold; font-size: 12px; background-color: transparent;"
+            f"color: {rarity_color}; font-weight: bold; font-size: 11px;"
         )
-        rarity_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
-        )
-        top_row.addWidget(rarity_label, stretch=1)
-        layout.addLayout(top_row)
-
-        img_container = QWidget()
-        # ADDED: transparent background for the container holding the images
-        img_container.setStyleSheet("background-color: transparent;")
-        img_layout = QVBoxLayout(img_container)
-        img_layout.setContentsMargins(0, 0, 0, 0)
-        img_layout.setSpacing(2)
-        img_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        rarity_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(rarity_label)
 
         char_img_label = QLabel()
         char_img_label.setFixedSize(80, 80)
@@ -178,30 +233,27 @@ class CardWidget(QFrame):
         char_pixmap = load_qt_image(char_img_url, (80, 80))
         if char_pixmap:
             char_img_label.setPixmap(char_pixmap)
-            # ADDED: transparent background
-            char_img_label.setStyleSheet("background-color: transparent;")
         else:
-            char_img_label.setText("[No Img]")
-            # ADDED: transparent background
-            char_img_label.setStyleSheet("color: #666; font-size: 10px; background-color: transparent;")
-        img_layout.addWidget(char_img_label, alignment=Qt.AlignmentFlag.AlignCenter)
+            char_img_label.setText("No Image")
+            char_img_label.setStyleSheet("color: palette(placeholderText);")
+        layout.addWidget(char_img_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        icons_layout = QHBoxLayout()
+        icons_widget = QWidget()
+        icons_layout = QHBoxLayout(icons_widget)
         icons_layout.setContentsMargins(0, 0, 0, 0)
-        icons_layout.setSpacing(4)
-        icons_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icons_layout.setSpacing(8)
+        icons_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         element_label = QLabel()
         element_label.setFixedSize(18, 18)
         element_pixmap = load_qt_image(element_img_url, (18, 18))
         if element_pixmap:
             element_label.setPixmap(element_pixmap)
-            # ADDED: transparent background
-            element_label.setStyleSheet("background-color: transparent;")
         else:
-            element_label.setText(element[:3] if element else "N/A")
-            # ADDED: transparent background
-            element_label.setStyleSheet("color: #888; font-size: 9px; background-color: transparent;")
+            element_label.setText(element[:3] if element else "?")
+            element_label.setStyleSheet(
+                "color: palette(placeholderText); font-size: 9px;"
+            )
         icons_layout.addWidget(element_label)
 
         specialty_label = QLabel()
@@ -209,71 +261,47 @@ class CardWidget(QFrame):
         specialty_pixmap = load_qt_image(specialty_img_url, (18, 18))
         if specialty_pixmap:
             specialty_label.setPixmap(specialty_pixmap)
-        # ADDED: transparent background
-        specialty_label.setStyleSheet("background-color: transparent;")
         icons_layout.addWidget(specialty_label)
 
-        img_layout.addLayout(icons_layout)
-        layout.addWidget(img_container, alignment=Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icons_widget)
 
-        display_name = name[:12] + ("..." if len(name) > 12 else "")
+        display_name = name[:14] + ("..." if len(name) > 14 else "")
         name_label = QLabel(display_name)
-        # ADDED: transparent background
-        name_label.setStyleSheet("color: white; font-weight: bold; font-size: 11px; background-color: transparent;")
-        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setStyleSheet("font-weight: 600; font-size: 12px;")
+        name_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(name_label)
 
         view_btn = QPushButton("View")
-        view_btn.setFixedSize(60, 22)
-        view_btn.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #1f6aa5;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #1a5a8a;
-            }
-        """
-        )
-        view_btn.clicked.connect(lambda: webbrowser.open(url))
-        layout.addWidget(view_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        view_btn.setObjectName("viewBtn")
+        view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        view_btn.clicked.connect(lambda checked=False, u=url: webbrowser.open(u))
+        layout.addWidget(view_btn)
 
         layout.addStretch()
 
-class GameSection(QFrame):
+
+class GameSection(QWidget):
     def __init__(self, game_name, parent=None):
         super().__init__(parent)
-        self.game_name = game_name
-
-        self.setStyleSheet("GameSection { background-color: #1a1a1a; }")
 
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 8, 0, 8)
+        main_layout.setSpacing(4)
 
-        header = QFrame()
-        # ADDED QFrame selector to safely scope the background color
-        header.setStyleSheet("QFrame { background-color: #252525; border-radius: 4px; }")
+        header = QWidget()
+        header.setObjectName("gameHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 8, 10, 8)
+        header_layout.setContentsMargins(16, 10, 16, 10)
 
         title_label = QLabel(game_name)
-        # ADDED: background-color: transparent
-        title_label.setStyleSheet("color: white; font-weight: bold; font-size: 16px; background-color: transparent;")
+        title_label.setStyleSheet("font-weight: 600; font-size: 15px;")
         header_layout.addWidget(title_label)
 
+        header_layout.addStretch()
+
         self.status_label = QLabel("Loading...")
-        # ADDED: background-color: transparent
-        self.status_label.setStyleSheet("color: #888; font-size: 12px; background-color: transparent;")
-        self.status_label.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        self.status_label.setStyleSheet(
+            "font-size: 12px; color: palette(placeholderText);"
         )
         header_layout.addWidget(self.status_label)
 
@@ -283,39 +311,15 @@ class GameSection(QFrame):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setFixedHeight(240)
-        scroll_area.setStyleSheet(
-            """
-            QScrollArea {
-                background-color: #1a1a1a;
-                border: none;
-            }
-            QScrollBar:horizontal {
-                background: #333333;
-                height: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #555555;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #666666;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0;
-            }
-        """
-        )
+        scroll_area.setFixedHeight(230)
 
-        self.cards_widget = QWidget()
-        self.cards_widget.setStyleSheet("background-color: #1a1a1a;")
-        self.cards_layout = QHBoxLayout(self.cards_widget)
-        self.cards_layout.setContentsMargins(5, 5, 5, 5)
+        self.cards_container = QWidget()
+        self.cards_layout = QHBoxLayout(self.cards_container)
+        self.cards_layout.setContentsMargins(4, 0, 4, 0)
         self.cards_layout.setSpacing(8)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        scroll_area.setWidget(self.cards_widget)
+        scroll_area.setWidget(self.cards_container)
         main_layout.addWidget(scroll_area)
 
     def clear_cards(self):
@@ -339,106 +343,63 @@ class NanokaViewer(QMainWindow):
         init_start = time.time()
 
         self.setWindowTitle("Nanoka Viewer")
-        self.setGeometry(100, 100, 950, 750)
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background-color: #1a1a1a;
-            }
-        """
-        )
+        self.setMinimumSize(800, 600)
+        self.resize(950, 750)
 
-        central_widget = QWidget()
-        central_widget.setStyleSheet("background-color: #1a1a1a;")
-        self.setCentralWidget(central_widget)
+        central = QWidget()
+        central.setObjectName("centralWidget")
+        self.setCentralWidget(central)
 
-        main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(12, 12, 12, 12)
+        root_layout.setSpacing(8)
 
-        header = QFrame()
-        header_layout = QHBoxLayout(header)
+        header_widget = QWidget()
+        header_layout = QHBoxLayout(header_widget)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
         title = QLabel("Nanoka Viewer")
-        title.setStyleSheet("color: white; font-weight: bold; font-size: 20px;")
+        title.setStyleSheet("font-weight: 600; font-size: 22px;")
         header_layout.addWidget(title)
 
         header_layout.addStretch()
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.status_label.setStyleSheet("color: palette(placeholderText);")
         header_layout.addWidget(self.status_label)
 
         self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFixedSize(80, 30)
-        self.refresh_btn.setStyleSheet(
-            """
-            QPushButton {
-                background-color: #1f6aa5;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #1a5a8a;
-            }
-            QPushButton:disabled {
-                background-color: #555;
-                color: #888;
-            }
-        """
-        )
+        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_data)
         header_layout.addWidget(self.refresh_btn)
 
-        main_layout.addWidget(header)
+        root_layout.addWidget(header_widget)
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet(
-            """
-            QScrollArea {
-                background-color: #1a1a1a;
-                border: none;
-            }
-            QScrollBar:vertical {
-                background: #333333;
-                width: 8px;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical {
-                background: #555555;
-                border-radius: 4px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #666666;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0;
-            }
-        """
-        )
 
         self.content_widget = QWidget()
-        self.content_widget.setStyleSheet("background-color: #1a1a1a;")
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(8)
+        self.content_layout.setSpacing(0)
         self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         scroll_area.setWidget(self.content_widget)
-        main_layout.addWidget(scroll_area)
+        root_layout.addWidget(scroll_area)
 
         self.game_sections = {}
-        for game, info in GAMES.items():
+        games_list = list(GAMES.items())
+        for i, (game, info) in enumerate(games_list):
             section = GameSection(info["name"])
             self.content_layout.addWidget(section)
             self.game_sections[game] = section
+
+            if i < len(games_list) - 1:
+                separator = QFrame()
+                separator.setFrameShape(QFrame.Shape.HLine)
+                separator.setFixedHeight(1)
+                separator.setStyleSheet("background: palette(mid); border: none;")
+                self.content_layout.addWidget(separator)
 
         self.load_thread = None
 
@@ -487,15 +448,8 @@ class NanokaViewer(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-
-    palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor("#1a1a1a"))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor("white"))
-    palette.setColor(QPalette.ColorRole.Base, QColor("#252525"))
-    palette.setColor(QPalette.ColorRole.Text, QColor("white"))
-    palette.setColor(QPalette.ColorRole.Button, QColor("#1f6aa5"))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor("white"))
-    app.setPalette(palette)
+    app.setStyle("Fusion")
+    app.setStyleSheet(STYLESHEET)
 
     window = NanokaViewer()
     window.show()
