@@ -1,4 +1,4 @@
-name: Build and Release Linux Binary
+name: Build and Release Binaries
 
 on:
   push:
@@ -7,20 +7,30 @@ on:
 
 jobs:
   build-and-publish:
-    name: Build and Publish Release
-    runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            binary_name: NanokaLeaks
+            setup_command: sudo apt-get update && sudo apt-get install -y gcc patchelf
+            extra_flags: ""
+          - os: windows-latest
+            binary_name: NanokaLeaks.exe
+            setup_command: echo "Windows runners already have MSVC compilers installed."
+            extra_flags: "--windows-disable-console"
+
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
     permissions:
-      contents: write 
+      contents: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Linux Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc patchelf
+      - name: Install OS Dependencies
+        run: ${{ matrix.setup_command }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -32,10 +42,18 @@ jobs:
         run: uv sync
 
       - name: Compile with Nuitka
-        run: uv run nuitka --standalone --onefile --enable-plugin=pyqt6 -o NanokaLeaks main.py
+        run: >
+          uv run nuitka
+          --standalone
+          --onefile
+          --enable-plugin=pyqt6
+          --assume-yes-for-downloads
+          ${{ matrix.extra_flags }}
+          -o ${{ matrix.binary_name }}
+          main.py
 
-      - name: Create GitHub Release and Upload Binary
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: NanokaLeaks
+          files: ${{ matrix.binary_name }}
           generate_release_notes: true
