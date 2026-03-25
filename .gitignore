@@ -3,11 +3,11 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+/main.dist
+/NanokaLeaks
 *.spec
 wheels/
 *.egg-info
 
 # Virtual environments
 .venv
-/main.dist
-/main.bin
