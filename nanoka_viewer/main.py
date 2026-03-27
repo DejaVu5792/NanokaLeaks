@@ -10,7 +10,7 @@ from io import BytesIO
 
 import requests
 from PIL import Image
-from PyQt6.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -21,8 +21,8 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QEvent
-from PyQt6.QtGui import QPixmap, QImage
+from PySide6.QtCore import Qt, QThread, Signal, QEvent
+from PySide6.QtGui import QPixmap, QImage
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
@@ -177,8 +177,8 @@ QWidget#gameHeader {
 
 
 class LoadThread(QThread):
-    game_loaded = pyqtSignal(str, list)
-    load_finished = pyqtSignal()
+    game_loaded = Signal(str, list)
+    load_finished = Signal()
 
     def run(self):
         total_start = time.time()

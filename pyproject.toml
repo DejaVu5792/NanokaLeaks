@@ -1,13 +1,13 @@
 [project]
 name = "nanokaleaks"
-version = "1.0.0"
+version = "2.0.0"
 description = "View newest characters from nanoka.cc"
 requires-python = ">=3.11"
 dependencies = [
     "customtkinter",
     "requests",
     "pillow",
-    "pyqt6>=6.10.2",
+    "pyside6>=6.11.0",
 ]
 
 [build-system]

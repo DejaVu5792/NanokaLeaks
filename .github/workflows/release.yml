@@ -46,7 +46,7 @@ jobs:
           uv run nuitka
           --standalone
           --onefile
-          --enable-plugin=pyqt6
+          --enable-plugin=pyside6
           --assume-yes-for-downloads
           ${{ matrix.extra_flags }}
           -o ${{ matrix.binary_name }}
