@@ -201,6 +201,22 @@ class LoadThread(QThread):
 
 
 class CardWidget(QWidget):
+    def _get_specialty_name(self, game, char_data):
+        if game == "zzz":
+            type_map = {
+                1: "Attack",
+                2: "Defense",
+                3: "Anomaly",
+                4: "Support",
+                5: "Star",
+            }
+            return type_map.get(char_data.get("type", 1), "Attack")
+        elif game == "hsr":
+            return char_data.get("baseType", "Unknown")
+        elif game == "gi":
+            return char_data.get("weapon", "Unknown")
+        return "Unknown"
+
     def __init__(self, game, char_id, char_data, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
@@ -232,6 +248,7 @@ class CardWidget(QWidget):
         char_img_label = QLabel()
         char_img_label.setFixedSize(80, 80)
         char_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        char_img_label.setToolTip(name)
         char_pixmap = load_qt_image(char_img_url, (80, 80))
         if char_pixmap:
             char_img_label.setPixmap(char_pixmap)
@@ -248,6 +265,7 @@ class CardWidget(QWidget):
 
         element_label = QLabel()
         element_label.setFixedSize(18, 18)
+        element_label.setToolTip(element if element else "Unknown Element")
         element_pixmap = load_qt_image(element_img_url, (18, 18))
         if element_pixmap:
             element_label.setPixmap(element_pixmap)
@@ -258,8 +276,10 @@ class CardWidget(QWidget):
             )
         icons_layout.addWidget(element_label)
 
+        specialty_type = self._get_specialty_name(game, char_data)
         specialty_label = QLabel()
         specialty_label.setFixedSize(18, 18)
+        specialty_label.setToolTip(specialty_type)
         specialty_pixmap = load_qt_image(specialty_img_url, (18, 18))
         if specialty_pixmap:
             specialty_label.setPixmap(specialty_pixmap)
