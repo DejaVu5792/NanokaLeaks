@@ -167,6 +167,8 @@ def parse_release(game, release_data):
     elif game == "hsr":
         try:
             ts = int(release_data)
+            # Convert from milliseconds to seconds
+            ts = ts / 1000
             if ts < 100000000:
                 return 0
             return ts
@@ -198,6 +200,55 @@ def get_newest_characters(game):
             if char_id_str in data:
                 result.append((char_id_str, data[char_id_str]))
 
+    return result
+
+
+def get_all_characters_with_new_status(game):
+    """
+    Get all characters for a game with their new status
+    Returns: List of tuples (char_id, char_data, is_new)
+    """
+    # Get manifest to know which characters are new
+    manifest = fetch_manifest()
+    new_ids_raw = manifest[game].get("new", {}).get("character", [])
+    new_ids = set(str(char_id) for char_id in new_ids_raw)
+    logger.info(f"New character IDs for {game}: {list(new_ids)} (raw: {new_ids_raw})")
+
+    # Get all character data
+    data = fetch_characters(game)
+
+    # Filter out Manekina and Manekin for GI (as requested)
+    if game == "gi":
+        # Remove Manekina variants (IDs starting with 10000118-)
+        # Remove Manekin variants (IDs starting with 10000117-)
+        original_count = len(data)
+        data = {
+            k: v
+            for k, v in data.items()
+            if not k.startswith("10000118-") and not k.startswith("10000117-")
+        }
+        filtered_count = len(data)
+        logger.info(
+            f"After filtering out Manekina/Manekin: {filtered_count} characters for GI "
+            f"(removed {original_count - filtered_count} characters)"
+        )
+
+    logger.info(f"Total characters for {game}: {len(data)}")
+    logger.info(f"Sample character IDs: {list(data.keys())[:5]}")
+
+    # Process all characters
+    result = []
+    new_count = 0
+    for char_id_str, char_data in data.items():
+        is_new = char_id_str in new_ids
+        if is_new:
+            new_count += 1
+            logger.info(
+                f"Found new character: {char_id_str} - {get_name(game, char_data)}"
+            )
+        result.append((char_id_str, char_data, is_new))
+
+    logger.info(f"Found {new_count} new characters out of {len(data)} total for {game}")
     return result
 
 

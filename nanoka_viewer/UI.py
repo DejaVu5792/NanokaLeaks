@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PySide6.QtCore import Qt, QThread, Signal, QEvent
+from PySide6.QtCore import Qt, QThread, Signal, QEvent, QTimer
 from PySide6.QtGui import QPixmap, QImage
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
@@ -43,6 +43,7 @@ if __name__ == "__main__":
 
 from nanoka_viewer.api import (
     get_newest_characters,
+    get_all_characters_with_new_status,
     get_character_url,
     get_rarity,
     get_element,
@@ -50,6 +51,7 @@ from nanoka_viewer.api import (
     get_character_image,
     get_element_image,
     get_specialty_image,
+    parse_release,
     GAMES,
 )
 
@@ -185,7 +187,61 @@ class LoadThread(QThread):
         for game in GAMES.keys():
             start = time.time()
             try:
-                chars = get_newest_characters(game)
+                chars = get_all_characters_with_new_status(game)
+
+                # Sort by release date (newest first), then by ID (newest first)
+                # Special handling:
+                # - NEW characters should always be first (leftmost)
+                # - GI Travelers (1970-01-01 or with PlayerGirl/PlayerBoy avatars): if not new -> treat as OLDEST
+                # - HSR Trailblazers (ID > 8000): if not new -> treat as OLDEST
+                def get_sort_key(c):
+                    char_id, char_data, is_new = c
+                    # Get release timestamp - pass the release field, not the whole char_data
+                    release_ts = parse_release(game, char_data.get("release"))
+
+                    # Check if this is a GI Traveler with PlayerGirl/PlayerBoy avatar
+                    is_traveler_avatar = False
+                    if game == "gi":
+                        icon = char_data.get("icon", "")
+                        if icon in [
+                            "UI_AvatarIcon_PlayerGirl",
+                            "UI_AvatarIcon_PlayerBoy",
+                        ]:
+                            is_traveler_avatar = True
+
+                    # Special handling for GI Travelers (1970-01-01 or with PlayerGirl/PlayerBoy avatars)
+                    if game == "gi" and (release_ts == 0 or is_traveler_avatar):
+                        # 1970 date or Traveler avatar: if it's new, treat as newest; if not new, treat as oldest
+                        sort_ts = float("inf") if is_new else float("-inf")
+                    # Special handling for HSR Trailblazers (ID > 8000)
+                    elif game == "hsr":
+                        # Check if this is a Trailblazer (ID > 8000)
+                        numeric_part = "".join(filter(str.isdigit, char_id))
+                        id_num = int(numeric_part) if numeric_part else 0
+                        if id_num > 8000 and not is_new:
+                            # Trailblazers that are NOT new should be treated as oldest
+                            sort_ts = float("-inf")
+                        else:
+                            # For all other HSR characters: use actual timestamp
+                            sort_ts = release_ts
+                    else:
+                        # For all other cases (ZZZ, and GI/HSr with valid non-special dates):
+                        # Higher timestamp = newer
+                        sort_ts = release_ts
+
+                    # Extract numeric part from ID for secondary sorting
+                    # For newest-first sorting: higher ID = newer
+                    numeric_part = "".join(filter(str.isdigit, char_id))
+                    id_num = int(numeric_part) if numeric_part else 0
+
+                    # Return tuple for sorting: (is_new, release_sort_value, id_number)
+                    # We want:
+                    # 1. NEW characters first (is_new = True first)
+                    # 2. Then by release date (newest first - higher sort_ts)
+                    # 3. Then by ID (newest first - higher id_num)
+                    return (is_new, sort_ts, id_num)
+
+                chars.sort(key=get_sort_key, reverse=True)
                 elapsed = time.time() - start
                 logger.info(
                     f"Loaded {len(chars)} characters for {game} in {elapsed:.3f}s"
@@ -217,7 +273,7 @@ class CardWidget(QWidget):
             return char_data.get("weapon", "Unknown")
         return "Unknown"
 
-    def __init__(self, game, char_id, char_data, parent=None):
+    def __init__(self, game, char_id, char_data, is_new=False, parent=None):
         super().__init__(parent)
         self.setObjectName("card")
         self.setFixedSize(180, 220)
@@ -301,6 +357,21 @@ class CardWidget(QWidget):
 
         layout.addStretch()
 
+        # Add NEW badge overlay if character is new (top-left corner)
+        if is_new:
+            new_label = QLabel("NEW", self)
+            new_label.setStyleSheet("""
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
+                border-radius: 4px;
+                padding: 1px 4px;
+                font-weight: bold;
+                font-size: 8px;
+            """)
+            # Position the badge at the top-left corner
+            new_label.move(4, 4)  # Small offset from edges
+            new_label.raise_()  # Ensure it's on top
+
 
 class GameSection(QWidget):
     def __init__(self, game_name, parent=None):
@@ -350,12 +421,18 @@ class GameSection(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-    def add_card(self, game, char_id, char_data):
-        card = CardWidget(game, char_id, char_data)
+    def add_card(self, game, char_id, char_data, is_new=False):
+        card = CardWidget(game, char_id, char_data, is_new)
         self.cards_layout.addWidget(card)
 
     def set_status(self, text):
         self.status_label.setText(text)
+
+    def set_progress(self, loaded, total):
+        if loaded < total:
+            self.status_label.setText(f"{loaded}/{total} loaded")
+        else:
+            self.status_label.setText(f"{total} total")
 
 
 class NanokaViewer(QMainWindow):
@@ -412,6 +489,8 @@ class NanokaViewer(QMainWindow):
         root_layout.addWidget(scroll_area)
 
         self.game_sections = {}
+        self._loading_chars = {}
+        self._loading_index = {}
         games_list = list(GAMES.items())
         for i, (game, info) in enumerate(games_list):
             section = GameSection(info["name"])
@@ -456,18 +535,53 @@ class NanokaViewer(QMainWindow):
             section.set_status("Failed to load characters")
             return
 
-        section.set_status(f"{len(chars)} newest")
+        # Store characters for progressive loading
+        self._loading_chars[game] = list(chars)
+        self._loading_index[game] = 0
 
-        card_start = time.time()
-        for char_id, char_data in chars:
-            section.add_card(game, char_id, char_data)
-        card_elapsed = time.time() - card_start
-        logger.info(f"Created {len(chars)} cards for {game} in {card_elapsed:.3f}s")
+        # Start progressive loading
+        section.set_status(f"Loading 0/{len(chars)}")
+        self._load_next_batch(game, chars)
 
     def on_load_finished(self):
         self.refresh_btn.setEnabled(True)
         self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")
+
+    def _load_next_batch(self, game, chars):
+        # Load cards in very small batches to keep UI responsive
+        batch_size = 1  # Load one card at a time
+        start_idx = self._loading_index[game]
+        end_idx = min(start_idx + batch_size, len(chars))
+
+        # Add cards for this batch
+        batch_chars = chars[start_idx:end_idx]
+        card_start = time.time()
+        for char_id, char_data, is_new in batch_chars:
+            char_name = get_name(game, char_data)
+            logger.info(f"Adding character: {char_name} (ID: {char_id}) for {game}")
+            self.game_sections[game].add_card(game, char_id, char_data, is_new)
+        card_elapsed = time.time() - card_start
+        logger.info(
+            f"Created {len(batch_chars)} cards for {game} in {card_elapsed:.3f}s"
+        )
+
+        # Update progress
+        self._loading_index[game] = end_idx
+        # Update status less frequently to reduce overhead
+        if end_idx % 10 == 0 or end_idx == len(chars):
+            self.game_sections[game].set_status(f"Loading {end_idx}/{len(chars)}")
+
+        # Continue loading if there are more cards with a small delay
+        if end_idx < len(chars):
+            # Use QTimer with a small delay to yield control back to the event loop
+            QTimer.singleShot(
+                50, lambda: self._load_next_batch(game, chars)
+            )  # 50ms delay
+        else:
+            # Loading complete
+            self.game_sections[game].set_status(f"{len(chars)} total")
+            logger.info(f"Finished loading all {len(chars)} characters for {game}")
 
     def changeEvent(self, event):
         if event.type() == PALETTE_CHANGE_EVENT and not self._updating_theme:
