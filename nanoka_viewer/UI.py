@@ -363,14 +363,18 @@ class CardWidget(QWidget):
             new_label.setStyleSheet("""
                 background-color: palette(highlight);
                 color: palette(highlighted-text);
-                border-radius: 4px;
-                padding: 1px 4px;
+                border-radius: 3px;
+                padding: 1px 3px;
                 font-weight: bold;
                 font-size: 8px;
             """)
+
+            # Force the label to wrap tightly around the text and padding
+            new_label.adjustSize()
+
             # Position the badge at the top-left corner
             new_label.move(4, 4)  # Small offset from edges
-            new_label.raise_()  # Ensure it's on top
+            new_label.raise_()    # Ensure it's on top
 
 
 class GameSection(QWidget):
