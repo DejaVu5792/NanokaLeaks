@@ -149,35 +149,28 @@ class NanokaViewer(QMainWindow):
 
     def _load_next_batch(self, game, chars):
         """Load the next batch of character cards."""
-        # Load cards in very small batches to keep UI responsive
-        batch_size = 1  # Load one card at a time
+        # Load cards in batches. Since image loading is async, we can load more at once.
+        batch_size = 10
         start_idx = self._loading_index[game]
         end_idx = min(start_idx + batch_size, len(chars))
 
         # Add cards for this batch
         batch_chars = chars[start_idx:end_idx]
-        card_start = time.time()
         for char_id, char_data, is_new in batch_chars:
-            char_name = get_name(game, char_data)
-            logger.info(f"Adding character: {char_name} (ID: {char_id}) for {game}")
             self.game_sections[game].add_card(game, char_id, char_data, is_new)
-        card_elapsed = time.time() - card_start
-        logger.info(
-            f"Created {len(batch_chars)} cards for {game} in {card_elapsed:.3f}s"
-        )
 
         # Update progress
         self._loading_index[game] = end_idx
         # Update status less frequently to reduce overhead
-        if end_idx % 10 == 0 or end_idx == len(chars):
+        if end_idx % 20 == 0 or end_idx == len(chars):
             self.game_sections[game].set_status(f"Loading {end_idx}/{len(chars)}")
 
-        # Continue loading if there are more cards with a small delay
+        # Continue loading if there are more cards with a minimal delay
         if end_idx < len(chars):
-            # Use QTimer with a small delay to yield control back to the event loop
+            # Use a very short delay to yield control back to the event loop
             QTimer.singleShot(
-                50, lambda: self._load_next_batch(game, chars)
-            )  # 50ms delay
+                5, lambda: self._load_next_batch(game, chars)
+            )  # 5ms delay
         else:
             # Loading complete
             self.game_sections[game].set_status(f"{len(chars)} total")

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from .image_loader import load_qt_image
+from .image_loader import request_image
 from ..api import (
     get_character_url,
     get_rarity,
@@ -72,17 +72,13 @@ class CardWidget(QWidget):
         rarity_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(rarity_label)
 
-        char_img_label = QLabel()
-        char_img_label.setFixedSize(80, 80)
-        char_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        char_img_label.setToolTip(name)
-        char_pixmap = load_qt_image(char_img_url, (80, 80))
-        if char_pixmap:
-            char_img_label.setPixmap(char_pixmap)
-        else:
-            char_img_label.setText("No Image")
-            char_img_label.setStyleSheet("color: palette(placeholderText);")
-        layout.addWidget(char_img_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.char_img_label = QLabel()
+        self.char_img_label.setFixedSize(80, 80)
+        self.char_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.char_img_label.setToolTip(name)
+        self.char_img_label.setText("...")
+        self.char_img_label.setStyleSheet("color: palette(placeholderText);")
+        layout.addWidget(self.char_img_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         icons_widget = QWidget()
         icons_layout = QHBoxLayout(icons_widget)
@@ -90,27 +86,24 @@ class CardWidget(QWidget):
         icons_layout.setSpacing(8)
         icons_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        element_label = QLabel()
-        element_label.setFixedSize(18, 18)
-        element_label.setToolTip(element if element else "Unknown Element")
-        element_pixmap = load_qt_image(element_img_url, (18, 18))
-        if element_pixmap:
-            element_label.setPixmap(element_pixmap)
-        else:
-            element_label.setText(element[:3] if element else "?")
-            element_label.setStyleSheet(
-                "color: palette(placeholderText); font-size: 9px;"
-            )
-        icons_layout.addWidget(element_label)
+        self.element_label = QLabel()
+        self.element_label.setFixedSize(18, 18)
+        self.element_label.setToolTip(element if element else "Unknown Element")
+        self.element_label.setText(element[:1] if element else "?")
+        self.element_label.setStyleSheet(
+            "color: palette(placeholderText); font-size: 9px;"
+        )
+        icons_layout.addWidget(self.element_label)
 
         specialty_type = self._get_specialty_name(game, char_data)
-        specialty_label = QLabel()
-        specialty_label.setFixedSize(18, 18)
-        specialty_label.setToolTip(specialty_type)
-        specialty_pixmap = load_qt_image(specialty_img_url, (18, 18))
-        if specialty_pixmap:
-            specialty_label.setPixmap(specialty_pixmap)
-        icons_layout.addWidget(specialty_label)
+        self.specialty_label = QLabel()
+        self.specialty_label.setFixedSize(18, 18)
+        self.specialty_label.setToolTip(specialty_type)
+        self.specialty_label.setText("?")
+        self.specialty_label.setStyleSheet(
+            "color: palette(placeholderText); font-size: 9px;"
+        )
+        icons_layout.addWidget(self.specialty_label)
 
         layout.addWidget(icons_widget)
 
@@ -139,10 +132,26 @@ class CardWidget(QWidget):
                 font-weight: bold;
                 font-size: 8px;
             """)
-
-            # Force the label to wrap tightly around the text and padding
             new_label.adjustSize()
+            new_label.move(4, 4)
+            new_label.raise_()
 
-            # Position the badge at the top-left corner
-            new_label.move(4, 4)  # Small offset from edges
-            new_label.raise_()  # Ensure it's on top
+        # Request images asynchronously
+        request_image(char_img_url, self._on_char_image_loaded, (80, 80))
+        request_image(element_img_url, self._on_element_image_loaded, (18, 18))
+        request_image(specialty_img_url, self._on_specialty_image_loaded, (18, 18))
+
+    def _on_char_image_loaded(self, pixmap):
+        """Update character image when loaded."""
+        self.char_img_label.setText("")
+        self.char_img_label.setPixmap(pixmap)
+
+    def _on_element_image_loaded(self, pixmap):
+        """Update element image when loaded."""
+        self.element_label.setText("")
+        self.element_label.setPixmap(pixmap)
+
+    def _on_specialty_image_loaded(self, pixmap):
+        """Update specialty image when loaded."""
+        self.specialty_label.setText("")
+        self.specialty_label.setPixmap(pixmap)
