@@ -172,7 +172,7 @@ def get_all_characters_with_new_status(game):
         if is_new:
             new_count += 1
             logger.info(
-                f"Found new character: {char_id_str} - {get_name(game, char_data)}"
+                f"Found new character: {char_id_str} - {get_name(game, char_data, char_id_str)}"
             )
         result.append((char_id_str, char_data, is_new))
 

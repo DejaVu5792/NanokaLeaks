@@ -55,7 +55,7 @@ def get_element(game, char_data):
     return "Physical"
 
 
-def get_name(game, char_data):
+def get_name(game, char_data, char_id=None):
     """Get the display name for a character."""
     if game == "zzz":
         name = char_data.get("en", char_data.get("code", ""))
@@ -63,7 +63,24 @@ def get_name(game, char_data):
             return char_data.get("code", name).replace("_En", "")
         return name
     elif game == "hsr":
-        return char_data.get("en", "Unknown")
+        name = char_data.get("en", "Unknown")
+        
+        # Check if it's the Trailblazer
+        is_trailblazer = False
+        if char_id:
+            numeric_part = "".join(filter(str.isdigit, str(char_id)))
+            id_num = int(numeric_part) if numeric_part else 0
+            if id_num >= 8000:
+                is_trailblazer = True
+                
+        icon = char_data.get("icon", "").lower()
+        if icon == "playergirl" or icon == "playerboy":
+            is_trailblazer = True
+            
+        if is_trailblazer:
+            return "Trailblazer"
+            
+        return name
     elif game == "gi":
         return char_data.get("en", "Unknown")
     return "Unknown"

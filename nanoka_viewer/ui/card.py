@@ -53,7 +53,7 @@ class CardWidget(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(6)
 
-        name = get_name(game, char_data)
+        name = get_name(game, char_data, char_id)
         rarity = get_rarity(game, char_data)
         element = get_element(game, char_data)
         url = get_character_url(game, char_id, char_data)
