@@ -57,3 +57,81 @@ jobs:
         with:
           files: ${{ matrix.binary_name }}
           generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
+
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install OS Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Install Project Dependencies
+        run: |
+          uv sync
+          uv pip install pip
+
+      - name: Install Android Build Dependencies
+        run: uv pip install jinja2 pkginfo tqdm
+
+      - name: Download Android Wheels
+        run: |
+          VERSION=$(uv pip show PySide6 | grep Version | cut -d' ' -f2)
+          echo "Detected PySide6 version: $VERSION"
+          
+          BASE_URL="https://download.qt.io/official_releases/QtForPython"
+          
+          # Find the matching PySide6 and Shiboken6 wheels (case-insensitive)
+          WHEEL_PYSIDE=$(curl -s "${BASE_URL}/pyside6/" | grep -oEi "PySide6-${VERSION}[^\"]*android_aarch64.whl" | head -n1)
+          WHEEL_SHIBOKEN=$(curl -s "${BASE_URL}/shiboken6/" | grep -oEi "shiboken6-${VERSION}[^\"]*android_aarch64.whl" | head -n1)
+          
+          if [ -z "$WHEEL_PYSIDE" ] || [ -z "$WHEEL_SHIBOKEN" ]; then
+            echo "Error: Could not find matching Android wheels for version $VERSION on the Qt server."
+            echo "Check: ${BASE_URL}/pyside6/"
+            exit 1
+          fi
+          
+          echo "Downloading $WHEEL_PYSIDE..."
+          wget "${BASE_URL}/pyside6/${WHEEL_PYSIDE}"
+          echo "Downloading $WHEEL_SHIBOKEN..."
+          wget "${BASE_URL}/shiboken6/${WHEEL_SHIBOKEN}"
+          
+          ls -lh *.whl
+          
+          # Pass absolute paths to ensure the tool can find them
+          echo "WHEEL_PYSIDE_PATH=$(pwd)/$WHEEL_PYSIDE" >> $GITHUB_ENV
+          echo "WHEEL_SHIBOKEN_PATH=$(pwd)/$WHEEL_SHIBOKEN" >> $GITHUB_ENV
+
+      - name: Deploy with pyside6-android-deploy
+        run: |
+          uv run pyside6-android-deploy \
+            --name "NanokaLeaks" \
+            --wheel-pyside "${{ env.WHEEL_PYSIDE_PATH }}" \
+            --wheel-shiboken "${{ env.WHEEL_SHIBOKEN_PATH }}"
+
+      - name: Upload APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.apk
+            **/*.apk
+
