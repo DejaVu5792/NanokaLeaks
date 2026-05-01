@@ -21,7 +21,8 @@ from PySide6.QtCore import QEvent, QTimer, Qt
 from .styles import STYLESHEET
 from .section import GameSection
 from .loader import LoadThread
-from ..api import get_name, GAMES
+from .image_loader import clear_image_cache
+from ..api import get_name, GAMES, clear_cache
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class NanokaViewer(QMainWindow):
         self.status_label.setStyleSheet("color: palette(placeholderText);")
         header_layout.addWidget(self.status_label)
 
-        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn = QPushButton("Reload")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_data)
         header_layout.addWidget(self.refresh_btn)
@@ -102,14 +103,41 @@ class NanokaViewer(QMainWindow):
 
         self.load_thread = None
 
+        # Timer to check for Shift key to update Refresh button text
+        self.modifier_timer = QTimer(self)
+        self.modifier_timer.timeout.connect(self._update_refresh_button_text)
+        self.modifier_timer.start(100)
+
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
 
+    def _update_refresh_button_text(self):
+        """Update the refresh button text based on keyboard modifiers."""
+        if not self.refresh_btn.isEnabled():
+            return
+
+        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            if self.refresh_btn.text() != "Clear Cache and Reload":
+                self.refresh_btn.setText("Clear Cache and Reload")
+                self.refresh_btn.setToolTip("Clears manifest, character data, and image cache")
+        else:
+            if self.refresh_btn.text() != "Reload":
+                self.refresh_btn.setText("Reload")
+                self.refresh_btn.setToolTip("")
+
     def load_data(self):
         """Start loading character data."""
+        # Check if Shift is held to clear cache
+        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            logger.info("Shift key held during reload, clearing all caches...")
+            self.status_label.setText("Clearing cache...")
+            clear_cache()
+            clear_image_cache()
+
         logger.info("Starting data load...")
         self.refresh_btn.setEnabled(False)
+        self.refresh_btn.setText("Reload")  # Reset text while loading
         self.status_label.setText("Loading...")
 
         for section in self.game_sections.values():

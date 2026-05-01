@@ -149,3 +149,22 @@ def load_qt_image(url, size=(100, 100)):
         IMAGE_CACHE[url] = pixmap
         return pixmap
     return None
+
+
+def clear_image_cache():
+    """Clear image cache (memory and disk)."""
+    global IMAGE_CACHE
+    IMAGE_CACHE = {}
+    try:
+        import shutil
+
+        if IMAGE_CACHE_DIR.exists():
+            # Use shutil.rmtree to clear everything in the directory
+            for item in IMAGE_CACHE_DIR.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+            logger.info("Image disk cache cleared")
+    except Exception as e:
+        logger.error(f"Error clearing image disk cache: {e}")

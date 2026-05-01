@@ -6,7 +6,7 @@ import logging
 import requests
 
 from .constants import BASE_URL, CHARACTER_CACHE_DIR
-from .manifest import fetch_manifest, get_latest_version
+from .manifest import fetch_manifest, get_latest_version, clear_manifest_cache
 from .models import get_name
 
 logger = logging.getLogger(__name__)
@@ -181,20 +181,15 @@ def get_all_characters_with_new_status(game):
 
 
 def clear_cache():
-    """Clear all cached data."""
-    global _manifest_cache, _manifest_cache_time, _character_cache
-    _manifest_cache = None
-    _manifest_cache_time = 0
+    """Clear all cached data (manifest and characters)."""
+    global _character_cache
     _character_cache = {}
+    clear_manifest_cache()
 
-    # Clear disk cache
+    # Clear character disk cache
     try:
-        from .constants import MANIFEST_CACHE_FILE
-
-        if MANIFEST_CACHE_FILE.exists():
-            MANIFEST_CACHE_FILE.unlink()
-        # Clear character cache files
         for cache_file in CHARACTER_CACHE_DIR.glob("*.json"):
             cache_file.unlink()
+        logger.info("Character disk cache cleared")
     except Exception as e:
-        logger.error(f"Error clearing disk cache: {e}")
+        logger.error(f"Error clearing character disk cache: {e}")

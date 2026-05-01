@@ -73,3 +73,16 @@ def get_latest_version(game):
     """Get the latest version for a game from the manifest."""
     manifest = fetch_manifest()
     return manifest[game]["latest"]
+
+
+def clear_manifest_cache():
+    """Clear manifest cache (memory and disk)."""
+    global _manifest_cache, _manifest_cache_time
+    _manifest_cache = None
+    _manifest_cache_time = 0
+    try:
+        if MANIFEST_CACHE_FILE.exists():
+            MANIFEST_CACHE_FILE.unlink()
+            logger.info("Manifest disk cache cleared")
+    except Exception as e:
+        logger.error(f"Error clearing manifest disk cache: {e}")
