@@ -9,6 +9,10 @@ def get_character_url(game, char_id, char_data):
         return f"https://hsr.nanoka.cc/character/{char_id}"
     elif game == "gi":
         return f"https://gi.nanoka.cc/character/{char_id}"
+    elif game == "ww":
+        return f"https://ww.nanoka.cc/character/{char_id}"
+    elif game == "nte":
+        return f"https://nte.nanoka.cc/character/{char_id}"
     return ""
 
 
@@ -24,6 +28,12 @@ def get_rarity(game, char_data):
         if "ORANGE" in str(rank):
             return "5"
         return "4"
+    elif game == "ww":
+        rank = char_data.get("rank", 4)
+        return str(rank)
+    elif game == "nte":
+        rarity = char_data.get("rarity", 4)
+        return str(rarity)
     return "?"
 
 
@@ -52,6 +62,18 @@ def get_element(game, char_data):
             "Geo": "Geo",
         }
         return elements.get(char_data.get("element", "Physical"), "Physical")
+    elif game == "ww":
+        elements = {
+            1: "Glacio",
+            2: "Fusion",
+            3: "Electro",
+            4: "Aero",
+            5: "Spectro",
+            6: "Havoc",
+        }
+        return elements.get(char_data.get("element", 1), "Glacio")
+    elif game == "nte":
+        return char_data.get("element", "Unknown")
     return "Physical"
 
 
@@ -83,6 +105,8 @@ def get_name(game, char_data, char_id=None):
         return name
     elif game == "gi":
         return char_data.get("en", "Unknown")
+    elif game == "ww" or game == "nte":
+        return char_data.get("en", "Unknown")
     return "Unknown"
 
 
@@ -97,6 +121,18 @@ def get_character_image(game, char_data, char_id=None):
         return f"https://static.nanoka.cc/assets/hsr/avatarshopicon/{icon}.webp"
     elif game == "gi":
         return f"https://static.nanoka.cc/assets/gi/{icon}.webp"
+    elif game == "ww":
+        if icon.startswith("http://") or icon.startswith("https://"):
+            return icon
+        path = icon.replace("/Game/Aki/UI/", "")
+        path = path.split(".")[0]
+        return f"https://static.nanoka.cc/assets/ww/{path}.webp"
+    elif game == "nte":
+        if icon.startswith("http://") or icon.startswith("https://"):
+            return icon
+        if not icon.startswith("/"):
+            icon = "/" + icon
+        return f"https://static.nanoka.cc/assets/nte{icon}.webp"
     return ""
 
 
@@ -116,6 +152,26 @@ def get_element_image(game, char_data):
         return f"https://static.nanoka.cc/assets/hsr/element/{element.lower()}.webp"
     elif game == "gi":
         return f"https://static.nanoka.cc/assets/gi/{element}.webp"
+    elif game == "ww":
+        element_id = char_data.get("element", 1)
+        element_map = {
+            1: "Ice",
+            2: "Fire",
+            3: "Thunder",
+            4: "Wind",
+            5: "Light",
+            6: "Dark",
+        }
+        element_name = element_map.get(element_id, "Ice")
+        return f"https://static.nanoka.cc/assets/ww/UIResources/Common/Image/IconElementAttri/T_IconElementAttri{element_name}.webp"
+    elif game == "nte":
+        icon_path = char_data.get("element_icon", "")
+        if icon_path.startswith("http://") or icon_path.startswith("https://"):
+            return icon_path
+        icon_path = icon_path.replace("biandui/YH_UI_zudui_shaixuan", "Equip/UI_YH_kongmuicon4_")
+        if not icon_path.startswith("/"):
+            icon_path = "/" + icon_path
+        return f"https://static.nanoka.cc/assets/nte{icon_path}.webp"
     return ""
 
 
@@ -137,4 +193,7 @@ def get_specialty_image(game, char_data):
     elif game == "gi":
         weapon = char_data.get("weapon", "")
         return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
+    elif game == "ww":
+        weapon = char_data.get("weapon", 1)
+        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{weapon}.webp"
     return ""

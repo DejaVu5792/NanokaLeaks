@@ -27,4 +27,6 @@ GAMES = {
     "zzz": {"name": "Zenless Zone Zero", "url": "https://zzz.nanoka.cc"},
     "hsr": {"name": "Honkai: Star Rail", "url": "https://hsr.nanoka.cc"},
     "gi": {"name": "Genshin Impact", "url": "https://gi.nanoka.cc"},
+    "ww": {"name": "Wuthering Waves", "url": "https://ww.nanoka.cc"},
+    "nte": {"name": "Neverness to Everness", "url": "https://nte.nanoka.cc"},
 }

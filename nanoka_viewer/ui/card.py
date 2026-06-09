@@ -53,6 +53,18 @@ class CardWidget(QWidget):
             return path_map.get(base_type, base_type)
         elif game == "gi":
             return char_data.get("weapon", "Unknown")
+        elif game == "ww":
+            weapon_map = {
+                1: "Broadblade",
+                2: "Sword",
+                3: "Pistol",
+                4: "Gauntlets",
+                5: "Rectifier",
+            }
+            weapon_id = char_data.get("weapon", 1)
+            return weapon_map.get(weapon_id, "Unknown")
+        elif game == "nte":
+            return "None"
         return "Unknown"
 
     def __init__(self, game, char_id, char_data, is_new=False, parent=None):
@@ -109,13 +121,16 @@ class CardWidget(QWidget):
 
         specialty_type = self._get_specialty_name(game, char_data)
         self.specialty_label = QLabel()
-        self.specialty_label.setFixedSize(18, 18)
-        self.specialty_label.setToolTip(specialty_type)
-        self.specialty_label.setText("?")
-        self.specialty_label.setStyleSheet(
-            "color: palette(placeholderText); font-size: 9px;"
-        )
-        icons_layout.addWidget(self.specialty_label)
+        if specialty_img_url:
+            self.specialty_label.setFixedSize(18, 18)
+            self.specialty_label.setToolTip(specialty_type)
+            self.specialty_label.setText("?")
+            self.specialty_label.setStyleSheet(
+                "color: palette(placeholderText); font-size: 9px;"
+            )
+            icons_layout.addWidget(self.specialty_label)
+        else:
+            self.specialty_label.setVisible(False)
 
         layout.addWidget(icons_widget)
 
@@ -151,7 +166,8 @@ class CardWidget(QWidget):
         # Request images asynchronously
         request_image(char_img_url, self._on_char_image_loaded, (80, 80))
         request_image(element_img_url, self._on_element_image_loaded, (18, 18))
-        request_image(specialty_img_url, self._on_specialty_image_loaded, (18, 18))
+        if specialty_img_url:
+            request_image(specialty_img_url, self._on_specialty_image_loaded, (18, 18))
 
     def _on_char_image_loaded(self, pixmap):
         """Update character image when loaded."""
