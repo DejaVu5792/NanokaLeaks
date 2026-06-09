@@ -38,7 +38,19 @@ class CardWidget(QWidget):
             }
             return type_map.get(char_data.get("type", 1), "Attack")
         elif game == "hsr":
-            return char_data.get("baseType", "Unknown")
+            path_map = {
+                "Warrior": "Destruction",
+                "Rogue": "The Hunt",
+                "Mage": "Erudition",
+                "Knight": "Preservation",
+                "Warlock": "Nihility",
+                "Priest": "Abundance",
+                "Shaman": "Harmony",
+                "Memory": "Remembrance",
+                "Elation": "Elation",
+            }
+            base_type = char_data.get("baseType", "Unknown")
+            return path_map.get(base_type, base_type)
         elif game == "gi":
             return char_data.get("weapon", "Unknown")
         return "Unknown"
