@@ -22,7 +22,7 @@ from .styles import STYLESHEET
 from .section import GameSection
 from .loader import LoadThread
 from .image_loader import clear_image_cache
-from ..api import get_name, GAMES, clear_cache
+from ..api import get_name, GAMES, clear_cache, fetch_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,16 @@ class NanokaViewer(QMainWindow):
         if not chars:
             section.set_status("Failed to load characters")
             return
+
+        # Update version badges in the game section header
+        try:
+            manifest = fetch_manifest()
+            game_info = manifest.get(game, {})
+            live_version = game_info.get("live")
+            latest_version = game_info.get("latest")
+            section.set_versions(live_version, latest_version)
+        except Exception as e:
+            logger.error(f"Error fetching version for {game}: {e}")
 
         # Store characters for progressive loading
         self._loading_chars[game] = list(chars)
