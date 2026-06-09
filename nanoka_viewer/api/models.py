@@ -194,6 +194,14 @@ def get_specialty_image(game, char_data):
         weapon = char_data.get("weapon", "")
         return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
     elif game == "ww":
-        weapon = char_data.get("weapon", 1)
-        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{weapon}.webp"
+        weapon_map = {
+            1: "Sword",
+            2: "Knife",
+            3: "Gun",
+            4: "Fist",
+            5: "Magic",
+        }
+        weapon_id = char_data.get("weapon", 1)
+        weapon_name = weapon_map.get(weapon_id, "Sword")
+        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{weapon_name}.webp"
     return ""
