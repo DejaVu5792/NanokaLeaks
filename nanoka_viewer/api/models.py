@@ -45,8 +45,8 @@ def get_element(game, char_data):
             201: "Fire",
             202: "Ice",
             203: "Electric",
-            204: "Ether",
-            205: "Physical",
+            204: "Wind",
+            205: "Ether",
         }
         return elements.get(char_data.get("element", 200), "Physical")
     elif game == "hsr":
@@ -145,7 +145,8 @@ def get_element_image(game, char_data):
             "Fire": "Fire",
             "Ice": "Ice",
             "Electric": "Electric",
-            "Ether": "Anomaly",
+            "Wind": "Wind",
+            "Ether": "Ether",
         }
         return f"https://static.nanoka.cc/assets/zzz/Icon{element_map.get(element, 'Physical')}.webp"
     elif game == "hsr":
@@ -180,10 +181,11 @@ def get_specialty_image(game, char_data):
     if game == "zzz":
         type_map = {
             1: "Attack",
-            2: "Defense",
+            2: "Stun",
             3: "Anomaly",
             4: "Support",
-            5: "Star",
+            5: "Defense",
+            6: "Rupture",
         }
         specialty = type_map.get(char_data.get("type", 1), "Attack")
         return f"https://static.nanoka.cc/assets/zzz/Icon{specialty}.webp"

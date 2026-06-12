@@ -31,10 +31,11 @@ class CardWidget(QWidget):
         if game == "zzz":
             type_map = {
                 1: "Attack",
-                2: "Defense",
+                2: "Stun",
                 3: "Anomaly",
                 4: "Support",
-                5: "Star",
+                5: "Defense",
+                6: "Rupture",
             }
             return type_map.get(char_data.get("type", 1), "Attack")
         elif game == "hsr":
