@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PySide6.QtCore import QEvent, QTimer, Qt
+from PySide6.QtCore import QEvent, QTimer, Qt, QObject
 
 from .styles import STYLESHEET
 from .section import GameSection
@@ -27,6 +27,33 @@ from ..api import get_name, GAMES, clear_cache, fetch_manifest
 logger = logging.getLogger(__name__)
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
+
+
+class ShiftEventFilter(QObject):
+    """Event filter to capture Shift key events globally in the application."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Shift:
+                if not event.isAutoRepeat():
+                    self.window._shift_held = True
+                    self.window._update_refresh_button_text()
+        elif event.type() == QEvent.Type.KeyRelease:
+            if event.key() == Qt.Key.Key_Shift:
+                if not event.isAutoRepeat():
+                    self.window._shift_held = False
+                    self.window._update_refresh_button_text()
+        elif event.type() in (QEvent.Type.WindowDeactivate, QEvent.Type.FocusOut):
+            self.window._shift_held = False
+            self.window._update_refresh_button_text()
+        elif event.type() in (QEvent.Type.WindowActivate, QEvent.Type.FocusIn):
+            self.window._shift_held = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
+            self.window._update_refresh_button_text()
+        return super().eventFilter(obj, event)
 
 
 class NanokaViewer(QMainWindow):
@@ -103,10 +130,11 @@ class NanokaViewer(QMainWindow):
 
         self.load_thread = None
 
-        # Timer to check for Shift key to update Refresh button text
-        self.modifier_timer = QTimer(self)
-        self.modifier_timer.timeout.connect(self._update_refresh_button_text)
-        self.modifier_timer.start(100)
+        self._shift_held = False
+
+        # Install global event filter to capture Shift key events instantly
+        self.shift_filter = ShiftEventFilter(self)
+        QApplication.instance().installEventFilter(self.shift_filter)
 
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
@@ -117,7 +145,7 @@ class NanokaViewer(QMainWindow):
         if not self.refresh_btn.isEnabled():
             return
 
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+        if self._shift_held:
             if self.refresh_btn.text() != "Clear Cache and Reload":
                 self.refresh_btn.setText("Clear Cache and Reload")
                 self.refresh_btn.setToolTip("Clears manifest, character data, and image cache")
@@ -129,7 +157,7 @@ class NanokaViewer(QMainWindow):
     def load_data(self):
         """Start loading character data."""
         # Check if Shift is held to clear cache
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+        if self._shift_held or (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier):
             logger.info("Shift key held during reload, clearing all caches...")
             self.status_label.setText("Clearing cache...")
             clear_cache()
@@ -221,6 +249,7 @@ class NanokaViewer(QMainWindow):
             self.setStyleSheet(STYLESHEET)
             self._updating_theme = False
         super().changeEvent(event)
+
 
 
 def main():
