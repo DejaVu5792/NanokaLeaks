@@ -12,6 +12,44 @@ from PySide6.QtCore import Qt, QEvent
 from .card import CardWidget
 
 
+class HorizontalScrollArea(QScrollArea):
+    """Scroll area that propagates vertical wheel scrolling to its parent."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.horizontalScrollBar().installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if obj == self.horizontalScrollBar() and event.type() == QEvent.Type.Wheel:
+            # If there is vertical scrolling, redirect to self.wheelEvent
+            if event.angleDelta().y() != 0:
+                self.wheelEvent(event)
+                return True
+        return super().eventFilter(obj, event)
+
+    def wheelEvent(self, event):
+        # If there is vertical scrolling and Shift is pressed, scroll horizontally
+        if event.angleDelta().y() != 0 and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            num_degrees = event.angleDelta().y() / 8
+            num_steps = num_degrees / 15
+            
+            step_size = self.horizontalScrollBar().singleStep()
+            if step_size <= 0:
+                step_size = 20
+                
+            scroll_amount = int(num_steps * step_size * 3) # scroll 3 steps per notch
+            new_val = self.horizontalScrollBar().value() - scroll_amount
+            new_val = max(self.horizontalScrollBar().minimum(), min(new_val, self.horizontalScrollBar().maximum()))
+            self.horizontalScrollBar().setValue(new_val)
+            event.accept()
+        # If there is vertical scrolling and Shift is not pressed, ignore it
+        # so it propagates to the parent vertical scroll area.
+        elif event.angleDelta().y() != 0 and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            event.ignore()
+        else:
+            super().wheelEvent(event)
+
+
 class GameSection(QWidget):
     """Widget for displaying a section of characters for a single game."""
 
@@ -50,7 +88,7 @@ class GameSection(QWidget):
 
         main_layout.addWidget(header)
 
-        scroll_area = QScrollArea()
+        scroll_area = HorizontalScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
