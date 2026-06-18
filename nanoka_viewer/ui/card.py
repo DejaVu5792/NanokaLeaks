@@ -112,23 +112,21 @@ class CardWidget(QWidget):
         icons_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self.element_label = QLabel()
-        self.element_label.setFixedSize(18, 18)
+        self.element_label.setObjectName("elementIcon")
+        self.element_label.setFixedSize(20, 20)
+        self.element_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.element_label.setToolTip(element if element else "Unknown Element")
         self.element_label.setText(element[:1] if element else "?")
-        self.element_label.setStyleSheet(
-            "color: palette(placeholderText); font-size: 9px;"
-        )
         icons_layout.addWidget(self.element_label)
 
         specialty_type = self._get_specialty_name(game, char_data)
         self.specialty_label = QLabel()
+        self.specialty_label.setObjectName("specialtyIcon")
         if specialty_img_url:
-            self.specialty_label.setFixedSize(18, 18)
+            self.specialty_label.setFixedSize(20, 20)
+            self.specialty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.specialty_label.setToolTip(specialty_type)
             self.specialty_label.setText("?")
-            self.specialty_label.setStyleSheet(
-                "color: palette(placeholderText); font-size: 9px;"
-            )
             icons_layout.addWidget(self.specialty_label)
         else:
             self.specialty_label.setVisible(False)

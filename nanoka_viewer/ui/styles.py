@@ -2,7 +2,7 @@
 
 STYLESHEET = """
 QMainWindow, QWidget#centralWidget {
-    background: transparent;
+    background: palette(window);
 }
 
 QPushButton {
@@ -76,5 +76,13 @@ QWidget#card {
 QWidget#gameHeader {
     border-radius: 8px;
     background: palette(alternateBase);
+}
+
+QLabel#elementIcon, QLabel#specialtyIcon {
+    border: 1px solid #444444;
+    border-radius: 10px;
+    background: #2A2A2A;
+    color: palette(placeholderText);
+    font-size: 9px;
 }
 """
