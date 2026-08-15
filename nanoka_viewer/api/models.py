@@ -105,7 +105,13 @@ def get_name(game, char_data, char_id=None):
         return name
     elif game == "gi":
         return char_data.get("en", "Unknown")
-    elif game == "ww" or game == "nte":
+    elif game == "nte":
+        for field in ("en", "zh", "ja", "ko", "code", "id"):
+            name = char_data.get(field)
+            if name:
+                return name
+        return "Unknown"
+    elif game == "ww":
         return char_data.get("en", "Unknown")
     return "Unknown"
 
