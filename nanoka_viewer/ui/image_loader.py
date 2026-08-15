@@ -4,13 +4,11 @@ import hashlib
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
 from pathlib import Path
 
 import requests
-from PIL import Image
-from PySide6.QtCore import QObject, Signal, QCoreApplication
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import QObject, Signal, QCoreApplication, Qt, QSize, QBuffer, QIODevice
+from PySide6.QtGui import QPixmap, QImage, QImageReader
 
 logger = logging.getLogger(__name__)
 
@@ -48,34 +46,38 @@ def load_qt_image_sync(url, size=(100, 100)):
     url_hash = hashlib.md5(url.encode()).hexdigest()
     cache_file = IMAGE_CACHE_DIR / f"{url_hash}.png"
 
-    img = None
+    data = None
     if cache_file.exists():
         try:
-            img = Image.open(cache_file).convert("RGBA")
+            data = cache_file.read_bytes()
         except Exception as e:
-            logger.error(f"Failed to load cached image {cache_file}: {e}")
+            logger.error(f"Failed to read cached image {cache_file}: {e}")
 
-    if img is None:
+    if data is None:
         try:
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
-                img = Image.open(BytesIO(response.content)).convert("RGBA")
+                data = response.content
                 try:
-                    img.save(cache_file, "PNG")
+                    cache_file.write_bytes(data)
                 except Exception as e:
                     logger.error(f"Failed to save image to cache: {e}")
         except Exception as e:
             logger.error(f"Failed to load image {url}: {e}")
             return None
 
-    if img:
-        img = img.resize(size, Image.Resampling.LANCZOS)
-        # Create QImage which is thread-safe
-        data = img.tobytes("raw", "RGBA")
-        qimg = QImage(data, img.width, img.height, QImage.Format.Format_RGBA8888)
-        # Return a copy to ensure memory safety across threads
-        return qimg.copy()
-    return None
+    qimg = None
+    if data is not None:
+        buf = QBuffer()
+        buf.setData(data)
+        buf.open(QIODevice.OpenModeFlag.ReadOnly)
+        reader = QImageReader(buf)
+        reader.setAutoTransform(True)
+        reader.setScaledSize(QSize(size[0], size[1]))
+        qimg = reader.read()
+    if qimg is None:
+        logger.error(f"Failed to decode image {url}")
+    return qimg
 
 
 def _background_load(url, size):
