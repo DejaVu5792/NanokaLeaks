@@ -252,14 +252,54 @@ class NanokaViewer(QMainWindow):
 
 
 
-def main():
+def main(argv=None):
     """Main entry point for the application."""
-    app = QApplication(sys.argv)
+    import argparse
+    import cProfile
+    import pstats
+    from datetime import datetime
+
+    parser = argparse.ArgumentParser(prog="NanokaLeaks", description="Nanoka Viewer")
+    parser.add_argument(
+        "--profiler",
+        action="store_true",
+        help="Profile the application with cProfile and print the results",
+    )
+    parser.add_argument(
+        "--profiler-output",
+        metavar="FILE",
+        help="Where to save the cProfile stats (default: nanoka_profile.prof)",
+    )
+    args, remaining = parser.parse_known_args(argv)
+
+    if args.profiler:
+        profile_output = args.profiler_output or "nanoka_profile.prof"
+        logger.info(f"Profiling enabled, saving stats to {profile_output}")
+        profiler = cProfile.Profile()
+        profiler.enable()
+
+        try:
+            return _run_app(remaining)
+        finally:
+            profiler.disable()
+            profiler.dump_stats(profile_output)
+            stats = pstats.Stats(profiler)
+            stats.sort_stats("cumulative")
+            print("\n=== Profile results (top 40 by cumulative time) ===")
+            stats.print_stats(40)
+            logger.info(f"Profile stats saved to {profile_output}")
+    else:
+        return _run_app(remaining)
+
+
+def _run_app(argv):
+    """Create and run the QApplication."""
+    app = QApplication(argv if argv else sys.argv)
     app.setStyle("Fusion")
 
     window = NanokaViewer()
     window.show()
-    sys.exit(app.exec())
+    return app.exec()
 
 
 if __name__ == "__main__":
