@@ -1,5 +1,7 @@
 """Character card widget for displaying character information."""
 
+import webbrowser
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -158,13 +160,16 @@ class CardWidget(QWidget):
         browser_btn.setObjectName("iconBtn")
         browser_btn.setFixedSize(28, 28)
         browser_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        browser_btn.setToolTip("Double-click to open in app browser")
-        browser_btn.setAccessibleName("Open in app browser")
+        browser_btn.setToolTip(
+            "Open in default browser (double-click for in-app browser)"
+        )
+        browser_btn.setAccessibleName("Open in default browser")
         apply_icon_or_text(
             browser_btn,
-            ("internet-web-browser", "web-browser", "applications-internet"),
-            "\U0001f310",
+            ("external-link-symbolic", "external-link", "document-open-remote"),
+            "\u2197",
         )
+        browser_btn.single_activated.connect(lambda u=url: self._open_external_url(u))
         browser_btn.activated.connect(lambda u=url: self._open_url(u))
         actions.addWidget(browser_btn)
 
@@ -198,6 +203,11 @@ class CardWidget(QWidget):
         from .details import open_details
 
         open_details(self.game, self.char_id, self.char_data, self.window())
+
+    def _open_external_url(self, url):
+        """Open a character page in the system default browser."""
+        if url:
+            webbrowser.open(url)
 
     def _open_url(self, url):
         """Open a character page in the embedded browser popup."""

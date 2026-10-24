@@ -1,20 +1,21 @@
-"""Icon button that opens on a double click and pulses on the first click."""
+"""Icon button that distinguishes single and double clicks."""
 
 from PySide6.QtCore import QEasingCurve, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QPainter, QPalette, QPen
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton
 
 
 class PulseButton(QPushButton):
-    """Push button that requires a double click to emit *activated*.
+    """Push button with separate single-click and double-click actions.
 
-    The first click starts a short radar-like pulse around the button so it is
-    clear that a second click is needed.
+    The first click starts a short radar-like pulse and a timer. If no second
+    click follows within the system double-click interval, *single_activated*
+    is emitted. A second click within that window emits *activated* instead.
     """
 
     activated = Signal()
+    single_activated = Signal()
 
-    DOUBLE_CLICK_MS = 500
     PULSE_MS = 450
 
     def __init__(self, parent=None):
@@ -25,8 +26,8 @@ class PulseButton(QPushButton):
 
         self._reset_timer = QTimer(self)
         self._reset_timer.setSingleShot(True)
-        self._reset_timer.setInterval(self.DOUBLE_CLICK_MS)
-        self._reset_timer.timeout.connect(self._reset_clicks)
+        self._reset_timer.setInterval(QApplication.doubleClickInterval())
+        self._reset_timer.timeout.connect(self._on_single_click)
 
         self._pulse_anim = QVariantAnimation(self)
         self._pulse_anim.setStartValue(0.0)
@@ -51,12 +52,18 @@ class PulseButton(QPushButton):
         self._reset_timer.start()
         self.update()
 
+    def _on_single_click(self):
+        """Emit the single-click action once the double-click window expires."""
+        self._reset_clicks()
+        self.single_activated.emit()
+
     def _on_pulse_value(self, value):
         self._pulse = value
         self.update()
 
     def _reset_clicks(self):
         """Forget the pending click and remove the pulse."""
+        self._reset_timer.stop()
         self._click_count = 0
         self._pulse_anim.stop()
         self._pulse = None
