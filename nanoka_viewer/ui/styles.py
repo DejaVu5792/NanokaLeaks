@@ -119,14 +119,6 @@ QFrame#detailsHeader {
     border-top-right-radius: 10px;
 }
 
-QLabel#detailsHint {
-    color: palette(placeholderText);
-    font-size: 11px;
-    padding: 2px 8px;
-    border: 1px solid palette(mid);
-    border-radius: 8px;
-}
-
 QWidget#detailsBody {
     background: palette(base);
 }
@@ -145,8 +137,10 @@ QFrame#detailArtFrame {
 }
 
 QLabel#detailArt {
+    color: palette(placeholderText);
     background: transparent;
     border: none;
+    font-size: 11px;
 }
 
 QLabel#detailArtPlaceholder {

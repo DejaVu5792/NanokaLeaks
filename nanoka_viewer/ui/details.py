@@ -25,6 +25,7 @@ from ..api.details import (
     DetailUnavailable,
     ExtraSection,
     SkillDetail,
+    load_character_art,
     load_character_detail,
 )
 
@@ -50,6 +51,24 @@ class _DetailLoadThread(QThread):
         except Exception:
             logger.exception("Failed to load character details")
             self.failed.emit("Could not load character details. Please try again.")
+
+
+class _ArtLoadThread(QThread):
+    """Fetch character art separately from the text payload."""
+
+    loaded = Signal(object)
+    failed = Signal()
+
+    def __init__(self, url: str, parent=None):
+        super().__init__(parent)
+        self._url = url
+
+    def run(self):
+        data = load_character_art(self._url)
+        if data:
+            self.loaded.emit(data)
+        else:
+            self.failed.emit()
 
 
 class _ArtLabel(QLabel):
@@ -129,6 +148,8 @@ class CharacterDetailsPopup(QWidget):
         self._host = host
         self._request_id = 0
         self._thread: _DetailLoadThread | None = None
+        self._art_thread: _ArtLoadThread | None = None
+        self._art_label: _ArtLabel | None = None
         self._game = ""
         self._char_id = ""
 
@@ -149,9 +170,6 @@ class CharacterDetailsPopup(QWidget):
         header_layout.setContentsMargins(16, 10, 12, 10)
         header_layout.setSpacing(10)
 
-        self.hint_label = QLabel("F2P max")
-        self.hint_label.setObjectName("detailsHint")
-        header_layout.addWidget(self.hint_label)
         header_layout.addStretch(1)
 
         close_btn = QPushButton("Close")
@@ -206,7 +224,6 @@ class CharacterDetailsPopup(QWidget):
         self._request_id += 1
         request_id = self._request_id
 
-        self.hint_label.setText("F2P max")
         self._clear_content()
         self._show_loading()
         self._update_geometry()
@@ -235,10 +252,50 @@ class CharacterDetailsPopup(QWidget):
     def _on_loaded(self, request_id: int, detail: CharacterDetail):
         if request_id != self._request_id or not self.isVisible():
             return
-        self.hint_label.setText(f"F2P max · {detail.level_label}")
         self._clear_content()
         self._build_content(detail)
         self.scroll.verticalScrollBar().setValue(0)
+        if detail.art_url:
+            self._start_art_load(request_id, detail.art_url)
+        else:
+            self._set_art_message("Art unavailable")
+
+    def _start_art_load(self, request_id: int, art_url: str):
+        thread = _ArtLoadThread(art_url, self)
+        thread.loaded.connect(
+            lambda data: self._on_art_loaded(request_id, data)
+        )
+        thread.failed.connect(lambda: self._on_art_failed(request_id))
+        thread.finished.connect(lambda t=thread: self._on_art_thread_finished(t))
+        self._art_thread = thread
+        thread.start()
+
+    def _on_art_thread_finished(self, thread: _ArtLoadThread):
+        if self._art_thread is thread:
+            self._art_thread = None
+        thread.deleteLater()
+
+    def _on_art_loaded(self, request_id: int, data: bytes):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        if self._art_label is None:
+            return
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(data):
+            self._set_art_message("Art unavailable")
+            return
+        self._art_label.setText("")
+        self._art_label.set_source(pixmap)
+
+    def _on_art_failed(self, request_id: int):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        self._set_art_message("Art unavailable")
+
+    def _set_art_message(self, message: str):
+        if self._art_label is not None:
+            self._art_label.clear()
+            self._art_label.setText(message)
 
     def _on_failed(self, request_id: int, message: str):
         if request_id != self._request_id or not self.isVisible():
@@ -273,6 +330,7 @@ class CharacterDetailsPopup(QWidget):
         self.content_layout.addStretch(1)
 
     def _clear_content(self):
+        self._art_label = None
         for layout in (self.art_layout, self.content_layout):
             while layout.count():
                 item = layout.takeAt(0)
@@ -373,15 +431,8 @@ class CharacterDetailsPopup(QWidget):
 
         art = _ArtLabel()
         art.setObjectName("detailArt")
-        has_art = False
-        if detail.art_bytes:
-            pixmap = QPixmap()
-            if pixmap.loadFromData(detail.art_bytes):
-                art.set_source(pixmap)
-                has_art = True
-        if not has_art:
-            art.setText("Art unavailable")
-            art.setObjectName("detailArtPlaceholder")
+        art.setText("Loading art...")
+        self._art_label = art
         grid.addWidget(art, 0, 0)
 
         overlay = QFrame()
@@ -424,7 +475,7 @@ class CharacterDetailsPopup(QWidget):
         return card
 
     def _build_stats_card(self, detail: CharacterDetail) -> QFrame:
-        card, layout = self._make_card(f"F2P Max Stats · {detail.level_label}")
+        card, layout = self._make_card(f"Stats · {detail.level_label}")
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(18)
@@ -551,7 +602,6 @@ class CharacterDetailsPopup(QWidget):
         """Hide the popup, drop loaded data, and return focus to the window."""
         self._request_id += 1
         self._clear_content()
-        self.hint_label.setText("F2P max")
         self._game = ""
         self._char_id = ""
         self.hide()

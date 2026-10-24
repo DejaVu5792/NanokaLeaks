@@ -12,7 +12,6 @@ from __future__ import annotations
 import html
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -88,7 +87,6 @@ class CharacterDetail:
     skills: list[SkillDetail] = field(default_factory=list)
     extras: list[ExtraSection] = field(default_factory=list)
     art_url: str = ""
-    art_bytes: bytes | None = None
     source_url: str = ""
 
 
@@ -122,6 +120,11 @@ def _get_bytes(url: str) -> bytes | None:
     except Exception as exc:  # noqa: BLE001 - art is optional
         logger.warning("Could not fetch character art %s: %s", url, exc)
         return None
+
+
+def load_character_art(url: str) -> bytes | None:
+    """Fetch character art separately so text never waits for the image."""
+    return _get_bytes(url)
 
 
 def _latest_version(game: str) -> str:
@@ -170,16 +173,9 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
     except requests.RequestException as exc:
         raise DetailUnavailable("Could not reach nanoka.cc. Check your connection.") from exc
 
-    art_url = _art_url(game, char_id, raw)
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        art_future = executor.submit(_get_bytes, art_url)
-        metadata_future = executor.submit(_fetch_metadata, game, version, raw)
-        art_bytes = art_future.result()
-        metadata = metadata_future.result()
-
+    metadata = _fetch_metadata(game, version, raw)
     detail = _normalize(game, char_id, raw, metadata)
-    detail.art_url = art_url
-    detail.art_bytes = art_bytes
+    detail.art_url = _art_url(game, char_id, raw)
     detail.source_url = get_character_url(game, char_id, raw)
     return detail
 
