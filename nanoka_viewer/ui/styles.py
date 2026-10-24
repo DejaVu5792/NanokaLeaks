@@ -36,6 +36,22 @@ QPushButton#viewBtn:hover {
     color: palette(button-text);
 }
 
+QPushButton#iconBtn {
+    padding: 0px;
+    border-radius: 4px;
+    background: palette(button);
+    color: palette(button-text);
+    border: 1px solid palette(mid);
+}
+
+QPushButton#iconBtn:hover {
+    background: palette(light);
+}
+
+QPushButton#iconBtn:pressed {
+    background: palette(mid);
+}
+
 QScrollArea {
     border: none;
     background: transparent;

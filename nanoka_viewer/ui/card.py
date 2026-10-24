@@ -1,24 +1,28 @@
 """Character card widget for displaying character information."""
 
+import webbrowser
+
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Qt
 
-from .image_loader import request_image
 from ..api import (
-    get_character_url,
-    get_rarity,
-    get_element,
-    get_name,
     get_character_image,
+    get_character_url,
+    get_element,
     get_element_image,
+    get_name,
+    get_rarity,
     get_specialty_image,
 )
+from .icons import apply_icon_or_text
+from .image_loader import request_image
+from .pulse_button import PulseButton
 
 
 class CardWidget(QWidget):
@@ -137,11 +141,33 @@ class CardWidget(QWidget):
         name_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(name_label)
 
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(4)
+
         view_btn = QPushButton("View")
         view_btn.setObjectName("viewBtn")
+        view_btn.setFixedHeight(28)
         view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        view_btn.clicked.connect(lambda checked=False, u=url: self._open_url(u))
-        layout.addWidget(view_btn)
+        view_btn.setToolTip("Open on nanoka.cc")
+        view_btn.clicked.connect(lambda checked=False, u=url: webbrowser.open(u))
+        actions.addWidget(view_btn, 1)
+
+        browser_btn = PulseButton()
+        browser_btn.setObjectName("iconBtn")
+        browser_btn.setFixedSize(28, 28)
+        browser_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        browser_btn.setToolTip("Double-click to open in app browser")
+        browser_btn.setAccessibleName("Open in app browser")
+        apply_icon_or_text(
+            browser_btn,
+            ("internet-web-browser", "web-browser", "applications-internet"),
+            "\U0001f310",
+        )
+        browser_btn.activated.connect(lambda u=url: self._open_url(u))
+        actions.addWidget(browser_btn)
+
+        layout.addLayout(actions)
 
         layout.addStretch()
 

@@ -1,5 +1,7 @@
 """Embedded in-window browser popup for viewing character pages."""
 
+import webbrowser
+
 from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWebEngineCore import QWebEngineSettings
@@ -15,6 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from .icons import apply_icon_or_text
 
 
 class _BrowserView(QWebEngineView):
@@ -80,6 +84,21 @@ class BrowserPopup(QWidget):
         close_btn = QPushButton("Close")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close_popup)
+
+        self.open_external_btn = QPushButton()
+        self.open_external_btn.setObjectName("iconBtn")
+        self.open_external_btn.setFixedSize(26, 26)
+        self.open_external_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_external_btn.setToolTip("Open in default browser")
+        self.open_external_btn.setAccessibleName("Open in default browser")
+        apply_icon_or_text(
+            self.open_external_btn,
+            ("external-link-symbolic", "external-link", "document-open-remote"),
+            "\u2197",
+        )
+        self.open_external_btn.clicked.connect(self._open_external)
+
+        header_layout.addWidget(self.open_external_btn)
         header_layout.addWidget(close_btn)
 
         panel_layout.addWidget(header)
@@ -158,6 +177,12 @@ class BrowserPopup(QWidget):
         self.view.stop()
         self.hide()
         self._host.setFocus()
+
+    def _open_external(self):
+        """Open the currently displayed page in the system browser."""
+        url = self.view.url().toString()
+        if url and url != "about:blank":
+            webbrowser.open(url)
 
     def eventFilter(self, obj, event):
         """Keep the overlay sized to its host window."""
