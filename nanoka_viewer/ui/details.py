@@ -1,0 +1,592 @@
+"""Native in-window character details view."""
+
+from __future__ import annotations
+
+import logging
+
+from PySide6.QtCore import QEvent, Qt, QThread, Signal
+from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
+from PySide6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..api.details import (
+    CharacterDetail,
+    DetailUnavailable,
+    ExtraSection,
+    SkillDetail,
+    load_character_detail,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class _DetailLoadThread(QThread):
+    """Fetch a character detail payload without blocking the UI."""
+
+    loaded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, game: str, char_id: str, parent=None):
+        super().__init__(parent)
+        self._game = game
+        self._char_id = char_id
+
+    def run(self):
+        try:
+            self.loaded.emit(load_character_detail(self._game, self._char_id))
+        except DetailUnavailable as exc:
+            self.failed.emit(str(exc))
+        except Exception:
+            logger.exception("Failed to load character details")
+            self.failed.emit("Could not load character details. Please try again.")
+
+
+class _ArtLabel(QLabel):
+    """Artwork label that keeps the image fitted while its column resizes."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._source: QPixmap | None = None
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self.setMinimumSize(1, 1)
+
+    def set_source(self, pixmap: QPixmap):
+        """Set the source artwork and fit it to the current label size."""
+        self._source = pixmap
+        self._rescale()
+
+    def _rescale(self):
+        if self._source is None or self._source.isNull():
+            return
+        target = self.size()
+        if target.width() <= 0 or target.height() <= 0:
+            return
+        self.setPixmap(
+            self._source.scaled(
+                target,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._rescale()
+
+
+class _CollapsibleSection(QWidget):
+    """A disclosure section that is collapsed by default."""
+
+    def __init__(self, title: str, body: QWidget, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.button = QToolButton()
+        self.button.setObjectName("detailDisclosure")
+        self.button.setText(title.replace("&", "&&"))
+        self.button.setToolTip(title)
+        self.button.setCheckable(True)
+        self.button.setChecked(False)
+        self.button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.button.setArrowType(Qt.ArrowType.RightArrow)
+        self.button.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+        )
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.clicked.connect(self._on_toggled)
+        layout.addWidget(self.button)
+
+        self.body = body
+        self.body.setVisible(False)
+        layout.addWidget(self.body)
+
+    def _on_toggled(self, checked: bool):
+        self.body.setVisible(checked)
+        self.button.setArrowType(
+            Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow
+        )
+
+
+class CharacterDetailsPopup(QWidget):
+    """Lightbox-style native character details overlay."""
+
+    def __init__(self, host):
+        super().__init__(host)
+        self._host = host
+        self._request_id = 0
+        self._thread: _DetailLoadThread | None = None
+        self._game = ""
+        self._char_id = ""
+
+        self.setObjectName("detailsOverlay")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.hide()
+
+        self.panel = QFrame(self)
+        self.panel.setObjectName("detailsPanel")
+        panel_layout = QVBoxLayout(self.panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+
+        header = QFrame()
+        header.setObjectName("detailsHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 10, 12, 10)
+        header_layout.setSpacing(10)
+
+        self.hint_label = QLabel("F2P max")
+        self.hint_label.setObjectName("detailsHint")
+        header_layout.addWidget(self.hint_label)
+        header_layout.addStretch(1)
+
+        close_btn = QPushButton("Close")
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(self.close_popup)
+        header_layout.addWidget(close_btn)
+
+        panel_layout.addWidget(header)
+
+        self.body = QWidget()
+        self.body.setObjectName("detailsBody")
+        body_layout = QHBoxLayout(self.body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        self.art_column = QFrame()
+        self.art_column.setObjectName("detailsArtColumn")
+        self.art_column.setFixedWidth(240)
+        self.art_column.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
+        )
+        self.art_layout = QVBoxLayout(self.art_column)
+        self.art_layout.setContentsMargins(0, 0, 0, 0)
+        self.art_layout.setSpacing(0)
+        body_layout.addWidget(self.art_column, 0)
+
+        self.scroll = QScrollArea()
+        self.scroll.setObjectName("detailsScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        self.content = QWidget()
+        self.content.setObjectName("detailsContent")
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(16, 16, 16, 16)
+        self.content_layout.setSpacing(12)
+        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.scroll.setWidget(self.content)
+        body_layout.addWidget(self.scroll, 1)
+
+        panel_layout.addWidget(self.body, 1)
+
+        self._esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        self._esc_shortcut.activated.connect(self.close_popup)
+
+        self._host.installEventFilter(self)
+
+    def open_character(self, game: str, char_id: str):
+        """Show the popup and fetch *char_id*'s details from nanoka.cc."""
+        self._game = game
+        self._char_id = char_id
+        self._request_id += 1
+        request_id = self._request_id
+
+        self.hint_label.setText("F2P max")
+        self._clear_content()
+        self._show_loading()
+        self._update_geometry()
+        self.show()
+        self.raise_()
+        self.panel.raise_()
+        self.scroll.verticalScrollBar().setValue(0)
+        self.setFocus()
+        self._start_load(request_id)
+
+    def _start_load(self, request_id: int):
+        thread = _DetailLoadThread(self._game, self._char_id, self)
+        thread.loaded.connect(
+            lambda detail: self._on_loaded(request_id, detail)
+        )
+        thread.failed.connect(lambda message: self._on_failed(request_id, message))
+        thread.finished.connect(lambda t=thread: self._on_thread_finished(t))
+        self._thread = thread
+        thread.start()
+
+    def _on_thread_finished(self, thread: _DetailLoadThread):
+        if self._thread is thread:
+            self._thread = None
+        thread.deleteLater()
+
+    def _on_loaded(self, request_id: int, detail: CharacterDetail):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        self.hint_label.setText(f"F2P max · {detail.level_label}")
+        self._clear_content()
+        self._build_content(detail)
+        self.scroll.verticalScrollBar().setValue(0)
+
+    def _on_failed(self, request_id: int, message: str):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        self._clear_content()
+        self.art_layout.addWidget(self._build_art_placeholder("Art unavailable"), 1)
+
+        card, layout = self._make_card("Could not load details")
+        label = self._label(message, "detailMuted")
+        layout.addWidget(label)
+
+        retry = QPushButton("Retry")
+        retry.setCursor(Qt.CursorShape.PointingHandCursor)
+        retry.clicked.connect(self._retry)
+        layout.addWidget(retry, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.content_layout.addWidget(card)
+        self.content_layout.addStretch(1)
+
+    def _retry(self):
+        self._request_id += 1
+        request_id = self._request_id
+        self._clear_content()
+        self._show_loading()
+        self._start_load(request_id)
+
+    def _show_loading(self):
+        self.art_layout.addWidget(self._build_art_placeholder("Loading art..."), 1)
+        card, layout = self._make_card()
+        loading = self._label("Loading fresh details from nanoka.cc...", "detailMuted")
+        layout.addWidget(loading)
+        self.content_layout.addWidget(card)
+        self.content_layout.addStretch(1)
+
+    def _clear_content(self):
+        for layout in (self.art_layout, self.content_layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.setParent(None)
+                    widget.deleteLater()
+
+    def _make_card(self, title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("detailCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        if title:
+            heading = QLabel(title)
+            heading.setObjectName("detailSectionTitle")
+            heading.setTextFormat(Qt.TextFormat.PlainText)
+            layout.addWidget(heading)
+        return card, layout
+
+    def _label(
+        self,
+        text: str,
+        object_name: str = "",
+        *,
+        rich: bool = False,
+        wrap: bool = True,
+    ) -> QLabel:
+        label = QLabel(text)
+        if object_name:
+            label.setObjectName(object_name)
+        label.setWordWrap(wrap)
+        label.setTextFormat(
+            Qt.TextFormat.RichText if rich else Qt.TextFormat.PlainText
+        )
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        return label
+
+    def _build_content(self, detail: CharacterDetail):
+        self.art_layout.addWidget(self._build_art_panel(detail), 1)
+        if detail.build:
+            self.content_layout.addWidget(self._build_build_card(detail))
+        overview = self._build_overview_card(detail)
+        if overview is not None:
+            self.content_layout.addWidget(overview)
+        if detail.stats:
+            self.content_layout.addWidget(self._build_stats_card(detail))
+        if detail.skills:
+            self.content_layout.addWidget(self._build_skills_card(detail))
+        if detail.extras:
+            self.content_layout.addWidget(self._build_extras_card(detail))
+        self.content_layout.addStretch(1)
+
+    def _build_build_card(self, detail: CharacterDetail) -> QFrame:
+        card, layout = self._make_card("Recommended Build")
+        note = self._label("Suggested by nanoka.cc", "detailMuted")
+        layout.addWidget(note)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(10)
+        for index, section in enumerate(detail.build):
+            block = QWidget()
+            block_layout = QVBoxLayout(block)
+            block_layout.setContentsMargins(0, 0, 0, 0)
+            block_layout.setSpacing(4)
+
+            heading = QLabel(section.title)
+            heading.setObjectName("detailSubheading")
+            heading.setTextFormat(Qt.TextFormat.PlainText)
+            block_layout.addWidget(heading)
+            for item in section.items:
+                block_layout.addWidget(self._label(f"• {item}", "detailBuildItem"))
+            grid.addWidget(block, index // 2, index % 2, Qt.AlignmentFlag.AlignTop)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
+        return card
+
+    def _build_art_placeholder(self, text: str) -> QLabel:
+        placeholder = QLabel(text)
+        placeholder.setObjectName("detailArtPlaceholder")
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        placeholder.setWordWrap(True)
+        placeholder.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        return placeholder
+
+    def _build_art_panel(self, detail: CharacterDetail) -> QWidget:
+        frame = QFrame()
+        frame.setObjectName("detailArtFrame")
+        grid = QGridLayout(frame)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(0)
+
+        art = _ArtLabel()
+        art.setObjectName("detailArt")
+        has_art = False
+        if detail.art_bytes:
+            pixmap = QPixmap()
+            if pixmap.loadFromData(detail.art_bytes):
+                art.set_source(pixmap)
+                has_art = True
+        if not has_art:
+            art.setText("Art unavailable")
+            art.setObjectName("detailArtPlaceholder")
+        grid.addWidget(art, 0, 0)
+
+        overlay = QFrame()
+        overlay.setObjectName("detailArtOverlay")
+        overlay_layout = QVBoxLayout(overlay)
+        overlay_layout.setContentsMargins(14, 14, 14, 14)
+        overlay_layout.setSpacing(5)
+
+        name = QLabel(detail.name)
+        name.setObjectName("detailArtName")
+        name.setTextFormat(Qt.TextFormat.PlainText)
+        name.setWordWrap(True)
+        overlay_layout.addWidget(name)
+
+        meta = " · ".join(detail.badges)
+        if meta:
+            meta_label = QLabel(meta)
+            meta_label.setObjectName("detailArtMeta")
+            meta_label.setTextFormat(Qt.TextFormat.PlainText)
+            meta_label.setWordWrap(True)
+            overlay_layout.addWidget(meta_label)
+        overlay_layout.addStretch(1)
+        grid.addWidget(overlay, 0, 0)
+        return frame
+
+    def _build_overview_card(self, detail: CharacterDetail) -> QFrame | None:
+        subtitle = " · ".join(
+            part
+            for part in detail.subtitle.split(" · ")
+            if part and part not in detail.badges
+        )
+        if not (subtitle or detail.overview):
+            return None
+
+        card, layout = self._make_card("Overview")
+        if subtitle:
+            layout.addWidget(self._label(subtitle, "detailMuted", rich=True))
+        if detail.overview:
+            layout.addWidget(self._label(detail.overview, "detailOverview", rich=True))
+        return card
+
+    def _build_stats_card(self, detail: CharacterDetail) -> QFrame:
+        card, layout = self._make_card(f"F2P Max Stats · {detail.level_label}")
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(8)
+
+        for index, (label, value) in enumerate(detail.stats):
+            row = index // 2
+            column = (index % 2) * 2
+            key = QLabel(label)
+            key.setObjectName("detailMuted")
+            key.setTextFormat(Qt.TextFormat.PlainText)
+            val = QLabel(value)
+            val.setObjectName("detailStatValue")
+            val.setTextFormat(Qt.TextFormat.PlainText)
+            grid.addWidget(key, row, column)
+            grid.addWidget(val, row, column + 1)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        layout.addLayout(grid)
+
+        note = self._label(
+            "No constellation, sequence, mindscape, or resonance boosts.",
+            "detailMuted",
+        )
+        layout.addWidget(note)
+        return card
+
+    def _build_skills_card(self, detail: CharacterDetail) -> QFrame:
+        card, layout = self._make_card("Skills")
+        note = self._label(
+            "Descriptions and multipliers are collapsed. Click a skill to expand.",
+            "detailMuted",
+        )
+        layout.addWidget(note)
+        for skill in detail.skills:
+            title = f"{skill.name} · {skill.type_name} · Lv. {skill.level}"
+            layout.addWidget(_CollapsibleSection(title, self._skill_body(skill)))
+        return card
+
+    def _skill_body(self, skill: SkillDetail) -> QWidget:
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        if skill.description:
+            description = self._label(skill.description, rich=True)
+            layout.addWidget(description)
+
+        if skill.multipliers:
+            header = QLabel("Multipliers")
+            header.setObjectName("detailSubheading")
+            header.setTextFormat(Qt.TextFormat.PlainText)
+            layout.addWidget(header)
+
+            grid = QGridLayout()
+            grid.setContentsMargins(0, 0, 0, 0)
+            grid.setHorizontalSpacing(16)
+            grid.setVerticalSpacing(4)
+            for row, (label, value) in enumerate(skill.multipliers):
+                key = QLabel(label)
+                key.setObjectName("detailMuted")
+                key.setTextFormat(Qt.TextFormat.PlainText)
+                key.setWordWrap(True)
+                val = QLabel(value)
+                val.setObjectName("detailMultiplier")
+                val.setTextFormat(Qt.TextFormat.PlainText)
+                val.setAlignment(
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
+                )
+                grid.addWidget(key, row, 0)
+                grid.addWidget(val, row, 1)
+            grid.setColumnStretch(0, 1)
+            layout.addLayout(grid)
+
+        return body
+
+    def _build_extras_card(self, detail: CharacterDetail) -> QFrame:
+        card, layout = self._make_card("Passives, Traces & More")
+        for section in detail.extras:
+            layout.addWidget(
+                _CollapsibleSection(section.title, self._extra_body(section))
+            )
+        return card
+
+    def _extra_body(self, section: ExtraSection) -> QWidget:
+        body = QWidget()
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+        for entry in section.entries:
+            name = QLabel(entry.name)
+            name.setObjectName("detailEntryName")
+            name.setTextFormat(Qt.TextFormat.PlainText)
+            name.setWordWrap(True)
+            layout.addWidget(name)
+            if entry.text:
+                layout.addWidget(self._label(entry.text, rich=True))
+        return body
+
+    def _update_geometry(self):
+        rect = self._host.rect()
+        self.setGeometry(rect)
+
+        width = min(
+            1180,
+            max(560, int(rect.width() * 0.92)),
+            max(300, rect.width() - 24),
+        )
+        height = min(
+            880,
+            max(420, int(rect.height() * 0.9)),
+            max(240, rect.height() - 24),
+        )
+        self.panel.setGeometry(
+            (rect.width() - width) // 2,
+            (rect.height() - height) // 2,
+            width,
+            height,
+        )
+        self.art_column.setFixedWidth(int(width * 0.25))
+
+    def close_popup(self):
+        """Hide the popup, drop loaded data, and return focus to the window."""
+        self._request_id += 1
+        self._clear_content()
+        self.hint_label.setText("F2P max")
+        self._game = ""
+        self._char_id = ""
+        self.hide()
+        self._host.setFocus()
+
+    def eventFilter(self, obj, event):
+        """Keep the overlay sized to its host window."""
+        if obj is self._host and event.type() == QEvent.Type.Resize:
+            self._update_geometry()
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        """Close the popup when the dimmed backdrop is clicked."""
+        if not self.panel.geometry().contains(event.position().toPoint()):
+            self.close_popup()
+        super().mousePressEvent(event)
+
+
+_popup = None
+
+
+def open_details(game: str, char_id: str, _char_data=None, parent=None):
+    """Show the shared native character-details popup."""
+    global _popup
+    if parent is None:
+        return
+    if isinstance(parent, QMainWindow):
+        host = parent.centralWidget() or parent
+    else:
+        host = parent
+
+    if _popup is not None and _popup._host is not host:
+        _popup.close_popup()
+        _popup = None
+    if _popup is None:
+        _popup = CharacterDetailsPopup(host)
+
+    _popup.open_character(game, char_id)

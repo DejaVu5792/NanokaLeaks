@@ -1,7 +1,5 @@
 """Character card widget for displaying character information."""
 
-import webbrowser
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -73,6 +71,9 @@ class CardWidget(QWidget):
     def __init__(self, game, char_id, char_data, is_new=False, parent=None):
         """Initialize the character card widget."""
         super().__init__(parent)
+        self.game = game
+        self.char_id = char_id
+        self.char_data = char_data
         self.setObjectName("card")
         self.setFixedSize(180, 220)
 
@@ -149,8 +150,8 @@ class CardWidget(QWidget):
         view_btn.setObjectName("viewBtn")
         view_btn.setFixedHeight(28)
         view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        view_btn.setToolTip("Open on nanoka.cc")
-        view_btn.clicked.connect(lambda checked=False, u=url: webbrowser.open(u))
+        view_btn.setToolTip("Open character details")
+        view_btn.clicked.connect(self._open_details)
         actions.addWidget(view_btn, 1)
 
         browser_btn = PulseButton()
@@ -191,6 +192,12 @@ class CardWidget(QWidget):
         request_image(element_img_url, self._on_element_image_loaded, (18, 18))
         if specialty_img_url:
             request_image(specialty_img_url, self._on_specialty_image_loaded, (18, 18))
+
+    def _open_details(self):
+        """Open the native character details popup."""
+        from .details import open_details
+
+        open_details(self.game, self.char_id, self.char_data, self.window())
 
     def _open_url(self, url):
         """Open a character page in the embedded browser popup."""

@@ -101,4 +101,154 @@ QLabel#elementIcon, QLabel#specialtyIcon {
     color: palette(placeholderText);
     font-size: 9px;
 }
+
+QWidget#detailsOverlay {
+    background-color: rgba(0, 0, 0, 140);
+}
+
+QFrame#detailsPanel {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 10px;
+}
+
+QFrame#detailsHeader {
+    background: palette(alternateBase);
+    border: none;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+}
+
+QLabel#detailsHint {
+    color: palette(placeholderText);
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid palette(mid);
+    border-radius: 8px;
+}
+
+QWidget#detailsBody {
+    background: palette(base);
+}
+
+QFrame#detailsArtColumn {
+    background: palette(alternateBase);
+    border: none;
+    border-right: 1px solid palette(mid);
+    border-bottom-left-radius: 10px;
+}
+
+QFrame#detailArtFrame {
+    background: palette(alternateBase);
+    border: none;
+    border-bottom-left-radius: 10px;
+}
+
+QLabel#detailArt {
+    background: transparent;
+    border: none;
+}
+
+QLabel#detailArtPlaceholder {
+    color: palette(placeholderText);
+    background: transparent;
+    font-size: 11px;
+}
+
+QFrame#detailArtOverlay {
+    background: qlineargradient(
+        x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 rgba(0, 0, 0, 220),
+        stop: 0.5 rgba(0, 0, 0, 120),
+        stop: 1 rgba(0, 0, 0, 0)
+    );
+    border: none;
+}
+
+QLabel#detailArtName {
+    color: #ffffff;
+    background: transparent;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+QLabel#detailArtMeta {
+    color: rgba(255, 255, 255, 215);
+    background: transparent;
+    font-size: 11px;
+}
+
+QScrollArea#detailsScroll, QWidget#detailsContent {
+    background: transparent;
+    border: none;
+}
+
+QFrame#detailCard {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 8px;
+}
+
+QLabel#detailSectionTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: palette(text);
+}
+
+QLabel#detailSubheading {
+    font-size: 12px;
+    font-weight: 700;
+    color: palette(text);
+}
+
+QLabel#detailEntryName {
+    font-size: 12px;
+    font-weight: 700;
+    color: palette(text);
+}
+
+QLabel#detailOverview {
+    font-size: 12px;
+    color: palette(text);
+}
+
+QLabel#detailMuted {
+    color: palette(placeholderText);
+    font-size: 11px;
+}
+
+QLabel#detailBuildItem {
+    color: palette(text);
+    font-size: 11px;
+}
+
+QLabel#detailStatValue {
+    font-weight: 600;
+    color: palette(text);
+}
+
+QLabel#detailMultiplier {
+    font-weight: 600;
+    color: palette(text);
+}
+
+QToolButton#detailDisclosure {
+    text-align: left;
+    padding: 7px 10px;
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    background: palette(button);
+    color: palette(button-text);
+    font-weight: 600;
+}
+
+QToolButton#detailDisclosure:hover {
+    background: palette(light);
+    color: palette(button-text);
+}
+
+QToolButton#detailDisclosure:checked {
+    background: palette(alternateBase);
+    color: palette(text);
+}
 """
