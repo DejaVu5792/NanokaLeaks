@@ -72,6 +72,15 @@ class ExtraSection:
 
 
 @dataclass
+class BuildContext:
+    """Transient data needed to load a recommended build later."""
+
+    game: str
+    version: str
+    raw: dict[str, Any] = field(repr=False, compare=False)
+
+
+@dataclass
 class CharacterDetail:
     """Normalized character detail data for the native popup."""
 
@@ -88,6 +97,9 @@ class CharacterDetail:
     extras: list[ExtraSection] = field(default_factory=list)
     art_url: str = ""
     source_url: str = ""
+    build_context: BuildContext | None = field(
+        default=None, repr=False, compare=False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -154,30 +166,86 @@ def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, A
     return {}
 
 
-def load_character_detail(game: str, char_id: str) -> CharacterDetail:
-    """Fetch and normalize a character's detail page.
+def _detail_url(game: str, version: str, char_id: str) -> str:
+    return f"{BASE_URL}/{game}/{version}/en/character/{char_id}.json"
 
-    Nothing from this function is cached, in memory or on disk.
+
+def load_character_detail(game: str, char_id: str) -> CharacterDetail:
+    """Fetch and normalize a character's detail page without build data.
+
+    The cached manifest version is used first, so text appears immediately.
+    If that version has gone stale, the fresh manifest is fetched once and the
+    detail request is retried.  Nothing from this function is cached.
     """
-    version = _latest_version(game)
-    url = f"{BASE_URL}/{game}/{version}/en/character/{char_id}.json"
+    try:
+        version = str(get_latest_version(game))
+    except Exception as exc:  # noqa: BLE001 - a fresh manifest may still work
+        logger.warning("Could not read the cached manifest: %s", exc)
+        version = _latest_version(game)
 
     try:
-        raw = _get_json(url)
+        raw = _get_json(_detail_url(game, version, char_id))
     except requests.HTTPError as exc:
-        if exc.response is not None and exc.response.status_code == 404:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
+        fresh_version = _latest_version(game)
+        if fresh_version == version:
             raise DetailUnavailable(
                 "Details are not available for this character yet."
             ) from exc
-        raise
+        version = fresh_version
+        try:
+            raw = _get_json(_detail_url(game, version, char_id))
+        except requests.HTTPError as retry_exc:
+            if retry_exc.response is not None and retry_exc.response.status_code == 404:
+                raise DetailUnavailable(
+                    "Details are not available for this character yet."
+                ) from retry_exc
+            raise
+        except requests.RequestException as retry_exc:
+            raise DetailUnavailable(
+                "Could not reach nanoka.cc. Check your connection."
+            ) from retry_exc
     except requests.RequestException as exc:
-        raise DetailUnavailable("Could not reach nanoka.cc. Check your connection.") from exc
+        raise DetailUnavailable(
+            "Could not reach nanoka.cc. Check your connection."
+        ) from exc
 
-    metadata = _fetch_metadata(game, version, raw)
-    detail = _normalize(game, char_id, raw, metadata)
+    detail = _normalize(game, char_id, raw, {}, with_build=False)
     detail.art_url = _art_url(game, char_id, raw)
     detail.source_url = get_character_url(game, char_id, raw)
+
+    has_build = (
+        (
+            game == "hsr"
+            and any(raw.get(key) for key in ("relics", "lightcones", "teams"))
+        )
+        or (game == "ww" and bool((raw.get("recommend") or {}).get("weapon")))
+        or (game == "zzz" and bool(raw.get("fairy_recommend")))
+    )
+    if has_build:
+        detail.build_context = BuildContext(game, version, raw)
     return detail
+
+
+def load_character_build(detail: CharacterDetail) -> list[BuildSection]:
+    """Fetch only the metadata needed for a character's recommended build.
+
+    This is intentionally separate from :func:`load_character_detail` so the
+    core text and art can render while build metadata is still downloading.
+    """
+    context = detail.build_context
+    if context is None:
+        return []
+
+    metadata = _fetch_metadata(context.game, context.version, context.raw)
+    if context.game == "hsr":
+        return _hsr_build(context.raw, metadata)
+    if context.game == "ww":
+        return _ww_build(context.raw, metadata)
+    if context.game == "zzz":
+        return _zzz_build(context.raw, metadata)
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -1213,7 +1281,12 @@ def _level_label_for(game: str) -> str:
 
 
 def _normalize(
-    game: str, char_id: str, raw: dict[str, Any], metadata: dict[str, Any]
+    game: str,
+    char_id: str,
+    raw: dict[str, Any],
+    metadata: dict[str, Any],
+    *,
+    with_build: bool = True,
 ) -> CharacterDetail:
     name = str(raw.get("name") or get_name(game, raw, char_id) or "Unknown")
     detail = CharacterDetail(
@@ -1228,7 +1301,8 @@ def _normalize(
 
     if game == "hsr":
         detail.stats = _hsr_stats(raw)
-        detail.build = _hsr_build(raw, metadata)
+        if with_build:
+            detail.build = _hsr_build(raw, metadata)
         detail.skills = _hsr_skills(raw)
         detail.extras = _hsr_extras(raw)
     elif game == "gi":
@@ -1237,12 +1311,14 @@ def _normalize(
         detail.extras = _gi_extras(raw)
     elif game == "ww":
         detail.stats = _ww_stats(raw)
-        detail.build = _ww_build(raw, metadata)
+        if with_build:
+            detail.build = _ww_build(raw, metadata)
         detail.skills, extras = _ww_skills(raw)
         detail.extras = extras
     elif game == "zzz":
         detail.stats = _zzz_stats(raw)
-        detail.build = _zzz_build(raw, metadata)
+        if with_build:
+            detail.build = _zzz_build(raw, metadata)
         detail.skills = _zzz_skills(raw)
         detail.extras = _zzz_extras(raw)
     elif game == "nte":

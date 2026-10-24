@@ -17,6 +17,7 @@ from .details import (
     ExtraSection,
     SkillDetail,
     load_character_art,
+    load_character_build,
     load_character_detail,
 )
 from .manifest import fetch_manifest, get_latest_version
@@ -55,6 +56,7 @@ __all__ = [
     "get_specialty_image",
     "is_released",
     "load_character_art",
+    "load_character_build",
     "load_character_detail",
     "parse_release",
 ]

@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, Qt, QThread, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPropertyAnimation,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -21,11 +30,13 @@ from PySide6.QtWidgets import (
 )
 
 from ..api.details import (
+    BuildSection,
     CharacterDetail,
     DetailUnavailable,
     ExtraSection,
     SkillDetail,
     load_character_art,
+    load_character_build,
     load_character_detail,
 )
 
@@ -51,6 +62,24 @@ class _DetailLoadThread(QThread):
         except Exception:
             logger.exception("Failed to load character details")
             self.failed.emit("Could not load character details. Please try again.")
+
+
+class _BuildLoadThread(QThread):
+    """Fetch recommended-build metadata separately from the text payload."""
+
+    loaded = Signal(object)
+    failed = Signal()
+
+    def __init__(self, detail: CharacterDetail, parent=None):
+        super().__init__(parent)
+        self._detail = detail
+
+    def run(self):
+        try:
+            self.loaded.emit(load_character_build(self._detail))
+        except Exception:
+            logger.exception("Failed to load recommended build")
+            self.failed.emit()
 
 
 class _ArtLoadThread(QThread):
@@ -148,8 +177,11 @@ class CharacterDetailsPopup(QWidget):
         self._host = host
         self._request_id = 0
         self._thread: _DetailLoadThread | None = None
+        self._build_thread: _BuildLoadThread | None = None
         self._art_thread: _ArtLoadThread | None = None
         self._art_label: _ArtLabel | None = None
+        self._build_skeleton: QWidget | None = None
+        self._skeleton_animation: QPropertyAnimation | None = None
         self._game = ""
         self._char_id = ""
 
@@ -255,10 +287,86 @@ class CharacterDetailsPopup(QWidget):
         self._clear_content()
         self._build_content(detail)
         self.scroll.verticalScrollBar().setValue(0)
+        if detail.build_context is not None and not detail.build:
+            self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
+            self.content_layout.insertWidget(0, self._build_skeleton)
+            self._start_skeleton_pulse(self._build_skeleton)
+            self._start_build_load(request_id, detail)
         if detail.art_url:
             self._start_art_load(request_id, detail.art_url)
         else:
             self._set_art_message("Art unavailable")
+
+    def _start_build_load(self, request_id: int, detail: CharacterDetail):
+        thread = _BuildLoadThread(detail, self)
+        thread.loaded.connect(
+            lambda sections: self._on_build_loaded(request_id, sections)
+        )
+        thread.failed.connect(lambda: self._on_build_failed(request_id))
+        thread.finished.connect(lambda t=thread: self._on_build_thread_finished(t))
+        self._build_thread = thread
+        thread.start()
+
+    def _on_build_thread_finished(self, thread: _BuildLoadThread):
+        if self._build_thread is thread:
+            self._build_thread = None
+        thread.deleteLater()
+
+    def _on_build_loaded(self, request_id: int, sections: list[BuildSection]):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        self._replace_build_skeleton(sections or [])
+
+    def _on_build_failed(self, request_id: int):
+        if request_id != self._request_id or not self.isVisible():
+            return
+        self._replace_build_skeleton([])
+
+    def _replace_build_skeleton(self, sections: list[BuildSection]):
+        skeleton = self._build_skeleton
+        if skeleton is None:
+            return
+
+        scroll_bar = self.scroll.verticalScrollBar()
+        old_value = scroll_bar.value()
+        old_max = scroll_bar.maximum()
+        at_bottom = old_value >= old_max - 2
+        request_id = self._request_id
+
+        index = self.content_layout.indexOf(skeleton)
+        self._stop_skeleton_pulse()
+        self.content_layout.removeWidget(skeleton)
+        skeleton.setParent(None)
+        skeleton.deleteLater()
+        self._build_skeleton = None
+
+        if sections:
+            self.content_layout.insertWidget(
+                max(index, 0), self._build_build_card(sections)
+            )
+
+        if old_value > 0:
+
+            def restore(*_):
+                if request_id != self._request_id or not self.isVisible():
+                    return
+                new_max = scroll_bar.maximum()
+                target = (
+                    new_max
+                    if at_bottom
+                    else old_value + (new_max - old_max)
+                )
+                scroll_bar.setValue(max(0, min(new_max, target)))
+
+            def cleanup():
+                try:
+                    scroll_bar.rangeChanged.disconnect(restore)
+                except (RuntimeError, TypeError):
+                    pass
+
+            scroll_bar.rangeChanged.connect(restore)
+            QTimer.singleShot(0, restore)
+            QTimer.singleShot(150, cleanup)
 
     def _start_art_load(self, request_id: int, art_url: str):
         thread = _ArtLoadThread(art_url, self)
@@ -323,13 +431,36 @@ class CharacterDetailsPopup(QWidget):
 
     def _show_loading(self):
         self.art_layout.addWidget(self._build_art_placeholder("Loading art..."), 1)
-        card, layout = self._make_card()
-        loading = self._label("Loading fresh details from nanoka.cc...", "detailMuted")
-        layout.addWidget(loading)
-        self.content_layout.addWidget(card)
+
+        wrapper = QWidget()
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(18)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        label = self._label(
+            "Loading fresh details from nanoka.cc...", "detailLoadingLabel"
+        )
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(label)
+
+        skeleton = QWidget()
+        skeleton_layout = QVBoxLayout(skeleton)
+        skeleton_layout.setContentsMargins(0, 0, 0, 0)
+        skeleton_layout.setSpacing(12)
+        skeleton_layout.addWidget(self._build_skeleton_card((32, 90, 72, 96)))
+        skeleton_layout.addWidget(self._build_skeleton_card((44, 86, 78, 92)))
+        skeleton_layout.addWidget(self._build_skeleton_card((28, 88, 82)))
+        layout.addWidget(skeleton)
+
         self.content_layout.addStretch(1)
+        self.content_layout.addWidget(wrapper)
+        self.content_layout.addStretch(1)
+        self._start_skeleton_pulse(skeleton)
 
     def _clear_content(self):
+        self._stop_skeleton_pulse()
+        self._build_skeleton = None
         self._art_label = None
         for layout in (self.art_layout, self.content_layout):
             while layout.count():
@@ -338,6 +469,55 @@ class CharacterDetailsPopup(QWidget):
                 if widget is not None:
                     widget.setParent(None)
                     widget.deleteLater()
+
+    def _build_skeleton_card(self, widths: tuple[int, ...]) -> QFrame:
+        card = QFrame()
+        card.setObjectName("detailSkeletonCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+        for index, width in enumerate(widths):
+            layout.addWidget(self._skeleton_line(width, 14 if index == 0 else 10))
+        return card
+
+    def _skeleton_line(self, width: int, height: int) -> QWidget:
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        bar = QFrame()
+        bar.setObjectName("detailSkeletonBar")
+        bar.setFixedHeight(height)
+        bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(bar, max(1, width))
+        remaining = 100 - width
+        if remaining > 0:
+            layout.addStretch(remaining)
+        return row
+
+    def _start_skeleton_pulse(self, widget: QWidget):
+        self._stop_skeleton_pulse()
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(1800)
+        animation.setKeyValueAt(0.0, 0.55)
+        animation.setKeyValueAt(0.5, 0.95)
+        animation.setKeyValueAt(1.0, 0.55)
+        animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        animation.setLoopCount(-1)
+        animation.start()
+        self._skeleton_animation = animation
+
+    def _stop_skeleton_pulse(self):
+        animation = self._skeleton_animation
+        if animation is None:
+            return
+        animation.stop()
+        animation.deleteLater()
+        self._skeleton_animation = None
 
     def _make_card(self, title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
@@ -373,7 +553,7 @@ class CharacterDetailsPopup(QWidget):
     def _build_content(self, detail: CharacterDetail):
         self.art_layout.addWidget(self._build_art_panel(detail), 1)
         if detail.build:
-            self.content_layout.addWidget(self._build_build_card(detail))
+            self.content_layout.addWidget(self._build_build_card(detail.build))
         overview = self._build_overview_card(detail)
         if overview is not None:
             self.content_layout.addWidget(overview)
@@ -385,7 +565,7 @@ class CharacterDetailsPopup(QWidget):
             self.content_layout.addWidget(self._build_extras_card(detail))
         self.content_layout.addStretch(1)
 
-    def _build_build_card(self, detail: CharacterDetail) -> QFrame:
+    def _build_build_card(self, sections: list[BuildSection]) -> QFrame:
         card, layout = self._make_card("Recommended Build")
         note = self._label("Suggested by nanoka.cc", "detailMuted")
         layout.addWidget(note)
@@ -394,7 +574,7 @@ class CharacterDetailsPopup(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(18)
         grid.setVerticalSpacing(10)
-        for index, section in enumerate(detail.build):
+        for index, section in enumerate(sections):
             block = QWidget()
             block_layout = QVBoxLayout(block)
             block_layout.setContentsMargins(0, 0, 0, 0)

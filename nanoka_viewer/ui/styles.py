@@ -211,6 +211,23 @@ QLabel#detailMuted {
     font-size: 11px;
 }
 
+QLabel#detailLoadingLabel {
+    color: palette(placeholderText);
+    font-size: 12px;
+}
+
+QFrame#detailSkeletonCard {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 8px;
+}
+
+QFrame#detailSkeletonBar {
+    background: palette(midlight);
+    border: none;
+    border-radius: 4px;
+}
+
 QLabel#detailBuildItem {
     color: palette(text);
     font-size: 11px;
