@@ -1,7 +1,5 @@
 """Character card widget for displaying character information."""
 
-import webbrowser
-
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -142,7 +140,7 @@ class CardWidget(QWidget):
         view_btn = QPushButton("View")
         view_btn.setObjectName("viewBtn")
         view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        view_btn.clicked.connect(lambda checked=False, u=url: webbrowser.open(u))
+        view_btn.clicked.connect(lambda checked=False, u=url: self._open_url(u))
         layout.addWidget(view_btn)
 
         layout.addStretch()
@@ -167,6 +165,12 @@ class CardWidget(QWidget):
         request_image(element_img_url, self._on_element_image_loaded, (18, 18))
         if specialty_img_url:
             request_image(specialty_img_url, self._on_specialty_image_loaded, (18, 18))
+
+    def _open_url(self, url):
+        """Open a character page in the embedded browser popup."""
+        from .browser import open_browser
+
+        open_browser(url, self.window())
 
     def _on_char_image_loaded(self, pixmap):
         """Update character image when loaded."""

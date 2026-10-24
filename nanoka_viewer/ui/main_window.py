@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PySide6.QtCore import QEvent, QTimer, Qt, QObject
+from PySide6.QtCore import QEvent, QTimer, Qt
 
 from .styles import STYLESHEET
 from .section import GameSection
@@ -27,33 +27,6 @@ from ..api import get_name, GAMES, clear_cache, fetch_manifest
 logger = logging.getLogger(__name__)
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
-
-
-class ShiftEventFilter(QObject):
-    """Event filter to capture Shift key events globally in the application."""
-
-    def __init__(self, window):
-        super().__init__(window)
-        self.window = window
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.KeyPress:
-            if event.key() == Qt.Key.Key_Shift:
-                if not event.isAutoRepeat():
-                    self.window._shift_held = True
-                    self.window._update_refresh_button_text()
-        elif event.type() == QEvent.Type.KeyRelease:
-            if event.key() == Qt.Key.Key_Shift:
-                if not event.isAutoRepeat():
-                    self.window._shift_held = False
-                    self.window._update_refresh_button_text()
-        elif event.type() in (QEvent.Type.WindowDeactivate, QEvent.Type.FocusOut):
-            self.window._shift_held = False
-            self.window._update_refresh_button_text()
-        elif event.type() in (QEvent.Type.WindowActivate, QEvent.Type.FocusIn):
-            self.window._shift_held = bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
-            self.window._update_refresh_button_text()
-        return super().eventFilter(obj, event)
 
 
 class NanokaViewer(QMainWindow):
@@ -132,10 +105,6 @@ class NanokaViewer(QMainWindow):
 
         self._shift_held = False
 
-        # Install global event filter to capture Shift key events instantly
-        self.shift_filter = ShiftEventFilter(self)
-        QApplication.instance().installEventFilter(self.shift_filter)
-
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
@@ -153,6 +122,37 @@ class NanokaViewer(QMainWindow):
             if self.refresh_btn.text() != "Reload":
                 self.refresh_btn.setText("Reload")
                 self.refresh_btn.setToolTip("")
+
+    def _sync_shift_state(self):
+        """Sync the cached Shift state with the actual keyboard state."""
+        self._shift_held = bool(
+            QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
+        )
+        self._update_refresh_button_text()
+
+    def keyPressEvent(self, event):
+        """Track the Shift key locally instead of using a global event filter."""
+        if event.key() == Qt.Key.Key_Shift and not event.isAutoRepeat():
+            self._shift_held = True
+            self._update_refresh_button_text()
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        """Track the Shift key locally instead of using a global event filter."""
+        if event.key() == Qt.Key.Key_Shift and not event.isAutoRepeat():
+            self._shift_held = False
+            self._update_refresh_button_text()
+        super().keyReleaseEvent(event)
+
+    def focusInEvent(self, event):
+        """Refresh the Shift state when the window gains focus."""
+        self._sync_shift_state()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        """Refresh the Shift state when the window loses focus."""
+        self._sync_shift_state()
+        super().focusOutEvent(event)
 
     def load_data(self):
         """Start loading character data."""
@@ -243,11 +243,13 @@ class NanokaViewer(QMainWindow):
             logger.info(f"Finished loading all {len(chars)} characters for {game}")
 
     def changeEvent(self, event):
-        """Handle theme change events."""
+        """Handle theme and activation change events."""
         if event.type() == PALETTE_CHANGE_EVENT and not self._updating_theme:
             self._updating_theme = True
             self.setStyleSheet(STYLESHEET)
             self._updating_theme = False
+        elif event.type() == QEvent.Type.ActivationChange:
+            self._sync_shift_state()
         super().changeEvent(event)
 
 
