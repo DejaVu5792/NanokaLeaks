@@ -1,14 +1,16 @@
-"""Uncached character detail loading and normalization.
+"""Character detail loading and normalization with in-memory caching.
 
-The main character list is intentionally cached by :mod:`nanoka_viewer.api`.
-Character details are different: they are fetched directly from nanoka.cc on
-every open and are never written to a cache.  This module also normalizes the
-five game-specific detail formats into one small model consumed by the native
-detail popup.
+The main character list is cached by :mod:`nanoka_viewer.api.characters`.
+Character details and build metadata are cached in memory by (game, version, char_id)
+so subsequent opens of viewed characters are near-instant and do not hit the network.
+Shift+Reload clears all caches including this in-memory detail cache.
+This module also normalizes the five game-specific detail formats into one model
+consumed by the native detail popup.
 """
 
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import re
@@ -16,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from .constants import BASE_URL
 from .manifest import get_latest_version
@@ -23,13 +26,32 @@ from .models import get_character_url, get_name
 
 logger = logging.getLogger(__name__)
 
-_NO_CACHE_HEADERS = {
-    "Cache-Control": "no-cache",
-    "Pragma": "no-cache",
+_DEFAULT_HEADERS = {
     "User-Agent": "NanokaLeaks/4.1",
 }
 
 _DETAIL_TIMEOUT = 25
+
+# Shared persistent session for warm HTTP/2 & keep-alive connection reuse
+_session = requests.Session()
+_session.headers.update(_DEFAULT_HEADERS)
+_adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
+_session.mount("https://", _adapter)
+_session.mount("http://", _adapter)
+
+# In-memory detail cache: (game, version, char_id) -> CharacterDetail
+_detail_cache: dict[tuple[str, str, str], CharacterDetail] = {}
+
+# In-memory metadata cache: (game, version, resource_key) -> raw metadata dict
+_metadata_cache: dict[tuple[str, str, str], Any] = {}
+
+
+def clear_detail_cache():
+    """Clear in-memory cached character details and metadata."""
+    global _detail_cache, _metadata_cache
+    _detail_cache.clear()
+    _metadata_cache.clear()
+    logger.info("Character detail and metadata memory cache cleared")
 
 
 class DetailUnavailable(Exception):
@@ -107,7 +129,7 @@ class CharacterDetail:
 
 
 def _get_json(url: str) -> Any:
-    response = requests.get(url, headers=_NO_CACHE_HEADERS, timeout=_DETAIL_TIMEOUT)
+    response = _session.get(url, timeout=_DETAIL_TIMEOUT)
     response.raise_for_status()
     return response.json()
 
@@ -124,9 +146,7 @@ def _get_bytes(url: str) -> bytes | None:
     if not url:
         return None
     try:
-        response = requests.get(
-            url, headers=_NO_CACHE_HEADERS, timeout=_DETAIL_TIMEOUT
-        )
+        response = _session.get(url, timeout=_DETAIL_TIMEOUT)
         response.raise_for_status()
         return response.content
     except Exception as exc:  # noqa: BLE001 - art is optional
@@ -149,20 +169,30 @@ def _latest_version(game: str) -> str:
         return str(get_latest_version(game))
 
 
+def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) -> Any:
+    cache_key = (game, version, resource_name)
+    if cache_key in _metadata_cache:
+        return _metadata_cache[cache_key]
+    data = _safe_json(url)
+    if data is not None:
+        _metadata_cache[cache_key] = data
+    return data
+
+
 def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, Any]:
     """Fetch only the small metadata files needed for a recommended build."""
     if game == "hsr" and any(
         raw.get(key) for key in ("relics", "lightcones", "teams")
     ):
         return {
-            "relicset": _safe_json(f"{BASE_URL}/hsr/{version}/relicset.json"),
-            "lightcone": _safe_json(f"{BASE_URL}/hsr/{version}/lightcone.json"),
-            "characters": _safe_json(f"{BASE_URL}/hsr/{version}/character.json"),
+            "relicset": _fetch_metadata_file(game, version, "relicset", f"{BASE_URL}/hsr/{version}/relicset.json"),
+            "lightcone": _fetch_metadata_file(game, version, "lightcone", f"{BASE_URL}/hsr/{version}/lightcone.json"),
+            "characters": _fetch_metadata_file(game, version, "character", f"{BASE_URL}/hsr/{version}/character.json"),
         }
     if game == "ww" and (raw.get("recommend") or {}).get("weapon"):
-        return {"weapon": _safe_json(f"{BASE_URL}/ww/{version}/weapon.json")}
+        return {"weapon": _fetch_metadata_file(game, version, "weapon", f"{BASE_URL}/ww/{version}/weapon.json")}
     if game == "zzz" and raw.get("fairy_recommend"):
-        return {"item": _safe_json(f"{BASE_URL}/zzz/{version}/en/item.json")}
+        return {"item": _fetch_metadata_file(game, version, "item", f"{BASE_URL}/zzz/{version}/en/item.json")}
     return {}
 
 
@@ -175,13 +205,18 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
 
     The cached manifest version is used first, so text appears immediately.
     If that version has gone stale, the fresh manifest is fetched once and the
-    detail request is retried.  Nothing from this function is cached.
+    detail request is retried.  Results are cached in memory by (game, version, char_id).
     """
     try:
         version = str(get_latest_version(game))
     except Exception as exc:  # noqa: BLE001 - a fresh manifest may still work
         logger.warning("Could not read the cached manifest: %s", exc)
         version = _latest_version(game)
+
+    cache_key = (game, version, str(char_id))
+    if cache_key in _detail_cache:
+        logger.debug("Using cached character detail for %s %s (version %s)", game, char_id, version)
+        return copy.deepcopy(_detail_cache[cache_key])
 
     try:
         raw = _get_json(_detail_url(game, version, char_id))
@@ -194,6 +229,9 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
                 "Details are not available for this character yet."
             ) from exc
         version = fresh_version
+        cache_key = (game, version, str(char_id))
+        if cache_key in _detail_cache:
+            return copy.deepcopy(_detail_cache[cache_key])
         try:
             raw = _get_json(_detail_url(game, version, char_id))
         except requests.HTTPError as retry_exc:
@@ -225,7 +263,9 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
     )
     if has_build:
         detail.build_context = BuildContext(game, version, raw)
-    return detail
+
+    _detail_cache[cache_key] = detail
+    return copy.deepcopy(detail)
 
 
 def load_character_build(detail: CharacterDetail) -> list[BuildSection]:

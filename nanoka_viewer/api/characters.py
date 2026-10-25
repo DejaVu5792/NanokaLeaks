@@ -185,6 +185,12 @@ def clear_cache():
     global _character_cache
     _character_cache = {}
     clear_manifest_cache()
+    try:
+        from .details import clear_detail_cache
+
+        clear_detail_cache()
+    except Exception as e:
+        logger.error(f"Error clearing detail cache: {e}")
 
     # Clear character disk cache
     try:
