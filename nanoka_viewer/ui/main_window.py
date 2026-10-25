@@ -63,7 +63,7 @@ class NanokaViewer(QMainWindow):
         header_layout.addStretch()
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: palette(placeholderText);")
+        self.status_label.setStyleSheet("color: palette(placeholder-text);")
         header_layout.addWidget(self.status_label)
 
         self.refresh_btn = QPushButton("Reload")
@@ -273,6 +273,12 @@ def main(argv=None):
 
     parser = argparse.ArgumentParser(prog="NanokaLeaks", description="Nanoka Viewer")
     parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose / debug logging output",
+    )
+    parser.add_argument(
         "--profiler",
         action="store_true",
         help="Profile the application with cProfile and print the results",
@@ -283,6 +289,12 @@ def main(argv=None):
         help="Where to save the cProfile stats (default: nanoka_profile.prof)",
     )
     args, remaining = parser.parse_known_args(argv)
+
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
 
     if args.profiler:
         profile_output = args.profiler_output or "nanoka_profile.prof"

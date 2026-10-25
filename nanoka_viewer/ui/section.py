@@ -82,7 +82,7 @@ class GameSection(QWidget):
 
         self.status_label = QLabel("Loading...")
         self.status_label.setStyleSheet(
-            "font-size: 12px; color: palette(placeholderText);"
+            "font-size: 12px; color: palette(placeholder-text);"
         )
         header_layout.addWidget(self.status_label)
 

@@ -91,19 +91,19 @@ QWidget#card {
 
 QWidget#gameHeader {
     border-radius: 8px;
-    background: palette(alternateBase);
+    background: palette(alternate-base);
 }
 
 QLabel#elementIcon, QLabel#specialtyIcon {
     border: 1px solid #444444;
     border-radius: 10px;
     background: #2A2A2A;
-    color: palette(placeholderText);
+    color: palette(placeholder-text);
     font-size: 9px;
 }
 
 QWidget#detailsOverlay {
-    background-color: rgba(0, 0, 0, 140);
+    background-color: rgba(0, 0, 0, 160);
 }
 
 QFrame#detailsPanel {
@@ -113,7 +113,7 @@ QFrame#detailsPanel {
 }
 
 QFrame#detailsHeader {
-    background: palette(alternateBase);
+    background: palette(alternate-base);
     border: none;
     border-top-left-radius: 10px;
     border-top-right-radius: 10px;
@@ -124,27 +124,27 @@ QWidget#detailsBody {
 }
 
 QFrame#detailsArtColumn {
-    background: palette(alternateBase);
+    background: palette(alternate-base);
     border: none;
     border-right: 1px solid palette(mid);
     border-bottom-left-radius: 10px;
 }
 
 QFrame#detailArtFrame {
-    background: palette(alternateBase);
+    background: palette(alternate-base);
     border: none;
     border-bottom-left-radius: 10px;
 }
 
 QLabel#detailArt {
-    color: palette(placeholderText);
+    color: palette(placeholder-text);
     background: transparent;
     border: none;
     font-size: 11px;
 }
 
 QLabel#detailArtPlaceholder {
-    color: palette(placeholderText);
+    color: palette(placeholder-text);
     background: transparent;
     font-size: 11px;
 }
@@ -207,12 +207,12 @@ QLabel#detailOverview {
 }
 
 QLabel#detailMuted {
-    color: palette(placeholderText);
+    color: palette(placeholder-text);
     font-size: 11px;
 }
 
 QLabel#detailLoadingLabel {
-    color: palette(placeholderText);
+    color: palette(placeholder-text);
     font-size: 12px;
 }
 
@@ -259,7 +259,7 @@ QToolButton#detailDisclosure:hover {
 }
 
 QToolButton#detailDisclosure:checked {
-    background: palette(alternateBase);
+    background: palette(alternate-base);
     color: palette(text);
 }
 """

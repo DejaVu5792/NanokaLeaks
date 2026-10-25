@@ -49,7 +49,7 @@ class BrowserPopup(QWidget):
                 border-radius: 8px;
             }
             QFrame#browserHeader {
-                background: palette(alternateBase);
+                background: palette(alternate-base);
                 border: none;
                 border-top-left-radius: 8px;
                 border-top-right-radius: 8px;

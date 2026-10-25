@@ -110,10 +110,18 @@ class _ArtLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(1, 1)
 
-    def set_source(self, pixmap: QPixmap):
+    def set_source(self, pixmap: QPixmap | None):
         """Set the source artwork and fit it to the current label size."""
         self._source = pixmap
-        self._rescale()
+        if pixmap is None or pixmap.isNull():
+            self.clear()
+        else:
+            self._rescale()
+
+    def clear_source(self):
+        """Drop the cached source artwork so rescale doesn't resurrect it."""
+        self._source = None
+        self.clear()
 
     def _rescale(self):
         if self._source is None or self._source.isNull():
@@ -121,13 +129,17 @@ class _ArtLabel(QLabel):
         target = self.size()
         if target.width() <= 0 or target.height() <= 0:
             return
-        self.setPixmap(
-            self._source.scaled(
-                target,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+        scaled = self._source.scaled(
+            target,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
         )
+        # Centre-crop to match the label size cleanly
+        if scaled.width() > target.width() or scaled.height() > target.height():
+            x = max(0, (scaled.width() - target.width()) // 2)
+            y = max(0, (scaled.height() - target.height()) // 2)
+            scaled = scaled.copy(x, y, target.width(), target.height())
+        self.setPixmap(scaled)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -402,7 +414,7 @@ class CharacterDetailsPopup(QWidget):
 
     def _set_art_message(self, message: str):
         if self._art_label is not None:
-            self._art_label.clear()
+            self._art_label.clear_source()
             self._art_label.setText(message)
 
     def _on_failed(self, request_id: int, message: str):

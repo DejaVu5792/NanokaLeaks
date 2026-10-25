@@ -107,7 +107,7 @@ class CardWidget(QWidget):
         self.char_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.char_img_label.setToolTip(name)
         self.char_img_label.setText("...")
-        self.char_img_label.setStyleSheet("color: palette(placeholderText);")
+        self.char_img_label.setStyleSheet("color: palette(placeholder-text);")
         layout.addWidget(self.char_img_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         icons_widget = QWidget()
