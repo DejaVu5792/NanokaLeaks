@@ -1,14 +1,21 @@
-"""Regression tests for the Wayland native-subsurface stacking bug.
+"""Regression tests for the Wayland maximize rendering bug, on the REAL app.
 
-Root cause (fixed earlier): a native anchor is realized inside ``centralWidget``
-so QtWebEngine does not recreate the main window. On QtWayland this promotes
-``centralWidget`` and its direct children - including the cards' ``QScrollArea``
-- to native ``QWindow`` subsurfaces. Raising the overlay only at the QWidget
-level does not reorder those subsurfaces, so the scroll area (and its bright
-View buttons) could stay above the details overlay after a resize/maximize.
+Root cause: a hidden native anchor (added so QtWebEngine would not recreate the
+window) promoted ``centralWidget`` and every card ``QScrollArea`` into separate
+Wayland subsurfaces. On maximize KWin failed to composite those sibling
+surfaces, leaving black bars and shoving section headers to the window edge.
+The overlay then had to fight sibling subsurfaces for z-order, which QWidget
+raise could not reliably win.
 
-These tests pin down the structure that makes the bug possible and the
-re-raise contract that keeps the overlay on top.
+The in-app browser (and thus QtWebEngine) has been removed, so the anchor is
+gone and nothing is native except the top-level window. Every widget now paints
+into the single main-window backing store, so a QWidget-level raise keeps the
+overlay on top and there are no subsurfaces to mis-composite.
+
+These tests boot the real ``NanokaViewer`` window and pin down:
+  * the absence of native child subsurfaces (the black-bar regression guard),
+  * the real ``view_btn`` -> ``open_details`` path opening the overlay,
+  * overlay geometry tracking the host across repeated maximize/restore.
 """
 
 from __future__ import annotations
@@ -16,165 +23,99 @@ from __future__ import annotations
 import unittest
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QWindow
+from PySide6.QtWidgets import QWidget
 
-from support import QtTestCase, flush, make_details_host, open_details_for
+from support import QtTestCase, flush, real_viewer
 
 from nanoka_viewer.ui.details import CharacterDetailsPopup
 
 
-class NativeSubsurfaceTests(QtTestCase):
-    def test_native_anchor_promotes_host_and_scroll_area_to_qwindows(self):
-        """Documents why plain QWidget.raise_() is not enough on Wayland."""
-        window, central, scroll, _button, anchor = make_details_host(
-            with_native_anchor=True
-        )
-        self.track_window(window)
-        self.assertIsNotNone(anchor)
+def native_children(window) -> list[QWidget]:
+    """Descendant widgets promoted to native Wayland subsurfaces."""
+    return [
+        w
+        for w in window.findChildren(QWidget)
+        if w.testAttribute(Qt.WidgetAttribute.WA_NativeWindow)
+    ]
 
-        self.assertTrue(
-            central.testAttribute(Qt.WidgetAttribute.WA_NativeWindow),
-            "the native anchor must promote centralWidget to a native surface",
-        )
-        self.assertTrue(
-            scroll.testAttribute(Qt.WidgetAttribute.WA_NativeWindow),
-            "the cards' scroll area is promoted to a native surface too",
-        )
 
-        central_window = central.windowHandle()
-        scroll_window = scroll.windowHandle()
-        self.assertIsInstance(central_window, QWindow)
-        self.assertIsInstance(scroll_window, QWindow)
-        self.assertIs(scroll_window.parent(), central_window)
-        self.assertIsNot(scroll_window, central_window)
+class NativeSubsurfaceRegressionTests(QtTestCase):
+    def test_real_window_has_no_native_child_subsurfaces(self):
+        """The black-bar cause: no child widget may be a native subsurface."""
+        with real_viewer() as (window, card):
+            offenders = native_children(window)
+            self.assertEqual(
+                offenders,
+                [],
+                "child widgets must not be native subsurfaces; they "
+                "mis-composite as black bars on maximize: "
+                f"{[w.objectName() or type(w).__name__ for w in offenders]}",
+            )
+            self.assertIsNotNone(card, "the real card should be populated")
 
-    def test_overlay_gets_its_own_native_surface_above_the_scroll_area(self):
-        window, central, scroll, button, _anchor = make_details_host(
-            with_native_anchor=True
-        )
-        self.track_window(window)
+    def test_overlay_is_a_plain_child_widget_not_a_subsurface(self):
+        """The overlay must paint in the single backing store, not a surface."""
+        with real_viewer() as (window, card):
+            card.view_btn.click()
+            flush()
+            popup = self.get_popup()
+            self.assertIsInstance(popup, CharacterDetailsPopup)
+            self.assertFalse(
+                popup.testAttribute(Qt.WidgetAttribute.WA_NativeWindow),
+                "the overlay must not be a native subsurface",
+            )
+            self.assertIs(popup.parentWidget(), window.centralWidget())
 
-        popup = open_details_for(window, button)
-        overlay_window = popup.windowHandle()
-        scroll_window = scroll.windowHandle()
+    def test_real_view_button_opens_the_overlay(self):
+        """Clicking the production View button must open the details popup."""
+        with real_viewer() as (window, card):
+            self.assertIsNone(self.get_popup())
+            card.view_btn.click()
+            flush()
+            popup = self.get_popup()
+            self.assertIsNotNone(popup)
+            self.assertTrue(popup.isVisible())
+            self.assertEqual(popup._game, "hsr")
+            self.assertEqual(popup._char_id, card.char_id)
 
-        self.assertIsInstance(overlay_window, QWindow)
-        self.assertIsNot(overlay_window, scroll_window)
-        self.assertIs(
-            overlay_window.parent(),
-            central.windowHandle(),
-            "the overlay must live in the same native surface hierarchy",
-        )
-        self.assertTrue(overlay_window.isVisible())
+    def test_maximize_unmaximize_stress_on_real_window(self):
+        """50 maximize/restore cycles must keep the overlay correct."""
+        with real_viewer() as (window, card):
+            card.view_btn.click()
+            flush()
+            popup = self.get_popup()
+            central = window.centralWidget()
+            self.assertTrue(popup.isVisible())
+
+            for cycle in range(50):
+                window.showMaximized()
+                flush(4)
+                self._assert_overlay_ok(popup, central, card, f"max#{cycle}")
+                self.assertEqual(
+                    native_children(window),
+                    [],
+                    f"native subsurface appeared after maximize in {cycle}",
+                )
+
+                window.showNormal()
+                flush(4)
+                self._assert_overlay_ok(popup, central, card, f"norm#{cycle}")
+
+    def _assert_overlay_ok(self, popup, central, card, tag):
+        self.assertTrue(popup.isVisible(), f"popup hidden after {tag}")
         self.assertEqual(
-            overlay_window.geometry(),
+            popup.geometry(),
             central.rect(),
-            "the native overlay surface must cover the whole host",
+            f"popup geometry wrong after {tag}",
         )
-
-    def test_overlay_is_re_raised_when_mapped_and_on_resize(self):
-        window, central, _scroll, _button, _anchor = make_details_host(
-            with_native_anchor=True
+        self.assertFalse(
+            card.view_btn.underMouse(),
+            f"View button stuck hovered after {tag}",
         )
-        self.track_window(window)
-
-        popup = CharacterDetailsPopup(central)
-        calls = []
-        original = popup.bring_to_front
-
-        def spy():
-            calls.append(1)
-            original()
-
-        popup.bring_to_front = spy
-        popup.open_character("hsr", "1")
-        flush()
-
-        self.assertGreaterEqual(
-            len(calls),
-            2,
-            "overlay must re-raise on show and again once the surface is mapped",
+        self.assertFalse(
+            card.view_btn.isDown(),
+            f"View button stuck pressed after {tag}",
         )
-
-        calls.clear()
-        window.resize(window.width() - 40, window.height() - 30)
-        flush()
-        self.assertGreaterEqual(
-            len(calls),
-            1,
-            "resizing the host must re-raise the overlay above native siblings",
-        )
-
-    def test_bring_to_front_raises_the_native_qwindow(self):
-        window, central, _scroll, _button, _anchor = make_details_host(
-            with_native_anchor=True
-        )
-        self.track_window(window)
-
-        popup = open_details_for(window, _button)
-        handle = popup.windowHandle()
-        raised = []
-        original = handle.raise_
-        handle.raise_ = lambda: (raised.append(1), original())[1]
-
-        popup.bring_to_front()
-        self.assertEqual(raised, [1])
-
-    def test_maximize_unmaximize_stress(self):
-        """Maximize/unmaximize repeatedly should keep the overlay usable."""
-        window, central, _scroll, button, _anchor = make_details_host(
-            with_native_anchor=True
-        )
-        self.track_window(window)
-
-        popup = open_details_for(window, button)
-
-        for cycle in range(50):
-            window.showMaximized()
-            flush(4)
-
-            self.assertTrue(
-                popup.isVisible(),
-                f"popup hidden after maximize in cycle {cycle}",
-            )
-            self.assertEqual(
-                popup.geometry(),
-                central.rect(),
-                f"popup geometry wrong after maximize in cycle {cycle}",
-            )
-            handle = popup.windowHandle()
-            self.assertIsNotNone(handle)
-            self.assertTrue(
-                handle.isVisible(),
-                f"native handle hidden after maximize in cycle {cycle}",
-            )
-            self.assertFalse(
-                button.underMouse(),
-                f"View button stuck hovered after maximize in cycle {cycle}",
-            )
-            self.assertFalse(
-                button.isDown(),
-                f"View button stuck pressed after maximize in cycle {cycle}",
-            )
-
-            window.showNormal()
-            flush(4)
-
-            self.assertTrue(
-                popup.isVisible(),
-                f"popup hidden after restore in cycle {cycle}",
-            )
-            self.assertEqual(
-                popup.geometry(),
-                central.rect(),
-                f"popup geometry wrong after restore in cycle {cycle}",
-            )
-            handle = popup.windowHandle()
-            self.assertIsNotNone(handle)
-            self.assertTrue(
-                handle.isVisible(),
-                f"native handle hidden after restore in cycle {cycle}",
-            )
 
 
 if __name__ == "__main__":

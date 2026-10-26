@@ -9,6 +9,7 @@ Wayland without opening windows or touching the user's desktop:
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -188,6 +189,10 @@ class QtTestCase(unittest.TestCase):
         self.application.setPalette(self._old_palette)
         flush(2)
 
+    def get_popup(self):
+        """Return the live shared details popup, or ``None``."""
+        return details._popup
+
     def track_window(self, window):
         """Destroy *window* after the test without leaking it into the next one."""
 
@@ -209,6 +214,106 @@ def open_details_for(window, button):
     details.open_details("hsr", "1", None, window, source=button)
     flush()
     return details._popup
+
+
+_HSR_TEST_CHARS = {
+    "hsr": {
+        "1001": {
+            "en": "Testchar",
+            "rank": 5,
+            "damageType": "Physical",
+            "baseType": "Warrior",
+            "icon": "TestIcon",
+            "release": None,
+        }
+    }
+}
+
+
+@contextmanager
+def real_viewer(with_card=True):
+    """Boot the real ``NanokaViewer`` window with only the network stubbed.
+
+    The whole widget tree (native anchor removal, card sections, the real
+    ``view_btn`` -> ``open_details`` path) is the production code. Only the
+    HTTP-backed loaders are replaced so the suite stays offline and fast.
+
+    Yields ``(window, card)``. *card* is the real populated ``CardWidget``
+    (or ``None`` when ``with_card`` is False).
+    """
+    import nanoka_viewer.ui.loader as loader
+    import nanoka_viewer.ui.main_window as main_window
+    import nanoka_viewer.ui.card as _card_module
+    from nanoka_viewer.ui.card import CardWidget
+
+    originals = (
+        loader.get_all_characters_with_new_status,
+        main_window.fetch_manifest,
+        _card_module.request_image,
+        details.load_character_detail,
+        details.load_character_art,
+        details.load_character_build,
+    )
+
+    # Stub only the network boundaries.
+    loader.get_all_characters_with_new_status = lambda game: [
+        (cid, data, False)
+        for cid, data in _HSR_TEST_CHARS.get(game, {}).items()
+    ]
+    main_window.fetch_manifest = lambda: {
+        game: {"live": "1.0", "latest": "1.0", "new": {}}
+        for game in _HSR_TEST_CHARS
+    }
+    _card_module.request_image = lambda *a, **k: None
+    details.load_character_detail = lambda game, char_id: CharacterDetail(
+        game=game,
+        char_id=char_id,
+        name="Testchar",
+        subtitle="5-star",
+        overview="A test character.",
+        level_label="Lv. 80",
+    )
+    details.load_character_art = lambda url: None
+    details.load_character_build = lambda detail: []
+
+    reset_popup()
+    window = main_window.NanokaViewer()
+    window.show()
+    window.activateWindow()
+    flush()
+
+    card = None
+    if with_card:
+        # Let the LoadThread populate the real card via the event loop.
+        for _ in range(50):
+            wait(20)
+            cards = window.game_sections["hsr"].cards_container.findChildren(
+                CardWidget
+            )
+            if cards:
+                card = cards[0]
+                break
+
+    try:
+        yield window, card
+    finally:
+        (
+            loader.get_all_characters_with_new_status,
+            main_window.fetch_manifest,
+            _card_module.request_image,
+            details.load_character_detail,
+            details.load_character_art,
+            details.load_character_build,
+        ) = originals
+        reset_popup()
+        try:
+            window.close()
+            window.deleteLater()
+        except RuntimeError:
+            pass
+        application = app()
+        application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        flush(2)
 
 
 def button_center_in(widget: QWidget, host: QWidget) -> QPoint:
