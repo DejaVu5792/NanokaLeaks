@@ -52,8 +52,7 @@ from ..api.details import (
 logger = logging.getLogger(__name__)
 
 # Mouse/keyboard events that must never reach the list of cards while the
-# details overlay is open, even if the native Wayland subsurface stacking order
-# is wrong or a widget kept an implicit mouse grab.
+# details overlay is open, even if a widget kept an implicit mouse grab.
 _BLOCKED_INPUT_EVENTS = frozenset(
     {
         QEvent.Type.MouseButtonPress,
@@ -206,7 +205,7 @@ class _CollapsibleSection(QWidget):
 
 
 class CharacterDetailsPopup(QWidget):
-    """Lightbox-style native character details overlay."""
+    """Lightbox-style character details overlay."""
 
     def __init__(self, host):
         super().__init__(host)
@@ -325,12 +324,11 @@ class CharacterDetailsPopup(QWidget):
         self.setFocus()
         self.bring_to_front()
         logger.debug(
-            "details shown: host=%s overlay=%s panel=%s handle=%r visible=%s "
+            "details shown: host=%s overlay=%s panel=%s visible=%s "
             "focus=%r guard=%s",
             self._host.size(),
             self.size(),
             self.panel.geometry(),
-            self.windowHandle(),
             self.isVisible(),
             QApplication.focusWidget(),
             self._input_guard_installed,
@@ -338,20 +336,17 @@ class CharacterDetailsPopup(QWidget):
         self._start_load(request_id)
 
     def bring_to_front(self):
-        """Raise the overlay above sibling native (Wayland) surfaces."""
+        """Raise the plain overlay above its sibling widgets.
+
+        The overlay is an ordinary child widget painted into the single
+        main-window backing store (no native subsurface), so a QWidget-level
+        raise is enough to keep it on top of the card scroll areas.
+        """
         if not self.isVisible():
             return
         self.raise_()
         self.panel.raise_()
-        handle = self.windowHandle()
-        if handle is not None:
-            handle.raise_()
-        logger.debug(
-            "raised overlay handle=%r visible=%s geometry=%s",
-            handle,
-            handle.isVisible() if handle is not None else None,
-            self.geometry(),
-        )
+        logger.debug("raised overlay geometry=%s", self.geometry())
 
     @staticmethod
     def _is_inside(widget: QWidget | None, root: QWidget | None) -> bool:
@@ -906,8 +901,20 @@ class CharacterDetailsPopup(QWidget):
         super().paintEvent(event)
 
     def _update_geometry(self):
+        # Deferred timers can fire after close_popup(); never re-show the
+        # overlay from a stale update.
+        if not self.isVisible():
+            return
         rect = self._host.rect()
+        old_geometry = self.geometry()
         self.setGeometry(rect)
+        if old_geometry != rect:
+            logger.debug(
+                "geometry: overlay %s -> %s (host rect %s)",
+                old_geometry,
+                rect,
+                rect,
+            )
 
         width = min(
             1180,
@@ -926,18 +933,26 @@ class CharacterDetailsPopup(QWidget):
             height,
         )
         self.art_column.setFixedWidth(int(width * 0.25))
+        self.raise_()
+        self.panel.raise_()
         self.bring_to_front()
         self.update()
         self.panel.update()
 
     def showEvent(self, event):
-        """Re-raise the native overlay surface once it is actually mapped."""
+        """Size and raise the overlay once it is shown."""
         super().showEvent(event)
+        logger.debug(
+            "showEvent: visible=%s geometry=%s state=%s",
+            self.isVisible(),
+            self.geometry(),
+            self._host.window().windowState(),
+        )
+        self._update_geometry()
         self.bring_to_front()
-        # Wayland only commits subsurface placement after the surface is mapped
-        # and the compositor processed the parent's configure, so do it again on
-        # the next event loop turn.
-        QTimer.singleShot(0, self, self.bring_to_front)
+        # Re-run after layout settles so the panel centres on the final size.
+        QTimer.singleShot(0, self._update_geometry)
+        QTimer.singleShot(50, self._update_geometry)
 
     def close_popup(self):
         """Hide the popup, drop loaded data, and return focus to the window."""
@@ -945,7 +960,6 @@ class CharacterDetailsPopup(QWidget):
             return
         logger.debug("closing details popup (focus=%r)", QApplication.focusWidget())
         source = self._source
-        handle = self.windowHandle()
         try:
             self._remove_input_guard()
             self._request_id += 1
@@ -956,9 +970,6 @@ class CharacterDetailsPopup(QWidget):
             self._clear_stale_input_state(source)
             self._source = None
             self.clearFocus()
-            if handle is not None:
-                handle.hide()
-                handle.destroy()
             self.hide()
             self.repaint()
             self._host.repaint()
@@ -978,11 +989,28 @@ class CharacterDetailsPopup(QWidget):
             QTimer.singleShot(0, self.close_popup)
             return True
 
-        if obj is self._host and event.type() in (
-            QEvent.Type.Resize,
-            QEvent.Type.WindowStateChange,
-        ):
+        if obj is self._host and event.type() == QEvent.Type.Resize:
+            logger.debug(
+                "host Resize -> %s (state=%s)",
+                self._host.size(),
+                self._host.window().windowState(),
+            )
             self._update_geometry()
+        elif obj is self._host and event.type() == QEvent.Type.WindowStateChange:
+            logger.debug(
+                "host WindowStateChange -> %s (state=%s)",
+                self._host.size(),
+                self._host.window().windowState(),
+            )
+            self._update_geometry()
+            QTimer.singleShot(0, self._update_geometry)
+            QTimer.singleShot(50, self._update_geometry)
+            QTimer.singleShot(100, self._update_geometry)
+            QTimer.singleShot(300, self._update_geometry)
+            QTimer.singleShot(0, self.bring_to_front)
+            QTimer.singleShot(50, self.bring_to_front)
+            QTimer.singleShot(100, self.bring_to_front)
+            QTimer.singleShot(300, self.bring_to_front)
         elif self._should_block_input(obj, event):
             logger.debug(
                 "blocked %s targeted at %r while details are open",
@@ -1037,7 +1065,7 @@ def open_details(
     parent=None,
     source: QWidget | None = None,
 ):
-    """Show the shared native character-details popup."""
+    """Show the shared character-details popup."""
     global _popup
     if parent is None:
         return

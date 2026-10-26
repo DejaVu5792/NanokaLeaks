@@ -172,16 +172,6 @@ class NanokaViewer(QMainWindow):
 
         self.load_thread = None
 
-        # QtWebEngine makes its embedding window native on first use. If the
-        # top-level window is already visible, Qt destroys and recreates it,
-        # which looks like the application relaunching. Realize a hidden native
-        # child up front so the window is already in that state.
-        self._native_anchor = QWidget(central)
-        self._native_anchor.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-        self._native_anchor.setFixedSize(1, 1)
-        self._native_anchor.winId()
-        self._native_anchor.hide()
-
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()

@@ -120,6 +120,62 @@ class NativeSubsurfaceTests(QtTestCase):
         popup.bring_to_front()
         self.assertEqual(raised, [1])
 
+    def test_maximize_unmaximize_stress(self):
+        """Maximize/unmaximize repeatedly should keep the overlay usable."""
+        window, central, _scroll, button, _anchor = make_details_host(
+            with_native_anchor=True
+        )
+        self.track_window(window)
+
+        popup = open_details_for(window, button)
+
+        for cycle in range(50):
+            window.showMaximized()
+            flush(4)
+
+            self.assertTrue(
+                popup.isVisible(),
+                f"popup hidden after maximize in cycle {cycle}",
+            )
+            self.assertEqual(
+                popup.geometry(),
+                central.rect(),
+                f"popup geometry wrong after maximize in cycle {cycle}",
+            )
+            handle = popup.windowHandle()
+            self.assertIsNotNone(handle)
+            self.assertTrue(
+                handle.isVisible(),
+                f"native handle hidden after maximize in cycle {cycle}",
+            )
+            self.assertFalse(
+                button.underMouse(),
+                f"View button stuck hovered after maximize in cycle {cycle}",
+            )
+            self.assertFalse(
+                button.isDown(),
+                f"View button stuck pressed after maximize in cycle {cycle}",
+            )
+
+            window.showNormal()
+            flush(4)
+
+            self.assertTrue(
+                popup.isVisible(),
+                f"popup hidden after restore in cycle {cycle}",
+            )
+            self.assertEqual(
+                popup.geometry(),
+                central.rect(),
+                f"popup geometry wrong after restore in cycle {cycle}",
+            )
+            handle = popup.windowHandle()
+            self.assertIsNotNone(handle)
+            self.assertTrue(
+                handle.isVisible(),
+                f"native handle hidden after restore in cycle {cycle}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
