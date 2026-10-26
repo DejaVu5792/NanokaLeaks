@@ -1,5 +1,6 @@
 """Character card widget for displaying character information."""
 
+import logging
 import webbrowser
 
 from PySide6.QtCore import Qt
@@ -23,6 +24,8 @@ from ..api import (
 from .icons import apply_icon_or_text
 from .image_loader import request_image
 from .pulse_button import PulseButton
+
+logger = logging.getLogger(__name__)
 
 
 class CardWidget(QWidget):
@@ -154,6 +157,7 @@ class CardWidget(QWidget):
         view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         view_btn.setToolTip("Open character details")
         view_btn.clicked.connect(self._open_details)
+        self.view_btn = view_btn
         actions.addWidget(view_btn, 1)
 
         browser_btn = PulseButton()
@@ -202,7 +206,22 @@ class CardWidget(QWidget):
         """Open the native character details popup."""
         from .details import open_details
 
-        open_details(self.game, self.char_id, self.char_data, self.window())
+        button = getattr(self, "view_btn", None)
+        logger.debug(
+            "View clicked for %s/%s (underMouse=%s down=%s grabber=%r)",
+            self.game,
+            self.char_id,
+            button.underMouse() if button is not None else None,
+            button.isDown() if button is not None else None,
+            QWidget.mouseGrabber(),
+        )
+        open_details(
+            self.game,
+            self.char_id,
+            self.char_data,
+            self.window(),
+            source=button,
+        )
 
     def _open_external_url(self, url):
         """Open a character page in the system default browser."""

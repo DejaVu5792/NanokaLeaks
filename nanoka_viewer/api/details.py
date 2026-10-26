@@ -959,14 +959,26 @@ _ZZZ_SKILLS = [
     ("assist", "Assist"),
 ]
 
+# Mapping for the stat IDs that can appear in ``fairy_recommend.part_sub_list``.
+# Nanoka does not expose a stat-name JSON; its own character-detail frontend
+# hardcodes this same mapping (see the ``ao`` function in its ZZZ route chunk).
+# Main-stat names come from the detail JSON itself (``part4/5/6`` and
+# ``part_sub``); only sub-stat IDs need this map.
 _ZZZ_STAT_NAMES = {
-    12102: "ATK",
-    12103: "ATK%",
+    11102: "HP%",
+    11103: "HP",
+    12102: "ATK%",
+    12103: "ATK",
+    13102: "DEF%",
+    13103: "DEF",
     20103: "CRIT Rate",
-    20104: "CRIT DMG",
-    21103: "PEN Ratio",
+    21103: "CRIT DMG",
+    23103: "PEN Ratio",
+    23203: "PEN",
     12202: "Impact",
-    31803: "Electric DMG Bonus",
+    30502: "Energy Regen",
+    31203: "Anomaly Proficiency",
+    31402: "Anomaly Mastery",
 }
 
 
@@ -1068,6 +1080,33 @@ def _zzz_skills(raw: dict[str, Any]) -> list[SkillDetail]:
     return skills
 
 
+def _zzz_stat_name(prop: Any, recommend: dict[str, Any]) -> str:
+    """Resolve a ZZZ sub-stat ID to its display name.
+
+    The detail JSON only stores sub-stat IDs, so the base mapping is hardcoded
+    from nanoka's own frontend.  Per-character main-stat names are used as a
+    fallback for IDs that are not in the base map.
+    """
+    try:
+        key = int(prop)
+    except (TypeError, ValueError):
+        return str(prop)
+
+    if key in _ZZZ_STAT_NAMES:
+        return _ZZZ_STAT_NAMES[key]
+
+    for part_key in ("part_sub", "part4", "part5", "part6"):
+        part = recommend.get(part_key) or {}
+        try:
+            if int(part.get("prop") or 0) == key and part.get("name"):
+                return str(part["name"]).replace("\xa0", " ")
+        except (TypeError, ValueError):
+            continue
+
+    logger.debug("Unknown ZZZ stat id %s", key)
+    return f"Stat {key}"
+
+
 def _zzz_build(raw: dict[str, Any], metadata: dict[str, Any]) -> list[BuildSection]:
     recommend = raw.get("fairy_recommend") or {}
     item_map = metadata.get("item") or {}
@@ -1101,12 +1140,14 @@ def _zzz_build(raw: dict[str, Any], metadata: dict[str, Any]) -> list[BuildSecti
     for slot, key in (("4", "part4"), ("5", "part5"), ("6", "part6")):
         value = recommend.get(key) or {}
         if value.get("name"):
-            main_stats.append(f"Slot {slot}: {value['name']}")
+            main_stats.append(
+                f"Slot {slot}: {str(value['name']).replace(chr(160), ' ')}"
+            )
     if main_stats:
         sections.append(BuildSection("Main Stats", main_stats))
 
     substats = [
-        _ZZZ_STAT_NAMES.get(int(prop), str(prop))
+        _zzz_stat_name(prop, recommend)
         for prop in recommend.get("part_sub_list") or []
     ]
     if substats:

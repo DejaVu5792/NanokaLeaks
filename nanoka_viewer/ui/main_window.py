@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QFrame,
 )
-from PySide6.QtCore import QEvent, QTimer, Qt
+from PySide6.QtCore import QEvent, QObject, QTimer, Qt
+from PySide6.QtGui import QCursor
 
 from .styles import STYLESHEET
 from .section import GameSection
@@ -27,6 +28,68 @@ from ..api import get_name, GAMES, clear_cache, fetch_manifest
 logger = logging.getLogger(__name__)
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
+
+_TRACED_MOUSE_EVENTS = frozenset(
+    {
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.MouseButtonRelease,
+        QEvent.Type.MouseButtonDblClick,
+        QEvent.Type.MouseMove,
+        QEvent.Type.Wheel,
+        QEvent.Type.Enter,
+        QEvent.Type.Leave,
+        QEvent.Type.HoverEnter,
+        QEvent.Type.HoverLeave,
+        QEvent.Type.HoverMove,
+    }
+)
+
+
+class _MouseTraceFilter(QObject):
+    """Verbose widget-level mouse trace (enabled by NANOKA_TRACE_MOUSE=1).
+
+    Qt's own ``qt.qpa.wayland.pointer`` logging is too noisy to keep on, but
+    mouse routing problems (stale hover, a press landing on the widget
+    underneath an overlay) need exactly that information.  This filter logs
+    the receiver, its hover state and the current implicit grabber instead.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._logger = logging.getLogger("mouse.trace")
+
+    def eventFilter(self, obj, event):
+        if event.type() in _TRACED_MOUSE_EVENTS and isinstance(obj, QWidget):
+            if event.type() == QEvent.Type.MouseMove:
+                # Keep high-frequency motion readable: only log when the
+                # receiver or its hover state actually changes.
+                key = (obj, obj.underMouse())
+                if key == getattr(self, "_last_move", None):
+                    return False
+                self._last_move = key
+            self._logger.debug(
+                "%-20s %-28s objectName=%r underMouse=%s down=%s "
+                "grabber=%r cursor=%s",
+                event.type().name,
+                type(obj).__name__,
+                obj.objectName(),
+                obj.underMouse(),
+                obj.isDown() if hasattr(obj, "isDown") else False,
+                QWidget.mouseGrabber(),
+                QCursor.pos(),
+            )
+        return False
+
+
+def _install_mouse_trace(app):
+    """Install the verbose mouse trace filter, keeping a reference alive."""
+    if getattr(app, "_nanoka_mouse_trace", None) is not None:
+        return
+    app._nanoka_mouse_trace = _MouseTraceFilter(app)
+    app.installEventFilter(app._nanoka_mouse_trace)
+    logging.getLogger(__name__).debug(
+        "Detailed widget-level mouse tracing enabled (NANOKA_TRACE_MOUSE)"
+    )
 
 
 class NanokaViewer(QMainWindow):
@@ -321,15 +384,18 @@ def main(argv=None):
 
         qInstallMessageHandler(_qt_message_handler)
 
-        # Enable diagnostic rules for QPA, styles, and Wayland painting unless overridden
+        # Enable diagnostic rules for QPA, styles, and Wayland painting unless
+        # overridden.  Pointer/frame noise stays off by default; use
+        # NANOKA_TRACE_MOUSE=1 for a readable widget-level mouse trace instead.
         if "QT_LOGGING_RULES" not in os.environ:
-            # Filter out mouse motion noise from Wayland pointer events
             os.environ["QT_LOGGING_RULES"] = (
                 "qt.qpa.wayland.pointer=false;qt.qpa.input*=false;qt.qpa.*.debug=true;"
                 "qt.widgets.styling.debug=true;qt.gui.painting.debug=true"
             )
 
         logger.debug("Verbose logging active. Qt version: %s", qVersion())
+        if os.environ.get("NANOKA_TRACE_MOUSE"):
+            logger.debug("NANOKA_TRACE_MOUSE is set; widget mouse trace will follow")
 
     if args.profiler:
         profile_output = args.profiler_output or "nanoka_profile.prof"
@@ -353,8 +419,12 @@ def main(argv=None):
 
 def _run_app(argv):
     """Create and run the QApplication."""
+    import os
+
     app = QApplication(argv if argv else sys.argv)
     app.setStyle("Fusion")
+    if os.environ.get("NANOKA_TRACE_MOUSE"):
+        _install_mouse_trace(app)
 
     window = NanokaViewer()
     window.show()

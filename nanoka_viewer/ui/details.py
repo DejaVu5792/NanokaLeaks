@@ -13,8 +13,17 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import (
+    QColor,
+    QCursor,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
+    QAbstractButton,
+    QApplication,
     QFrame,
     QGraphicsOpacityEffect,
     QGridLayout,
@@ -41,6 +50,21 @@ from ..api.details import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Mouse/keyboard events that must never reach the list of cards while the
+# details overlay is open, even if the native Wayland subsurface stacking order
+# is wrong or a widget kept an implicit mouse grab.
+_BLOCKED_INPUT_EVENTS = frozenset(
+    {
+        QEvent.Type.MouseButtonPress,
+        QEvent.Type.MouseButtonRelease,
+        QEvent.Type.MouseButtonDblClick,
+        QEvent.Type.Wheel,
+        QEvent.Type.ContextMenu,
+        QEvent.Type.KeyPress,
+        QEvent.Type.KeyRelease,
+    }
+)
 
 
 class _DetailLoadThread(QThread):
@@ -196,6 +220,9 @@ class CharacterDetailsPopup(QWidget):
         self._skeleton_animation: QPropertyAnimation | None = None
         self._game = ""
         self._char_id = ""
+        self._source: QWidget | None = None
+        self._input_guard_installed = False
+        self._backdrop_pressed = False
 
         self.setObjectName("detailsOverlay")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -261,24 +288,126 @@ class CharacterDetailsPopup(QWidget):
 
         self._host.installEventFilter(self)
 
-    def open_character(self, game: str, char_id: str):
-        """Show the popup and fetch *char_id*'s details from nanoka.cc."""
+    def open_character(
+        self, game: str, char_id: str, source: QWidget | None = None
+    ):
+        """Show the popup and fetch *char_id*'s details from nanoka.cc.
+
+        *source* is the widget that triggered the popup (usually the card's
+        View button).  Its hover/pressed state is cleared so it does not keep
+        painting as if it were still interactive underneath the overlay.
+        """
         self._game = game
         self._char_id = char_id
+        self._source = source
         self._request_id += 1
         request_id = self._request_id
 
+        cursor_pos = QCursor.pos()
+        logger.debug(
+            "open details %s/%s source=%r grabber=%r widget_at_cursor=%r "
+            "focus=%r",
+            game,
+            char_id,
+            source,
+            QWidget.mouseGrabber(),
+            QApplication.widgetAt(cursor_pos),
+            QApplication.focusWidget(),
+        )
+
+        self._clear_stale_input_state(source)
         self._clear_content()
         self._show_loading()
         self._update_geometry()
         self.show()
-        self.raise_()
-        self.panel.raise_()
-        if self.windowHandle():
-            self.windowHandle().raise_()
+        self._install_input_guard()
         self.scroll.verticalScrollBar().setValue(0)
         self.setFocus()
+        self.bring_to_front()
+        logger.debug(
+            "details shown: host=%s overlay=%s panel=%s handle=%r visible=%s "
+            "focus=%r guard=%s",
+            self._host.size(),
+            self.size(),
+            self.panel.geometry(),
+            self.windowHandle(),
+            self.isVisible(),
+            QApplication.focusWidget(),
+            self._input_guard_installed,
+        )
         self._start_load(request_id)
+
+    def bring_to_front(self):
+        """Raise the overlay above sibling native (Wayland) surfaces."""
+        if not self.isVisible():
+            return
+        self.raise_()
+        self.panel.raise_()
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.raise_()
+        logger.debug(
+            "raised overlay handle=%r visible=%s geometry=%s",
+            handle,
+            handle.isVisible() if handle is not None else None,
+            self.geometry(),
+        )
+
+    @staticmethod
+    def _is_inside(widget: QWidget | None, root: QWidget | None) -> bool:
+        """Return whether *widget* is *root* or one of its descendants."""
+        while widget is not None:
+            if widget is root:
+                return True
+            widget = widget.parentWidget()
+        return False
+
+    def _clear_stale_input_state(self, widget: QWidget | None):
+        """Drop hover/pressed state left over on the widget that opened us."""
+        if widget is None:
+            return
+        was_hovered = widget.testAttribute(Qt.WidgetAttribute.WA_UnderMouse)
+        was_down = isinstance(widget, QAbstractButton) and widget.isDown()
+        if isinstance(widget, QAbstractButton):
+            widget.setDown(False)
+        widget.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, False)
+        QApplication.sendEvent(widget, QEvent(QEvent.Type.Leave))
+        widget.update()
+        logger.debug(
+            "cleared stale hover on %r (hovered=%s down=%s)",
+            widget,
+            was_hovered,
+            was_down,
+        )
+
+    def _install_input_guard(self):
+        """Block input aimed at the host content while the overlay is shown."""
+        app = QApplication.instance()
+        if app is None or self._input_guard_installed:
+            return
+        app.installEventFilter(self)
+        self._input_guard_installed = True
+        logger.debug("installed modal input guard")
+
+    def _remove_input_guard(self):
+        app = QApplication.instance()
+        if app is None or not self._input_guard_installed:
+            return
+        app.removeEventFilter(self)
+        self._input_guard_installed = False
+        logger.debug("removed modal input guard")
+
+    def _should_block_input(self, obj, event) -> bool:
+        """Whether *event* must not reach the host content underneath us."""
+        if not self._input_guard_installed or not self.isVisible():
+            return False
+        if event.type() not in _BLOCKED_INPUT_EVENTS:
+            return False
+        if not isinstance(obj, QWidget):
+            return False
+        if self._is_inside(obj, self):
+            return False
+        return self._is_inside(obj, self._host)
 
     def _start_load(self, request_id: int):
         thread = _DetailLoadThread(self._game, self._char_id, self)
@@ -797,39 +926,93 @@ class CharacterDetailsPopup(QWidget):
             height,
         )
         self.art_column.setFixedWidth(int(width * 0.25))
-        self.raise_()
-        self.panel.raise_()
-        if self.windowHandle():
-            self.windowHandle().raise_()
+        self.bring_to_front()
         self.update()
         self.panel.update()
 
+    def showEvent(self, event):
+        """Re-raise the native overlay surface once it is actually mapped."""
+        super().showEvent(event)
+        self.bring_to_front()
+        # Wayland only commits subsurface placement after the surface is mapped
+        # and the compositor processed the parent's configure, so do it again on
+        # the next event loop turn.
+        QTimer.singleShot(0, self, self.bring_to_front)
+
     def close_popup(self):
         """Hide the popup, drop loaded data, and return focus to the window."""
+        logger.debug("closing details popup (focus=%r)", QApplication.focusWidget())
+        self._remove_input_guard()
         self._request_id += 1
         self._clear_content()
         self._game = ""
         self._char_id = ""
+        self._source = None
+        self._backdrop_pressed = False
         self.hide()
         self._host.setFocus()
 
     def eventFilter(self, obj, event):
-        """Keep the overlay sized to its host window."""
-        if obj is self._host and event.type() in (QEvent.Type.Resize, QEvent.Type.WindowStateChange):
+        """Keep the overlay sized to its host and swallow input aimed past it."""
+        if obj is self._host and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.WindowStateChange,
+        ):
             self._update_geometry()
+        elif self._should_block_input(obj, event):
+            logger.debug(
+                "blocked %s targeted at %r while details are open",
+                event.type().name,
+                obj,
+            )
+            return True
         return super().eventFilter(obj, event)
 
+    def _is_backdrop(self, event) -> bool:
+        """Whether *event* (relative to the overlay) landed outside the panel."""
+        global_pos = event.globalPosition().toPoint()
+        return not self.panel.rect().contains(self.panel.mapFromGlobal(global_pos))
+
     def mousePressEvent(self, event):
-        """Close the popup when the dimmed backdrop is clicked."""
-        if not self.panel.geometry().contains(event.position().toPoint()):
+        """Remember whether the press started on the dimmed backdrop."""
+        self._backdrop_pressed = self._is_backdrop(event)
+        logger.debug(
+            "overlay press at %s backdrop=%s",
+            event.position().toPoint(),
+            self._backdrop_pressed,
+        )
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        """Close when a full click (press + release) happens on the backdrop.
+
+        Closing on the release (instead of the press) consumes the whole click,
+        so the card's View button underneath never receives a lone release that
+        could leave it hovered or armed for activation.
+        """
+        backdrop = self._is_backdrop(event)
+        logger.debug(
+            "overlay release at %s backdrop=%s pressed_on_backdrop=%s",
+            event.position().toPoint(),
+            backdrop,
+            self._backdrop_pressed,
+        )
+        if backdrop and self._backdrop_pressed:
             self.close_popup()
-        super().mousePressEvent(event)
+        self._backdrop_pressed = False
+        event.accept()
 
 
 _popup = None
 
 
-def open_details(game: str, char_id: str, _char_data=None, parent=None):
+def open_details(
+    game: str,
+    char_id: str,
+    _char_data=None,
+    parent=None,
+    source: QWidget | None = None,
+):
     """Show the shared native character-details popup."""
     global _popup
     if parent is None:
@@ -845,4 +1028,17 @@ def open_details(game: str, char_id: str, _char_data=None, parent=None):
     if _popup is None:
         _popup = CharacterDetailsPopup(host)
 
-    _popup.open_character(game, char_id)
+    if (
+        _popup.isVisible()
+        and _popup._game == game
+        and _popup._char_id == char_id
+    ):
+        logger.debug(
+            "details already open for %s/%s; raising instead of reloading",
+            game,
+            char_id,
+        )
+        _popup.bring_to_front()
+        return
+
+    _popup.open_character(game, char_id, source)

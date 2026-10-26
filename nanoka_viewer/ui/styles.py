@@ -15,11 +15,11 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background: palette(light);
+    background: palette(mid);
 }
 
 QPushButton:pressed {
-    background: palette(mid);
+    background: palette(midlight);
 }
 
 QPushButton#viewBtn {
@@ -28,12 +28,19 @@ QPushButton#viewBtn {
     font-size: 11px;
     background: palette(highlight);
     color: palette(highlighted-text);
-    border: none;
+    border: 1px solid transparent;
 }
 
 QPushButton#viewBtn:hover {
-    background: palette(light);
+    background: palette(highlight);
+    color: palette(highlighted-text);
+    border: 1px solid palette(window-text);
+}
+
+QPushButton#viewBtn:pressed {
+    background: palette(mid);
     color: palette(button-text);
+    border: 1px solid palette(mid);
 }
 
 QPushButton#iconBtn {
@@ -45,11 +52,11 @@ QPushButton#iconBtn {
 }
 
 QPushButton#iconBtn:hover {
-    background: palette(light);
+    background: palette(mid);
 }
 
 QPushButton#iconBtn:pressed {
-    background: palette(mid);
+    background: palette(midlight);
 }
 
 QScrollArea {
@@ -254,7 +261,7 @@ QToolButton#detailDisclosure {
 }
 
 QToolButton#detailDisclosure:hover {
-    background: palette(light);
+    background: palette(mid);
     color: palette(button-text);
 }
 
