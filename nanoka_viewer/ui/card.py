@@ -23,7 +23,8 @@ from ..api import (
 )
 from .icons import apply_icon_or_text
 from .image_loader import request_image
-from .pulse_button import PulseButton
+import subprocess
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -160,21 +161,18 @@ class CardWidget(QWidget):
         self.view_btn = view_btn
         actions.addWidget(view_btn, 1)
 
-        browser_btn = PulseButton()
+        browser_btn = QPushButton()
         browser_btn.setObjectName("iconBtn")
         browser_btn.setFixedSize(28, 28)
         browser_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        browser_btn.setToolTip(
-            "Open in default browser (double-click for in-app browser)"
-        )
+        browser_btn.setToolTip("Open in default browser")
         browser_btn.setAccessibleName("Open in default browser")
         apply_icon_or_text(
             browser_btn,
             ("external-link-symbolic", "external-link", "document-open-remote"),
             "\u2197",
         )
-        browser_btn.single_activated.connect(lambda u=url: self._open_external_url(u))
-        browser_btn.activated.connect(lambda u=url: self._open_url(u))
+        browser_btn.clicked.connect(lambda checked=False, u=url: self._open_external_url(u))
         actions.addWidget(browser_btn)
 
         layout.addLayout(actions)
@@ -225,14 +223,26 @@ class CardWidget(QWidget):
 
     def _open_external_url(self, url):
         """Open a character page in the system default browser."""
-        if url:
-            webbrowser.open(url)
-
-    def _open_url(self, url):
-        """Open a character page in the embedded browser popup."""
-        from .browser import open_browser
-
-        open_browser(url, self.window())
+        if not url:
+            return
+        if sys.platform.startswith("linux"):
+            try:
+                desktop = subprocess.check_output(
+                    ["xdg-settings", "get", "default-web-browser"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+                if desktop:
+                    subprocess.Popen(
+                        ["gtk-launch", desktop, url],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                    return
+            except Exception:
+                pass
+        webbrowser.open(url, new=2)
 
     def _on_char_image_loaded(self, pixmap):
         """Update character image when loaded."""
