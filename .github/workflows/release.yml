@@ -6,8 +6,9 @@ on:
       - 'v*'
 
 jobs:
-  build-and-publish:
+  build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -21,9 +22,6 @@ jobs:
 
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout Repository
@@ -52,8 +50,31 @@ jobs:
           -o ${{ matrix.binary_name }}
           main.py
 
-      - name: Upload to GitHub Release
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-binary
+          path: ${{ matrix.binary_name }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.binary_name }}
-          generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
+          tag_name: ${{ github.ref_name }}
+          files: release-assets/*
+          generate_release_notes: true
