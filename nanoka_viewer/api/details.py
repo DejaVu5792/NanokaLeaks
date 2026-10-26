@@ -20,9 +20,18 @@ from typing import Any
 import requests
 from requests.adapters import HTTPAdapter
 
-from .constants import BASE_URL
+import hashlib
+
+from .constants import BASE_URL, CACHE_DIR
 from .manifest import get_latest_version
 from .models import get_character_url, get_name
+from ..settings import get_setting
+
+DETAIL_ART_CACHE_DIR = CACHE_DIR / "details_art"
+DETAIL_ART_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# In-memory cache for uncached-by-default artwork when enabled.
+_art_cache: dict[str, bytes] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +56,23 @@ _metadata_cache: dict[tuple[str, str, str], Any] = {}
 
 
 def clear_detail_cache():
-    """Clear in-memory cached character details and metadata."""
-    global _detail_cache, _metadata_cache
+    """Clear in-memory cached character details, metadata, and artwork."""
+    global _detail_cache, _metadata_cache, _art_cache
     _detail_cache.clear()
     _metadata_cache.clear()
-    logger.info("Character detail and metadata memory cache cleared")
+    _art_cache.clear()
+    try:
+        if DETAIL_ART_CACHE_DIR.exists():
+            for item in DETAIL_ART_CACHE_DIR.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    import shutil
+
+                    shutil.rmtree(item)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not clear detail artwork cache: %s", exc)
+    logger.info("Character detail, metadata, and artwork cache cleared")
 
 
 class DetailUnavailable(Exception):
@@ -155,8 +176,36 @@ def _get_bytes(url: str) -> bytes | None:
 
 
 def load_character_art(url: str) -> bytes | None:
-    """Fetch character art separately so text never waits for the image."""
-    return _get_bytes(url)
+    """Fetch character art separately so text never waits for the image.
+
+    Artwork caching is optional and controlled by user settings.
+    """
+    if not url:
+        return None
+
+    caching = get_setting("cache_character_artwork")
+    if caching:
+        if url in _art_cache:
+            return _art_cache[url]
+
+        cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
+        if cache_file.exists():
+            try:
+                data = cache_file.read_bytes()
+                _art_cache[url] = data
+                return data
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not read cached artwork %s: %s", cache_file, exc)
+
+    data = _get_bytes(url)
+    if caching and data is not None:
+        _art_cache[url] = data
+        cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
+        try:
+            cache_file.write_bytes(data)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not write cached artwork %s: %s", cache_file, exc)
+    return data
 
 
 def _latest_version(game: str) -> str:
@@ -171,10 +220,11 @@ def _latest_version(game: str) -> str:
 
 def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) -> Any:
     cache_key = (game, version, resource_name)
-    if cache_key in _metadata_cache:
+    caching = get_setting("cache_character_builds")
+    if caching and cache_key in _metadata_cache:
         return _metadata_cache[cache_key]
     data = _safe_json(url)
-    if data is not None:
+    if caching and data is not None:
         _metadata_cache[cache_key] = data
     return data
 
@@ -214,7 +264,8 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
         version = _latest_version(game)
 
     cache_key = (game, version, str(char_id))
-    if cache_key in _detail_cache:
+    caching = get_setting("cache_character_details")
+    if caching and cache_key in _detail_cache:
         logger.debug("Using cached character detail for %s %s (version %s)", game, char_id, version)
         return copy.deepcopy(_detail_cache[cache_key])
 
@@ -230,7 +281,8 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
             ) from exc
         version = fresh_version
         cache_key = (game, version, str(char_id))
-        if cache_key in _detail_cache:
+        caching = get_setting("cache_character_details")
+        if caching and cache_key in _detail_cache:
             return copy.deepcopy(_detail_cache[cache_key])
         try:
             raw = _get_json(_detail_url(game, version, char_id))
@@ -264,7 +316,8 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
     if has_build:
         detail.build_context = BuildContext(game, version, raw)
 
-    _detail_cache[cache_key] = detail
+    if get_setting("cache_character_details"):
+        _detail_cache[cache_key] = detail
     return copy.deepcopy(detail)
 
 

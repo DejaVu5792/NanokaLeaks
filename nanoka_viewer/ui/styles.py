@@ -119,6 +119,31 @@ QFrame#detailsPanel {
     border-radius: 10px;
 }
 
+QFrame#settingsPanel {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 10px;
+}
+
+QFrame#settingsHeader {
+    background: palette(alternate-base);
+    border: none;
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+}
+
+QLabel#settingsTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: palette(text);
+}
+
+QLabel#settingsSectionTitle {
+    font-size: 12px;
+    font-weight: 700;
+    color: palette(text);
+}
+
 QFrame#detailsHeader {
     background: palette(alternate-base);
     border: none;

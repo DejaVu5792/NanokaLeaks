@@ -23,6 +23,7 @@ from .styles import STYLESHEET
 from .section import GameSection
 from .loader import LoadThread
 from .image_loader import clear_image_cache
+from .settings import open_settings
 from ..api import get_name, GAMES, clear_cache, fetch_manifest
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,11 @@ class NanokaViewer(QMainWindow):
         self.status_label.setStyleSheet("color: palette(placeholder-text);")
         header_layout.addWidget(self.status_label)
 
+        self.settings_btn = QPushButton("Settings")
+        self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.settings_btn.clicked.connect(self._open_settings)
+        header_layout.addWidget(self.settings_btn)
+
         self.refresh_btn = QPushButton("Reload")
         self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.refresh_btn.clicked.connect(self.load_data)
@@ -166,8 +172,6 @@ class NanokaViewer(QMainWindow):
 
         self.load_thread = None
 
-        self._shift_held = False
-
         # QtWebEngine makes its embedding window native on first use. If the
         # top-level window is already visible, Qt destroys and recreates it,
         # which looks like the application relaunching. Realize a hidden native
@@ -182,60 +186,8 @@ class NanokaViewer(QMainWindow):
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
 
-    def _update_refresh_button_text(self):
-        """Update the refresh button text based on keyboard modifiers."""
-        if not self.refresh_btn.isEnabled():
-            return
-
-        if self._shift_held:
-            if self.refresh_btn.text() != "Clear Cache and Reload":
-                self.refresh_btn.setText("Clear Cache and Reload")
-                self.refresh_btn.setToolTip("Clears manifest, character data, and image cache")
-        else:
-            if self.refresh_btn.text() != "Reload":
-                self.refresh_btn.setText("Reload")
-                self.refresh_btn.setToolTip("")
-
-    def _sync_shift_state(self):
-        """Sync the cached Shift state with the actual keyboard state."""
-        self._shift_held = bool(
-            QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
-        )
-        self._update_refresh_button_text()
-
-    def keyPressEvent(self, event):
-        """Track the Shift key locally instead of using a global event filter."""
-        if event.key() == Qt.Key.Key_Shift and not event.isAutoRepeat():
-            self._shift_held = True
-            self._update_refresh_button_text()
-        super().keyPressEvent(event)
-
-    def keyReleaseEvent(self, event):
-        """Track the Shift key locally instead of using a global event filter."""
-        if event.key() == Qt.Key.Key_Shift and not event.isAutoRepeat():
-            self._shift_held = False
-            self._update_refresh_button_text()
-        super().keyReleaseEvent(event)
-
-    def focusInEvent(self, event):
-        """Refresh the Shift state when the window gains focus."""
-        self._sync_shift_state()
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event):
-        """Refresh the Shift state when the window loses focus."""
-        self._sync_shift_state()
-        super().focusOutEvent(event)
-
     def load_data(self):
         """Start loading character data."""
-        # Check if Shift is held to clear cache
-        if self._shift_held or (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier):
-            logger.info("Shift key held during reload, clearing all caches...")
-            self.status_label.setText("Clearing cache...")
-            clear_cache()
-            clear_image_cache()
-
         logger.info("Starting data load...")
         self.refresh_btn.setEnabled(False)
         self.refresh_btn.setText("Reload")  # Reset text while loading
@@ -249,6 +201,12 @@ class NanokaViewer(QMainWindow):
         self.load_thread.game_loaded.connect(self.on_game_loaded)
         self.load_thread.load_finished.connect(self.on_load_finished)
         self.load_thread.start()
+
+    def _open_settings(self):
+        """Open the settings popup."""
+        from .settings import open_settings
+
+        open_settings(self)
 
     def on_game_loaded(self, game, chars):
         """Handle when a game's character data is loaded."""
