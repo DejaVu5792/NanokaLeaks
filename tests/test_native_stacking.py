@@ -78,28 +78,55 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
             self.assertEqual(popup._game, "hsr")
             self.assertEqual(popup._char_id, card.char_id)
 
-    def test_maximize_unmaximize_stress_on_real_window(self):
-        """50 maximize/restore cycles must keep the overlay correct."""
+    def test_maximize_restore_relaunch_stress_on_real_window(self):
+        """50x maximize -> restore -> maximize -> relaunch on the real app.
+
+        Each cycle drives the production lifecycle: open the overlay via the
+        real View button, maximize, restore, maximize again, then close and
+        relaunch it. This catches both the maximize black-bar regression (no
+        native subsurfaces may appear) and stale-overlay bugs on relaunch.
+        """
         with real_viewer() as (window, card):
-            card.view_btn.click()
-            flush()
-            popup = self.get_popup()
             central = window.centralWidget()
-            self.assertTrue(popup.isVisible())
 
             for cycle in range(50):
-                window.showMaximized()
-                flush(4)
-                self._assert_overlay_ok(popup, central, card, f"max#{cycle}")
+                # Relaunch through the real View button.
+                card.view_btn.click()
+                flush()
+                popup = self.get_popup()
+                self.assertIsNotNone(popup, f"popup missing on cycle {cycle}")
+                self.assertTrue(popup.isVisible(), f"popup hidden on open {cycle}")
                 self.assertEqual(
                     native_children(window),
                     [],
-                    f"native subsurface appeared after maximize in {cycle}",
+                    f"native subsurface appeared on open in {cycle}",
                 )
+
+                window.showMaximized()
+                flush(4)
+                self._assert_overlay_ok(popup, central, card, f"max#{cycle}")
 
                 window.showNormal()
                 flush(4)
                 self._assert_overlay_ok(popup, central, card, f"norm#{cycle}")
+
+                window.showMaximized()
+                flush(4)
+                self._assert_overlay_ok(popup, central, card, f"max2#{cycle}")
+                self.assertEqual(
+                    native_children(window),
+                    [],
+                    f"native subsurface appeared after re-maximize in {cycle}",
+                )
+
+                # Close before the next relaunch. The popup is a shared
+                # singleton: close hides it, the next View click reuses it.
+                popup.close_popup()
+                flush()
+                self.assertFalse(
+                    self.get_popup().isVisible(),
+                    f"popup still visible after close in {cycle}",
+                )
 
     def _assert_overlay_ok(self, popup, central, card, tag):
         self.assertTrue(popup.isVisible(), f"popup hidden after {tag}")
