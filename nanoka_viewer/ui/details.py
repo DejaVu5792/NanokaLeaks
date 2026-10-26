@@ -245,7 +245,7 @@ class CharacterDetailsPopup(QWidget):
 
         close_btn = QPushButton("Close")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.clicked.connect(self.close_popup)
+        close_btn.clicked.connect(lambda: QTimer.singleShot(0, self.close_popup))
         header_layout.addWidget(close_btn)
 
         panel_layout.addWidget(header)
@@ -284,7 +284,7 @@ class CharacterDetailsPopup(QWidget):
         panel_layout.addWidget(self.body, 1)
 
         self._esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        self._esc_shortcut.activated.connect(self.close_popup)
+        self._esc_shortcut.activated.connect(lambda: QTimer.singleShot(0, self.close_popup))
 
         self._host.installEventFilter(self)
 
@@ -945,21 +945,27 @@ class CharacterDetailsPopup(QWidget):
             return
         logger.debug("closing details popup (focus=%r)", QApplication.focusWidget())
         source = self._source
-        self._remove_input_guard()
-        self._request_id += 1
-        self._clear_content()
-        self._game = ""
-        self._char_id = ""
-        self._backdrop_pressed = False
-        self._clear_stale_input_state(source)
-        self._source = None
-        self.clearFocus()
-        self.hide()
         handle = self.windowHandle()
-        if handle is not None:
-            handle.hide()
-        self._host.setFocus()
-        self._host.activateWindow()
+        try:
+            self._remove_input_guard()
+            self._request_id += 1
+            self._clear_content()
+            self._game = ""
+            self._char_id = ""
+            self._backdrop_pressed = False
+            self._clear_stale_input_state(source)
+            self._source = None
+            self.clearFocus()
+            if handle is not None:
+                handle.hide()
+                handle.destroy()
+            self.hide()
+            self.repaint()
+            self._host.repaint()
+            self._host.setFocus()
+            self._host.activateWindow()
+        finally:
+            self._input_guard_installed = False
 
     def eventFilter(self, obj, event):
         """Keep the overlay sized to its host and swallow input aimed past it."""
@@ -969,7 +975,7 @@ class CharacterDetailsPopup(QWidget):
             and event.type() == QEvent.Type.KeyPress
             and event.key() == Qt.Key.Key_Escape
         ):
-            self.close_popup()
+            QTimer.singleShot(0, self.close_popup)
             return True
 
         if obj is self._host and event.type() in (
@@ -1016,7 +1022,7 @@ class CharacterDetailsPopup(QWidget):
             self._backdrop_pressed,
         )
         if backdrop and self._backdrop_pressed:
-            self.close_popup()
+            QTimer.singleShot(0, self.close_popup)
         self._backdrop_pressed = False
         event.accept()
 

@@ -279,8 +279,6 @@ class NanokaViewer(QMainWindow):
             self._updating_theme = True
             self.setStyleSheet(STYLESHEET)
             self._updating_theme = False
-        elif event.type() == QEvent.Type.ActivationChange:
-            self._sync_shift_state()
         elif event.type() == QEvent.Type.WindowStateChange:
             logger.debug("Window state changed: %s", self.windowState())
             # Forward state change to central widget so overlaid child popups update cleanly
