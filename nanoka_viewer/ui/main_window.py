@@ -253,13 +253,17 @@ class NanokaViewer(QMainWindow):
             logger.info(f"Finished loading all {len(chars)} characters for {game}")
 
     def changeEvent(self, event):
-        """Handle theme and activation change events."""
+        """Handle theme, activation, and window state change events."""
         if event.type() == PALETTE_CHANGE_EVENT and not self._updating_theme:
             self._updating_theme = True
             self.setStyleSheet(STYLESHEET)
             self._updating_theme = False
         elif event.type() == QEvent.Type.ActivationChange:
             self._sync_shift_state()
+        elif event.type() == QEvent.Type.WindowStateChange:
+            logger.debug("Window state changed: %s", self.windowState())
+            # Forward state change to central widget so overlaid child popups update cleanly
+            QApplication.sendEvent(self.centralWidget(), event)
         super().changeEvent(event)
 
 
@@ -295,6 +299,37 @@ def main(argv=None):
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    if args.verbose:
+        import os
+        from PySide6.QtCore import qInstallMessageHandler, QtMsgType, qVersion
+
+        qt_logger = logging.getLogger("qt")
+
+        def _qt_message_handler(mode, context, message):
+            loc = f" ({context.file}:{context.line})" if context.file else ""
+            if mode == QtMsgType.QtDebugMsg:
+                qt_logger.debug("%s%s", message, loc)
+            elif mode == QtMsgType.QtInfoMsg:
+                qt_logger.info("%s%s", message, loc)
+            elif mode == QtMsgType.QtWarningMsg:
+                qt_logger.warning("%s%s", message, loc)
+            elif mode == QtMsgType.QtCriticalMsg:
+                qt_logger.error("%s%s", message, loc)
+            elif mode == QtMsgType.QtFatalMsg:
+                qt_logger.critical("%s%s", message, loc)
+
+        qInstallMessageHandler(_qt_message_handler)
+
+        # Enable diagnostic rules for QPA, styles, and Wayland painting unless overridden
+        if "QT_LOGGING_RULES" not in os.environ:
+            # Filter out mouse motion noise from Wayland pointer events
+            os.environ["QT_LOGGING_RULES"] = (
+                "qt.qpa.wayland.pointer=false;qt.qpa.input*=false;qt.qpa.*.debug=true;"
+                "qt.widgets.styling.debug=true;qt.gui.painting.debug=true"
+            )
+
+        logger.debug("Verbose logging active. Qt version: %s", qVersion())
 
     if args.profiler:
         profile_output = args.profiler_output or "nanoka_profile.prof"

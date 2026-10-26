@@ -103,7 +103,7 @@ QLabel#elementIcon, QLabel#specialtyIcon {
 }
 
 QWidget#detailsOverlay {
-    background-color: rgba(0, 0, 0, 160);
+    background-color: transparent;
 }
 
 QFrame#detailsPanel {

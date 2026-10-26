@@ -13,7 +13,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -274,6 +274,8 @@ class CharacterDetailsPopup(QWidget):
         self.show()
         self.raise_()
         self.panel.raise_()
+        if self.windowHandle():
+            self.windowHandle().raise_()
         self.scroll.verticalScrollBar().setValue(0)
         self.setFocus()
         self._start_load(request_id)
@@ -768,6 +770,12 @@ class CharacterDetailsPopup(QWidget):
                 layout.addWidget(self._label(entry.text, rich=True))
         return body
 
+    def paintEvent(self, event):
+        """Paint a dimmed overlay backdrop cleanly without Wayland QSS glitches."""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 160))
+        super().paintEvent(event)
+
     def _update_geometry(self):
         rect = self._host.rect()
         self.setGeometry(rect)
@@ -789,6 +797,12 @@ class CharacterDetailsPopup(QWidget):
             height,
         )
         self.art_column.setFixedWidth(int(width * 0.25))
+        self.raise_()
+        self.panel.raise_()
+        if self.windowHandle():
+            self.windowHandle().raise_()
+        self.update()
+        self.panel.update()
 
     def close_popup(self):
         """Hide the popup, drop loaded data, and return focus to the window."""
@@ -801,7 +815,7 @@ class CharacterDetailsPopup(QWidget):
 
     def eventFilter(self, obj, event):
         """Keep the overlay sized to its host window."""
-        if obj is self._host and event.type() == QEvent.Type.Resize:
+        if obj is self._host and event.type() in (QEvent.Type.Resize, QEvent.Type.WindowStateChange):
             self._update_geometry()
         return super().eventFilter(obj, event)
 

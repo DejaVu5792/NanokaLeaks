@@ -3,7 +3,7 @@
 import webbrowser
 
 from PySide6.QtCore import QEvent, Qt, QUrl
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
@@ -41,7 +41,7 @@ class BrowserPopup(QWidget):
         self.setStyleSheet(
             """
             QWidget#browserOverlay {
-                background-color: rgba(0, 0, 0, 130);
+                background-color: transparent;
             }
             QFrame#browserPanel {
                 background: palette(base);
@@ -146,9 +146,17 @@ class BrowserPopup(QWidget):
         self.show()
         self.raise_()
         self.panel.raise_()
+        if self.windowHandle():
+            self.windowHandle().raise_()
         self.progress.setValue(0)
         self.view.setUrl(QUrl(url))
         self.view.setFocus()
+
+    def paintEvent(self, event):
+        """Paint a dimmed overlay backdrop cleanly without Wayland QSS glitches."""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 160))
+        super().paintEvent(event)
 
     def _update_geometry(self):
         """Size the overlay to its host and center the popup panel."""
@@ -171,6 +179,12 @@ class BrowserPopup(QWidget):
             width,
             height,
         )
+        self.raise_()
+        self.panel.raise_()
+        if self.windowHandle():
+            self.windowHandle().raise_()
+        self.update()
+        self.panel.update()
 
     def close_popup(self):
         """Hide the popup and return focus to the main window."""
@@ -186,7 +200,7 @@ class BrowserPopup(QWidget):
 
     def eventFilter(self, obj, event):
         """Keep the overlay sized to its host window."""
-        if obj is self._host and event.type() == QEvent.Type.Resize:
+        if obj is self._host and event.type() in (QEvent.Type.Resize, QEvent.Type.WindowStateChange):
             self._update_geometry()
         return super().eventFilter(obj, event)
 
