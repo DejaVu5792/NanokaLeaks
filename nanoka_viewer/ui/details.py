@@ -941,19 +941,37 @@ class CharacterDetailsPopup(QWidget):
 
     def close_popup(self):
         """Hide the popup, drop loaded data, and return focus to the window."""
+        if not self.isVisible() and not self._input_guard_installed:
+            return
         logger.debug("closing details popup (focus=%r)", QApplication.focusWidget())
+        source = self._source
         self._remove_input_guard()
         self._request_id += 1
         self._clear_content()
         self._game = ""
         self._char_id = ""
-        self._source = None
         self._backdrop_pressed = False
+        self._clear_stale_input_state(source)
+        self._source = None
+        self.clearFocus()
         self.hide()
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.hide()
         self._host.setFocus()
+        self._host.activateWindow()
 
     def eventFilter(self, obj, event):
         """Keep the overlay sized to its host and swallow input aimed past it."""
+        if (
+            self._input_guard_installed
+            and self.isVisible()
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+        ):
+            self.close_popup()
+            return True
+
         if obj is self._host and event.type() in (
             QEvent.Type.Resize,
             QEvent.Type.WindowStateChange,
