@@ -9,8 +9,10 @@ from typing import Any
 
 DEFAULT_SETTINGS = {
     "cache_character_details": True,
-    "cache_character_artwork": True,
+    # Build tables are versioned per live game release and change much more
+    # often than detail text, so they remain a separate cache category.
     "cache_character_builds": True,
+    "cache_character_artwork": True,
 }
 
 _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")

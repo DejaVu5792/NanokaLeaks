@@ -69,6 +69,15 @@ def fetch_manifest():
     return data
 
 
+def get_cached_manifest():
+    """Return the in-memory manifest without touching the network.
+
+    UI hints (such as comparing a cached live version with today's live
+    version) use this so opening a dialog can never trigger a download.
+    """
+    return _manifest_cache
+
+
 def get_latest_version(game):
     """Get the latest version for a game from the manifest."""
     manifest = fetch_manifest()

@@ -17,11 +17,18 @@ import html
 import logging
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
 
+from .cache_info import (
+    build_cache_entry,
+    clear_build_cache_info,
+    record_build_cache_for_game,
+)
+from .cache_io import directory_size_bytes, write_bytes_atomic
 from .constants import BASE_URL, CACHE_DIR
 from .manifest import get_latest_version
 from .models import get_character_url, get_name
@@ -57,6 +64,7 @@ _adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
 _session.mount("https://", _adapter)
 _session.mount("http://", _adapter)
 
+
 def clear_detail_cache():
     """Clear in-memory and disk cached character details, metadata, and artwork."""
     global _detail_cache, _metadata_cache, _art_cache
@@ -77,7 +85,17 @@ def clear_detail_cache():
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not clear cache directory %s: %s", directory, exc)
 
+    clear_build_cache_info()
     logger.info("Character detail, metadata, and artwork cache cleared")
+
+
+def cache_sizes() -> dict[str, int]:
+    """Return the on-disk size in bytes of each cache shown in settings."""
+    return {
+        "details": directory_size_bytes(DETAIL_CACHE_DIR),
+        "builds": directory_size_bytes(METADATA_CACHE_DIR),
+        "artwork": directory_size_bytes(DETAIL_ART_CACHE_DIR),
+    }
 
 
 class DetailUnavailable(Exception):
@@ -180,37 +198,39 @@ def _get_bytes(url: str) -> bytes | None:
         return None
 
 
-def load_character_art(url: str) -> bytes | None:
+def load_character_art(url: str, *, remember: bool = True) -> bytes | None:
     """Fetch character art separately so text never waits for the image.
 
-    Artwork is always cached in memory for the current session.  Disk caching
-    is controlled by the ``cache_character_artwork`` setting.
+    Artwork is cached in memory for the current session unless *remember* is
+    false.  Bulk preloads turn that off so they do not pin every character's
+    artwork in RAM.  Disk caching is controlled by the
+    ``cache_character_artwork`` setting.
     """
     if not url:
         return None
 
     caching = get_setting("cache_character_artwork")
+    cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
 
-    if url in _art_cache:
+    if remember and url in _art_cache:
         return _art_cache[url]
 
-    if caching:
-        cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
-        if cache_file.exists():
-            try:
-                data = cache_file.read_bytes()
+    if caching and cache_file.exists():
+        try:
+            data = cache_file.read_bytes()
+            if remember:
                 _art_cache[url] = data
-                return data
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Could not read cached artwork %s: %s", cache_file, exc)
+            return data
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not read cached artwork %s: %s", cache_file, exc)
 
     data = _get_bytes(url)
     if data is not None:
-        _art_cache[url] = data
+        if remember:
+            _art_cache[url] = data
         if caching:
-            cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
             try:
-                cache_file.write_bytes(data)
+                write_bytes_atomic(cache_file, data)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not write cached artwork %s: %s", cache_file, exc)
     return data
@@ -234,6 +254,8 @@ def _metadata_disk_path(cache_key: tuple[str, str, str]) -> Path:
 
 def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) -> Any:
     cache_key = (game, version, resource_name)
+    # Build tables change with each live version, so they keep their own
+    # setting (and their own last-cached metadata) separate from detail text.
     caching = get_setting("cache_character_builds")
 
     if cache_key in _metadata_cache:
@@ -246,6 +268,15 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
                 with disk_path.open("rb") as handle:
                     data = pickle.load(handle)
                 _metadata_cache[cache_key] = data
+                if not build_cache_entry(game):
+                    # Backfill metadata for caches written before the
+                    # last-cached record existed.
+                    try:
+                        record_build_cache_for_game(
+                            game, timestamp=disk_path.stat().st_mtime
+                        )
+                    except OSError:
+                        pass
                 return data
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not read cached metadata %s: %s", disk_path, exc)
@@ -260,10 +291,11 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
         if caching:
             disk_path = _metadata_disk_path(cache_key)
             try:
-                with disk_path.open("wb") as handle:
-                    pickle.dump(data, handle)
+                write_bytes_atomic(disk_path, pickle.dumps(data))
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
+            else:
+                record_build_cache_for_game(game)
     return data
 
 
@@ -294,12 +326,16 @@ def _detail_url(game: str, version: str, char_id: str) -> str:
     return f"{BASE_URL}/{game}/{version}/en/character/{char_id}.json"
 
 
-def load_character_detail(game: str, char_id: str) -> CharacterDetail:
+def load_character_detail(
+    game: str, char_id: str, *, remember: bool = True
+) -> CharacterDetail:
     """Fetch and normalize a character's detail page without build data.
 
     The cached manifest version is used first, so text appears immediately.
     If that version has gone stale, the fresh manifest is fetched once and the
-    detail request is retried.  Results are cached in memory by (game, version, char_id).
+    detail request is retried.  Results are cached in memory by (game, version,
+    char_id) unless *remember* is false; bulk preloads use that to write the
+    disk cache without keeping every raw payload in memory.
     """
     try:
         version = str(get_latest_version(game))
@@ -310,7 +346,7 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
     cache_key = (game, version, str(char_id))
     caching = get_setting("cache_character_details")
 
-    if cache_key in _detail_cache:
+    if remember and cache_key in _detail_cache:
         logger.debug("Using cached character detail for %s %s (version %s)", game, char_id, version)
         return copy.deepcopy(_detail_cache[cache_key])
 
@@ -320,7 +356,8 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
             try:
                 with disk_path.open("rb") as handle:
                     detail = pickle.load(handle)
-                _detail_cache[cache_key] = detail
+                if remember:
+                    _detail_cache[cache_key] = detail
                 return copy.deepcopy(detail)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not read cached detail %s: %s", disk_path, exc)
@@ -343,7 +380,7 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
         cache_key = (game, version, str(char_id))
         caching = get_setting("cache_character_details")
 
-        if cache_key in _detail_cache:
+        if remember and cache_key in _detail_cache:
             return copy.deepcopy(_detail_cache[cache_key])
 
         if caching:
@@ -352,7 +389,8 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
                 try:
                     with disk_path.open("rb") as handle:
                         detail = pickle.load(handle)
-                    _detail_cache[cache_key] = detail
+                    if remember:
+                        _detail_cache[cache_key] = detail
                     return copy.deepcopy(detail)
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Could not read cached detail %s: %s", disk_path, exc)
@@ -392,12 +430,12 @@ def load_character_detail(game: str, char_id: str) -> CharacterDetail:
     if has_build:
         detail.build_context = BuildContext(game, version, raw)
 
-    _detail_cache[cache_key] = detail
-    if get_setting("cache_character_details"):
+    if remember:
+        _detail_cache[cache_key] = detail
+    if caching:
         disk_path = _detail_disk_path(cache_key)
         try:
-            with disk_path.open("wb") as handle:
-                pickle.dump(detail, handle)
+            write_bytes_atomic(disk_path, pickle.dumps(detail))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not write cached detail %s: %s", disk_path, exc)
     return copy.deepcopy(detail)
