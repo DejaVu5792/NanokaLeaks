@@ -14,7 +14,7 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QWidget
 
-from support import QtTestCase, flush
+from support import QtTestCase, flush, wait
 
 from nanoka_viewer.ui.details import CharacterDetailsPopup, _ArtLabel
 
@@ -66,7 +66,7 @@ class ArtLabelTests(QtTestCase):
         flush()
 
         label.resize(140, 90)
-        flush()
+        wait(80)  # the rescale is coalesced behind a short debounce
 
         pixmap = label.pixmap()
         self.assertIsNotNone(pixmap)

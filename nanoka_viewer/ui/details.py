@@ -114,9 +114,17 @@ class _ArtLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(1, 1)
 
+        # Resizing a window fires a burst of resize events; smooth-scaling a
+        # large artwork for each one is wasted work. Coalesce them.
+        self._rescale_timer = QTimer(self)
+        self._rescale_timer.setSingleShot(True)
+        self._rescale_timer.setInterval(40)
+        self._rescale_timer.timeout.connect(self._rescale)
+
     def set_source(self, pixmap: QPixmap | None):
         """Set the source artwork and fit it to the current label size."""
         self._source = pixmap
+        self._rescale_timer.stop()
         if pixmap is None or pixmap.isNull():
             self.clear()
         else:
@@ -124,6 +132,7 @@ class _ArtLabel(QLabel):
 
     def clear_source(self):
         """Drop the cached source artwork so rescale doesn't resurrect it."""
+        self._rescale_timer.stop()
         self._source = None
         self.clear()
 
@@ -146,7 +155,7 @@ class _ArtLabel(QLabel):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._rescale()
+        self._rescale_timer.start()
 
 
 class _CollapsibleSection(QWidget):
