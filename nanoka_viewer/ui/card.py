@@ -19,6 +19,7 @@ from ..api import (
     get_element_image,
     get_name,
     get_rarity,
+    get_specialty,
     get_specialty_image,
 )
 from .icons import apply_icon_or_text
@@ -31,49 +32,6 @@ logger = logging.getLogger(__name__)
 
 class CardWidget(QWidget):
     """Widget for displaying a single character card."""
-
-    def _get_specialty_name(self, game, char_data):
-        """Get the specialty/path/weapon name for a character."""
-        if game == "zzz":
-            type_map = {
-                1: "Attack",
-                2: "Stun",
-                3: "Anomaly",
-                4: "Support",
-                5: "Defense",
-                6: "Rupture",
-                7: "Armorer",
-            }
-            return type_map.get(char_data.get("type", 1), "Attack")
-        elif game == "hsr":
-            path_map = {
-                "Warrior": "Destruction",
-                "Rogue": "The Hunt",
-                "Mage": "Erudition",
-                "Knight": "Preservation",
-                "Warlock": "Nihility",
-                "Priest": "Abundance",
-                "Shaman": "Harmony",
-                "Memory": "Remembrance",
-                "Elation": "Elation",
-            }
-            base_type = char_data.get("baseType", "Unknown")
-            return path_map.get(base_type, base_type)
-        elif game == "gi":
-            return char_data.get("weapon", "Unknown")
-        elif game == "ww":
-            weapon_map = {
-                1: "Broadblade",
-                2: "Sword",
-                3: "Pistol",
-                4: "Gauntlets",
-                5: "Rectifier",
-            }
-            weapon_id = char_data.get("weapon", 1)
-            return weapon_map.get(weapon_id, "Unknown")
-        elif game == "nte":
-            return "None"
-        return "Unknown"
 
     def __init__(self, game, char_id, char_data, is_new=False, parent=None):
         """Initialize the character card widget."""
@@ -129,7 +87,7 @@ class CardWidget(QWidget):
         self.element_label.setText(element[:1] if element else "?")
         icons_layout.addWidget(self.element_label)
 
-        specialty_type = self._get_specialty_name(game, char_data)
+        specialty_type = get_specialty(game, char_data)
         self.specialty_label = QLabel()
         self.specialty_label.setObjectName("specialtyIcon")
         if specialty_img_url:

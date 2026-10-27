@@ -29,6 +29,7 @@ from .models import (
     get_element_image,
     get_name,
     get_rarity,
+    get_specialty,
     get_specialty_image,
 )
 
@@ -55,6 +56,7 @@ __all__ = [
     "get_name",
     "get_newest_characters",
     "get_rarity",
+    "get_specialty",
     "get_specialty_image",
     "is_released",
     "load_character_art",

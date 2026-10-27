@@ -182,8 +182,8 @@ def get_element_image(game, char_data):
     return ""
 
 
-def get_specialty_image(game, char_data):
-    """Get the specialty/path/weapon icon image URL."""
+def get_specialty(game, char_data):
+    """Get the specialty/path/weapon name for a character."""
     if game == "zzz":
         type_map = {
             1: "Attack",
@@ -194,7 +194,42 @@ def get_specialty_image(game, char_data):
             6: "Rupture",
             7: "Armorer",
         }
-        specialty = type_map.get(char_data.get("type", 1), "Attack")
+        return type_map.get(char_data.get("type", 1), "Attack")
+    elif game == "hsr":
+        path_map = {
+            "Warrior": "Destruction",
+            "Rogue": "The Hunt",
+            "Mage": "Erudition",
+            "Knight": "Preservation",
+            "Warlock": "Nihility",
+            "Priest": "Abundance",
+            "Shaman": "Harmony",
+            "Memory": "Remembrance",
+            "Elation": "Elation",
+        }
+        base_type = char_data.get("baseType", "Unknown")
+        return path_map.get(base_type, base_type)
+    elif game == "gi":
+        return char_data.get("weapon", "Unknown")
+    elif game == "ww":
+        weapon_map = {
+            1: "Broadblade",
+            2: "Sword",
+            3: "Pistol",
+            4: "Gauntlets",
+            5: "Rectifier",
+        }
+        weapon_id = char_data.get("weapon", 1)
+        return weapon_map.get(weapon_id, "Unknown")
+    elif game == "nte":
+        return "None"
+    return "Unknown"
+
+
+def get_specialty_image(game, char_data):
+    """Get the specialty/path/weapon icon image URL."""
+    specialty = get_specialty(game, char_data)
+    if game == "zzz":
         return f"https://static.nanoka.cc/assets/zzz/Icon{specialty}.webp"
     elif game == "hsr":
         path = char_data.get("baseType", "")
@@ -203,7 +238,7 @@ def get_specialty_image(game, char_data):
         weapon = char_data.get("weapon", "")
         return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
     elif game == "ww":
-        weapon_map = {
+        icon_map = {
             1: "Sword",
             2: "Knife",
             3: "Gun",
@@ -211,6 +246,6 @@ def get_specialty_image(game, char_data):
             5: "Magic",
         }
         weapon_id = char_data.get("weapon", 1)
-        weapon_name = weapon_map.get(weapon_id, "Sword")
-        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{weapon_name}.webp"
+        icon_name = icon_map.get(weapon_id, "Sword")
+        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{icon_name}.webp"
     return ""
