@@ -20,6 +20,7 @@ import logging
 import math
 import os
 import threading
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -56,6 +57,10 @@ image_executor = ThreadPoolExecutor(max_workers=6, thread_name_prefix="nanoka-im
 
 _REQUEST_TIMEOUT = (5, 20)
 
+# Don't hammer a missing asset on every reload; retry after this long.
+FAILURE_TTL = 300.0
+_FAILED: dict[tuple, float] = {}
+
 _SESSION: requests.Session | None = None
 _SESSION_LOCK = threading.Lock()
 _DISK_LOCK = threading.Lock()
@@ -86,9 +91,13 @@ class _ImageLoaderSignals(QObject):
     """Signals for the asynchronous image loader (lives on the GUI thread)."""
 
     image_loaded = Signal(object, QImage)
+    image_failed = Signal(object)
 
     def _dispatch(self, key, qimg):
         _handle_image_loaded(key, qimg)
+
+    def _dispatch_failed(self, key):
+        _handle_image_failed(key)
 
 
 # Global signals instance, lazily created on the GUI thread.
@@ -103,6 +112,9 @@ def get_signals() -> _ImageLoaderSignals:
         # AutoConnection: direct on the GUI thread, queued from a worker.
         _IMAGE_LOADER_SIGNALS.image_loaded.connect(
             _IMAGE_LOADER_SIGNALS._dispatch
+        )
+        _IMAGE_LOADER_SIGNALS.image_failed.connect(
+            _IMAGE_LOADER_SIGNALS._dispatch_failed
         )
     return _IMAGE_LOADER_SIGNALS
 
@@ -285,6 +297,8 @@ def _background_load(signals: _ImageLoaderSignals, key, size):
     if qimg is not None:
         # Queued back to the GUI thread by the signals object.
         signals.image_loaded.emit(key, qimg)
+    else:
+        signals.image_failed.emit(key)
 
 
 class ImageRequest:
@@ -319,6 +333,7 @@ _LOCK = threading.Lock()
 
 def _handle_image_loaded(key, qimg):
     """Handle image loaded signal in the main thread."""
+    _FAILED.pop(key, None)
     pixmap = QPixmap.fromImage(qimg)
     _cache_put(key, pixmap)
 
@@ -335,6 +350,14 @@ def _handle_image_loaded(key, qimg):
             continue
         except Exception as exc:
             logger.error("Error in image callback for %s: %s", key[0], exc)
+
+
+def _handle_image_failed(key):
+    """Remember a failed asset so reloads do not hammer it immediately."""
+    _FAILED[key] = time.monotonic()
+    with _LOCK:
+        _CALLBACKS.pop(key, None)
+    logger.debug("Image request failed; suppressing retries for %ss: %s", FAILURE_TTL, key[0])
 
 
 def request_image(url, callback, size=(100, 100)) -> ImageRequest | None:
@@ -360,6 +383,12 @@ def request_image(url, callback, size=(100, 100)) -> ImageRequest | None:
         except Exception as exc:
             logger.error("Error in image callback for %s: %s", url, exc)
         return ImageRequest(key, callback)
+
+    failed_at = _FAILED.get(key)
+    if failed_at is not None:
+        if time.monotonic() - failed_at < FAILURE_TTL:
+            return None
+        _FAILED.pop(key, None)
 
     request = ImageRequest(key, callback)
     with _LOCK:
@@ -397,6 +426,7 @@ def load_qt_image(url, size=(100, 100)):
 def clear_image_cache():
     """Clear image cache (memory and disk)."""
     _cache_clear()
+    _FAILED.clear()
     try:
         import shutil
 

@@ -76,17 +76,21 @@ class ImageLoaderTests(unittest.TestCase):
         self.cache_dir = Path(self._temp_dir.name)
         self._original_cache_dir = il.IMAGE_CACHE_DIR
         self._original_max_bytes = il.IMAGE_CACHE_MAX_BYTES
+        self._original_failure_ttl = il.FAILURE_TTL
         self._original_get_session = il._get_session
         il.IMAGE_CACHE_DIR = self.cache_dir
         il._cache_clear()
+        il._FAILED.clear()
         with il._LOCK:
             il._CALLBACKS.clear()
 
     def tearDown(self):
         il.IMAGE_CACHE_DIR = self._original_cache_dir
         il.IMAGE_CACHE_MAX_BYTES = self._original_max_bytes
+        il.FAILURE_TTL = self._original_failure_ttl
         il._get_session = self._original_get_session
         il._cache_clear()
+        il._FAILED.clear()
         with il._LOCK:
             il._CALLBACKS.clear()
         self._temp_dir.cleanup()
@@ -171,6 +175,45 @@ class ImageLoaderTests(unittest.TestCase):
 
         self.assertEqual(calls, [])
         self.assertNotIn(key, il._CALLBACKS)
+
+    def test_failed_url_is_not_refetched_during_ttl(self):
+        url = "https://example.invalid/missing.png"
+        key = (url, (18, 18))
+        il._handle_image_failed(key)
+
+        with mock.patch.object(il.image_executor, "submit") as submit:
+            result = il.request_image(url, lambda pm: None, (18, 18))
+
+        self.assertIsNone(result)
+        submit.assert_not_called()
+
+    def test_failed_url_retries_after_ttl(self):
+        url = "https://example.invalid/missing.png"
+        key = (url, (18, 18))
+        il.FAILURE_TTL = 0
+        il._handle_image_failed(key)
+
+        submitted = []
+
+        def fake_submit(fn, *args, **kwargs):
+            submitted.append((fn, args, kwargs))
+
+        with mock.patch.object(il.image_executor, "submit", side_effect=fake_submit):
+            request = il.request_image(url, lambda pm: None, (18, 18))
+
+        self.assertIsNotNone(request)
+        self.assertEqual(len(submitted), 1)
+        request.cancel()
+
+    def test_success_clears_a_previous_failure(self):
+        url = "https://example.invalid/recovered.png"
+        key = (url, (18, 18))
+        il._handle_image_failed(key)
+        self.assertIn(key, il._FAILED)
+
+        il._handle_image_loaded(key, QImage(10, 10, QImage.Format.Format_ARGB32))
+
+        self.assertNotIn(key, il._FAILED)
 
     def test_requests_are_coalesced_per_size(self):
         url = "https://example.invalid/x.png"
