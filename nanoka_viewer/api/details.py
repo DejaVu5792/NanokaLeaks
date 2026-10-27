@@ -15,7 +15,10 @@ import hashlib
 import pickle
 import html
 import logging
+import random
 import re
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -57,10 +60,20 @@ _DEFAULT_HEADERS = {
 
 _DETAIL_TIMEOUT = 25
 
+# Bulk preloads share these caches from several threads.
+_METADATA_LOCK = threading.Lock()
+
+# Retry only transient failures.  A 404 (not-yet-published character) must
+# reach the caller immediately so it can be reported as unavailable.
+_MAX_ATTEMPTS = 4
+_RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+_BACKOFF_BASE = 0.5
+_BACKOFF_CAP = 8.0
+
 # Shared persistent session for warm HTTP/2 & keep-alive connection reuse
 _session = requests.Session()
 _session.headers.update(_DEFAULT_HEADERS)
-_adapter = HTTPAdapter(pool_connections=10, pool_maxsize=20)
+_adapter = HTTPAdapter(pool_connections=16, pool_maxsize=32)
 _session.mount("https://", _adapter)
 _session.mount("http://", _adapter)
 
@@ -172,8 +185,66 @@ class CharacterDetail:
 # Network helpers
 
 
+def _retry_delay(attempt: int, response: requests.Response | None = None) -> float:
+    """Return an exponential backoff delay, honouring ``Retry-After``."""
+    if response is not None:
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return max(0.0, min(60.0, float(retry_after)))
+            except (TypeError, ValueError):
+                pass
+    delay = min(_BACKOFF_CAP, _BACKOFF_BASE * (2**attempt))
+    return delay + random.uniform(0.0, 0.25)
+
+
+def _request_with_retries(url: str) -> requests.Response:
+    """GET *url*, retrying transient failures with exponential backoff."""
+    last_error: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            response = _session.get(url, timeout=_DETAIL_TIMEOUT)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_error = exc
+            if attempt + 1 >= _MAX_ATTEMPTS:
+                raise
+            delay = _retry_delay(attempt)
+            logger.warning(
+                "Retrying %s in %.1fs after %s (attempt %d/%d)",
+                url,
+                delay,
+                exc,
+                attempt + 1,
+                _MAX_ATTEMPTS,
+            )
+            time.sleep(delay)
+            continue
+
+        if response.status_code in _RETRYABLE_STATUS:
+            if attempt + 1 >= _MAX_ATTEMPTS:
+                response.raise_for_status()
+            delay = _retry_delay(attempt, response)
+            logger.warning(
+                "Retrying %s in %.1fs after HTTP %s (attempt %d/%d)",
+                url,
+                delay,
+                response.status_code,
+                attempt + 1,
+                _MAX_ATTEMPTS,
+            )
+            response.close()
+            time.sleep(delay)
+            continue
+
+        return response
+
+    if last_error is not None:
+        raise last_error
+    raise requests.RequestException(f"Could not fetch {url}")
+
+
 def _get_json(url: str) -> Any:
-    response = _session.get(url, timeout=_DETAIL_TIMEOUT)
+    response = _request_with_retries(url)
     response.raise_for_status()
     return response.json()
 
@@ -190,7 +261,7 @@ def _get_bytes(url: str) -> bytes | None:
     if not url:
         return None
     try:
-        response = _session.get(url, timeout=_DETAIL_TIMEOUT)
+        response = _request_with_retries(url)
         response.raise_for_status()
         return response.content
     except Exception as exc:  # noqa: BLE001 - art is optional
@@ -256,47 +327,50 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
     cache_key = (game, version, resource_name)
     # Build tables change with each live version, so they keep their own
     # setting (and their own last-cached metadata) separate from detail text.
-    caching = get_setting("cache_character_builds")
+    # Serialise the cache check + fetch so concurrent build preloads do not
+    # download the same shared table more than once.
+    with _METADATA_LOCK:
+        caching = get_setting("cache_character_builds")
 
-    if cache_key in _metadata_cache:
-        return _metadata_cache[cache_key]
+        if cache_key in _metadata_cache:
+            return _metadata_cache[cache_key]
 
-    if caching:
-        disk_path = _metadata_disk_path(cache_key)
-        if disk_path.exists():
-            try:
-                with disk_path.open("rb") as handle:
-                    data = pickle.load(handle)
-                _metadata_cache[cache_key] = data
-                if not build_cache_entry(game):
-                    # Backfill metadata for caches written before the
-                    # last-cached record existed.
-                    try:
-                        record_build_cache_for_game(
-                            game, timestamp=disk_path.stat().st_mtime
-                        )
-                    except OSError:
-                        pass
-                return data
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Could not read cached metadata %s: %s", disk_path, exc)
-                try:
-                    disk_path.unlink()
-                except OSError:
-                    pass
-
-    data = _safe_json(url)
-    if data is not None:
-        _metadata_cache[cache_key] = data
         if caching:
             disk_path = _metadata_disk_path(cache_key)
-            try:
-                write_bytes_atomic(disk_path, pickle.dumps(data))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
-            else:
-                record_build_cache_for_game(game)
-    return data
+            if disk_path.exists():
+                try:
+                    with disk_path.open("rb") as handle:
+                        data = pickle.load(handle)
+                    _metadata_cache[cache_key] = data
+                    if not build_cache_entry(game):
+                        # Backfill metadata for caches written before the
+                        # last-cached record existed.
+                        try:
+                            record_build_cache_for_game(
+                                game, timestamp=disk_path.stat().st_mtime
+                            )
+                        except OSError:
+                            pass
+                    return data
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Could not read cached metadata %s: %s", disk_path, exc)
+                    try:
+                        disk_path.unlink()
+                    except OSError:
+                        pass
+
+        data = _safe_json(url)
+        if data is not None:
+            _metadata_cache[cache_key] = data
+            if caching:
+                disk_path = _metadata_disk_path(cache_key)
+                try:
+                    write_bytes_atomic(disk_path, pickle.dumps(data))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
+                else:
+                    record_build_cache_for_game(game)
+        return data
 
 
 def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, Any]:

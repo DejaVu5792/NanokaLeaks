@@ -14,14 +14,17 @@ Three kinds of preload are supported:
 ``artwork``
     The large character artwork images shown in the details sidebar.
 
-The work is sequential and synchronous.  The UI runs it on a background
-thread, which keeps the network polite and makes cancellation land between
-characters rather than in the middle of a write.
+The work runs on a small daemon worker pool.  The pool is deliberately
+bounded: testing showed that a handful of parallel requests is much faster
+than sequential fetches, while too many connections regress.  The details HTTP
+layer adds exponential backoff for transient failures.
 """
 
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Callable
 
@@ -41,6 +44,12 @@ PRELOAD_DETAILS = "details"
 PRELOAD_BUILDS = "builds"
 PRELOAD_ARTWORK = "artwork"
 PRELOAD_KINDS = (PRELOAD_DETAILS, PRELOAD_BUILDS, PRELOAD_ARTWORK)
+
+# The static host is happy with a handful of parallel requests, but 16 workers
+# measurably regressed in testing.  Artwork uses fewer workers because each
+# response is much larger.
+PRELOAD_MAX_WORKERS = 8
+PRELOAD_ARTWORK_WORKERS = 4
 
 
 @dataclass(frozen=True)
@@ -179,15 +188,100 @@ def _store_artwork(game: str, char_id: str) -> tuple[int, int, str]:
     return 0, 0, detail.name
 
 
+def _worker_count(kind: str) -> int:
+    return PRELOAD_ARTWORK_WORKERS if kind == PRELOAD_ARTWORK else PRELOAD_MAX_WORKERS
+
+
+def _store_job(kind: str, game: str, char_id: str) -> tuple[int, int, str]:
+    if kind == PRELOAD_DETAILS:
+        return _store_details(game, char_id)
+    if kind == PRELOAD_BUILDS:
+        return _store_builds(game, char_id)
+    return _store_artwork(game, char_id)
+
+
+def _run_jobs(
+    kind: str,
+    jobs: list[tuple[str, str]],
+    worker_count: int,
+    on_result: Callable[[tuple[str, str], tuple[int, int, str]], None],
+    should_stop: StopCallback,
+) -> bool:
+    """Run *jobs* on daemon workers and return whether cancellation was hit.
+
+    Workers are daemons so quitting the app never waits for an in-flight
+    preload.  The main loop owns all summary/progress updates, which keeps
+    callbacks on one thread.
+    """
+    if not jobs:
+        return False
+
+    work: queue.Queue[tuple[str, str]] = queue.Queue()
+    for job in jobs:
+        work.put(job)
+    results: queue.Queue[tuple[tuple[str, str], tuple[int, int, str]]] = queue.Queue()
+    stop = threading.Event()
+
+    def worker():
+        while not stop.is_set():
+            try:
+                job = work.get_nowait()
+            except queue.Empty:
+                return
+            game, char_id = job
+            try:
+                result = _store_job(kind, game, char_id)
+            except Exception:  # noqa: BLE001 - one job must not kill the pool
+                logger.exception("Preload worker failed for %s/%s", game, char_id)
+                result = (1, 0, char_id)
+            results.put((job, result))
+
+    threads = [
+        threading.Thread(
+            target=worker,
+            name=f"nanoka-preload-{kind}-{index}",
+            daemon=True,
+        )
+        for index in range(max(1, min(worker_count, len(jobs))))
+    ]
+    for thread in threads:
+        thread.start()
+
+    cancelled = False
+    completed = 0
+    while True:
+        if not cancelled and should_stop():
+            cancelled = True
+            stop.set()
+
+        try:
+            job, result = results.get(timeout=0.1)
+        except queue.Empty:
+            if not any(thread.is_alive() for thread in threads):
+                break
+            continue
+
+        completed += 1
+        on_result(job, result)
+        if completed >= len(jobs):
+            break
+
+    stop.set()
+    for thread in threads:
+        thread.join(timeout=0.1)
+    return cancelled
+
+
 def preload_characters(
     kind: str,
     on_progress: ProgressCallback | None = None,
     should_stop: StopCallback | None = None,
 ) -> PreloadSummary:
-    """Warm the detail or artwork cache for every character.
+    """Warm the detail, build, or artwork cache for every character.
 
-    *should_stop* is polled before each character, so cancellation is
-    immediate from the UI's point of view and never interrupts a write.
+    *should_stop* is polled while jobs are in flight.  Workers stop taking new
+    jobs and the already-running batch is allowed to finish, so a cancelled
+    run never interrupts a cache write.
     """
     if kind not in PRELOAD_KINDS:
         raise ValueError(f"Unknown preload kind: {kind!r}")
@@ -205,26 +299,19 @@ def preload_characters(
         ),
     )
 
-    for index, (game, char_id) in enumerate(jobs, start=1):
-        if stop():
-            summary.cancelled = True
-            break
-
-        if kind == PRELOAD_DETAILS:
-            failed, skipped, name = _store_details(game, char_id)
-        elif kind == PRELOAD_BUILDS:
-            failed, skipped, name = _store_builds(game, char_id)
-        else:
-            failed, skipped, name = _store_artwork(game, char_id)
+    def on_result(
+        job: tuple[str, str], result: tuple[int, int, str]
+    ) -> None:
+        game, _char_id = job
+        failed, skipped, name = result
         summary.failed += failed
         summary.skipped += skipped
-        summary.completed = index
-
+        summary.completed += 1
         _emit(
             on_progress,
             PreloadProgress(
                 kind=kind,
-                completed=index,
+                completed=summary.completed,
                 total=summary.total,
                 game=game,
                 name=name,
@@ -232,6 +319,14 @@ def preload_characters(
                 skipped=summary.skipped,
             ),
         )
+
+    summary.cancelled = _run_jobs(
+        kind,
+        jobs,
+        _worker_count(kind),
+        on_result,
+        stop,
+    )
 
     cached = summary.completed - summary.failed - summary.skipped
     if kind == PRELOAD_BUILDS and cached > 0 and not summary.cancelled:

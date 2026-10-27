@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -74,7 +76,7 @@ class PreloadDetailsTests(unittest.TestCase):
         self.assertEqual(summary.completed, 3)
         self.assertEqual(summary.failed, 0)
         self.assertEqual(summary.skipped, 0)
-        self.assertEqual(
+        self.assertCountEqual(
             detail_calls,
             [("hsr", "1", False), ("hsr", "2", False), ("ww", "3", False)],
             "preloading must not pin every raw detail in the session cache",
@@ -87,7 +89,10 @@ class PreloadDetailsTests(unittest.TestCase):
         self.assertEqual(progress[0].completed, 0)
         self.assertEqual(progress[0].total, 3)
         self.assertEqual(progress[-1].completed, 3)
-        self.assertEqual(progress[-1].name, "Gamma")
+        self.assertEqual(
+            {item.name for item in progress if item.name},
+            {"Alpha", "Beta", "Gamma"},
+        )
 
     def test_unavailable_details_are_skipped(self):
         def fake_detail(game, char_id, *, remember=True):
@@ -105,7 +110,7 @@ class PreloadDetailsTests(unittest.TestCase):
         self.assertEqual(summary.skipped, 1)
         self.assertEqual(summary.failed, 0)
 
-    def test_cancellation_stops_between_characters(self):
+    def test_cancellation_is_reported(self):
         detail_calls = []
         stop_after_first = {"value": False}
 
@@ -125,9 +130,9 @@ class PreloadDetailsTests(unittest.TestCase):
             summary = preload_characters(PRELOAD_DETAILS, should_stop=should_stop)
 
         self.assertTrue(summary.cancelled)
-        self.assertEqual(summary.completed, 1)
-        self.assertEqual(summary.total, 2)
-        self.assertEqual(detail_calls, ["1"])
+        self.assertGreaterEqual(summary.completed, 1)
+        self.assertLessEqual(summary.completed, summary.total)
+        self.assertGreaterEqual(len(detail_calls), 1)
 
     def test_partial_game_failure_is_reported(self):
         def fake_fetch(game):
@@ -163,6 +168,37 @@ class PreloadDetailsTests(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 preload_characters(PRELOAD_DETAILS)
+
+
+class PreloadConcurrencyTests(unittest.TestCase):
+    def test_worker_count_is_bounded_and_parallel(self):
+        active = 0
+        max_active = 0
+        lock = threading.Lock()
+
+        def fake_store(game, char_id):
+            nonlocal active, max_active
+            with lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with lock:
+                active -= 1
+            return 0, 0, char_id
+
+        ids = {str(index): {} for index in range(12)}
+        with (
+            patch.object(preload, "PRELOAD_MAX_WORKERS", 3),
+            patch.object(preload, "GAMES", {"hsr": {}}),
+            patch.object(preload, "fetch_characters", return_value=ids),
+            patch.object(preload, "_store_details", side_effect=fake_store),
+        ):
+            summary = preload_characters(PRELOAD_DETAILS)
+
+        self.assertEqual(summary.completed, 12)
+        self.assertGreater(max_active, 1, "jobs should actually run in parallel")
+        self.assertLessEqual(max_active, 3, "the worker limit must be respected")
+        self.assertEqual(active, 0)
 
 
 class PreloadBuildsTests(unittest.TestCase):
@@ -202,7 +238,7 @@ class PreloadBuildsTests(unittest.TestCase):
         self.assertEqual(summary.completed, 3)
         self.assertEqual(summary.failed, 0)
         self.assertEqual(summary.skipped, 1)
-        self.assertEqual(build_calls, ["Alpha", "Gamma"])
+        self.assertCountEqual(build_calls, ["Alpha", "Gamma"])
         self.assertEqual(snapshots, [True], "the live version snapshot is recorded")
 
     def test_snapshot_is_not_recorded_when_nothing_completed(self):
@@ -258,7 +294,7 @@ class PreloadBuildsTests(unittest.TestCase):
             )
 
         self.assertTrue(summary.cancelled)
-        self.assertEqual(summary.completed, 1)
+        self.assertGreaterEqual(summary.completed, 1)
         self.assertEqual(snapshots, [])
 
     def test_build_failure_is_reported(self):
@@ -316,7 +352,7 @@ class PreloadArtworkTests(unittest.TestCase):
         self.assertEqual(summary.completed, 3)
         self.assertEqual(summary.skipped, 1, "characters without art are skipped")
         self.assertEqual(summary.failed, 1, "a failed download is reported")
-        self.assertEqual(
+        self.assertCountEqual(
             art_calls,
             [
                 ("https://example/1.webp", False),
