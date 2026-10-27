@@ -109,6 +109,13 @@ class GameSection(QWidget):
         self.scroll_area.setWidget(self.cards_container)
         main_layout.addWidget(self.scroll_area)
 
+        # Coalesce visibility checks and tie their lifetime to this section.
+        # A bare QTimer.singleShot can fire after the section's C++ object is
+        # gone during teardown.
+        self._visible_timer = QTimer(self)
+        self._visible_timer.setSingleShot(True)
+        self._visible_timer.timeout.connect(self._update_visible_cards)
+
         # Only cards near the visible part of the row need their images.
         self.scroll_area.horizontalScrollBar().valueChanged.connect(
             self._update_visible_cards
@@ -139,7 +146,7 @@ class GameSection(QWidget):
         if self._visible_update_pending:
             return
         self._visible_update_pending = True
-        QTimer.singleShot(0, self._update_visible_cards)
+        self._visible_timer.start(0)
 
     def _update_visible_cards(self, *_args):
         """Ask cards in/near the viewport to load their images.
