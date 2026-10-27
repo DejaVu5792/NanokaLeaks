@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QScrollArea,
 )
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer
 
 from .card import CardWidget
 
@@ -58,6 +58,8 @@ class GameSection(QWidget):
         super().__init__(parent)
         self._live_version = None
         self._latest_version = None
+        self._cards = []
+        self._visible_update_pending = False
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 8, 0, 8)
@@ -88,11 +90,15 @@ class GameSection(QWidget):
 
         main_layout.addWidget(header)
 
-        scroll_area = HorizontalScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setFixedHeight(230)
+        self.scroll_area = HorizontalScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.scroll_area.setFixedHeight(230)
 
         self.cards_container = QWidget()
         self.cards_layout = QHBoxLayout(self.cards_container)
@@ -100,11 +106,22 @@ class GameSection(QWidget):
         self.cards_layout.setSpacing(8)
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        scroll_area.setWidget(self.cards_container)
-        main_layout.addWidget(scroll_area)
+        self.scroll_area.setWidget(self.cards_container)
+        main_layout.addWidget(self.scroll_area)
+
+        # Only cards near the visible part of the row need their images.
+        self.scroll_area.horizontalScrollBar().valueChanged.connect(
+            self._update_visible_cards
+        )
+        # The row grows after cards are added; recheck once the layout has
+        # settled instead of trusting the geometry at add-time.
+        self.cards_container.installEventFilter(self)
 
     def clear_cards(self):
         """Remove all cards from the section."""
+        for card in self._cards:
+            card.cancel_image_requests()
+        self._cards.clear()
         while self.cards_layout.count():
             child = self.cards_layout.takeAt(0)
             if child.widget():
@@ -114,6 +131,66 @@ class GameSection(QWidget):
         """Add a character card to the section."""
         card = CardWidget(game, char_id, char_data, is_new)
         self.cards_layout.addWidget(card)
+        self._cards.append(card)
+        self._schedule_visible_update()
+
+    def _schedule_visible_update(self):
+        """Coalesce visibility checks while a batch of cards is added."""
+        if self._visible_update_pending:
+            return
+        self._visible_update_pending = True
+        QTimer.singleShot(0, self._update_visible_cards)
+
+    def _update_visible_cards(self, *_args):
+        """Ask cards in/near the viewport to load their images.
+
+        Cards outside the visible area keep their placeholder until the user
+        scrolls towards them.  A one-viewport margin is preloaded so scrolling
+        does not expose empty cards.
+        """
+        self._visible_update_pending = False
+        if not self._cards:
+            return
+
+        # A deferred update can fire before Qt has positioned the new cards;
+        # they report geometry (0, 0, ...) until the row layout is applied, so
+        # the new batch would look visible.  Wait until the container has
+        # actually grown to fit the row (its Resize event re-schedules us).
+        hint = self.cards_layout.sizeHint().width()
+        if hint > 0 and self.cards_container.width() + 1 < hint:
+            return
+        if len(self._cards) > 1 and (
+            self._cards[0].geometry() == self._cards[-1].geometry()
+        ):
+            return
+
+        viewport = self.scroll_area.viewport()
+        # The container is a child of the viewport, so map *from* the
+        # viewport into container coordinates (this is the scroll offset).
+        top_left = self.cards_container.mapFrom(viewport, QPoint(0, 0))
+        visible = QRect(top_left, viewport.size())
+        margin = visible.width()
+        visible = visible.adjusted(-margin, 0, margin, 0)
+
+        for card in self._cards:
+            if visible.intersects(card.geometry()):
+                card.ensure_images_loaded()
+
+    def eventFilter(self, obj, event):
+        if obj is self.cards_container and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.LayoutRequest,
+        ):
+            self._schedule_visible_update()
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._schedule_visible_update()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._schedule_visible_update()
 
     def set_status(self, text):
         """Set the status text for the section."""
