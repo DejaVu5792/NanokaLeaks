@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -20,28 +19,32 @@ from PySide6.QtWidgets import (
 from ..api import clear_cache
 from ..settings import load_settings, save_settings
 from .image_loader import clear_image_cache
+from .overlay import OverlayPopup, is_alive
 
 logger = logging.getLogger(__name__)
 
 
-class SettingsPopup(QWidget):
+class SettingsPopup(OverlayPopup):
     """Lightbox-style settings overlay."""
+
+    overlay_object_name = "settingsOverlay"
+    panel_object_name = "settingsPanel"
+    log_name = "settings popup"
+    logger = logging.getLogger(__name__)
+
+    width_ratio = 0.42
+    min_width = 320
+    max_width = 460
+    hard_min_width = 280
+    height_ratio = 0.45
+    min_height = 260
+    max_height = 360
+    hard_min_height = 220
+    margin = 32
 
     def __init__(self, host):
         super().__init__(host)
-        self._host = host
-        self._input_guard_installed = False
-
-        self.setObjectName("settingsOverlay")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.hide()
-
-        self.panel = QFrame(self)
-        self.panel.setObjectName("settingsPanel")
-        panel_layout = QVBoxLayout(self.panel)
-        panel_layout.setContentsMargins(0, 0, 0, 0)
-        panel_layout.setSpacing(0)
+        panel_layout = self.panel_layout
 
         header = QFrame()
         header.setObjectName("settingsHeader")
@@ -87,38 +90,18 @@ class SettingsPopup(QWidget):
         body_layout.addStretch(1)
         panel_layout.addWidget(body, 1)
 
-        self._esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        self._esc_shortcut.activated.connect(self.close_popup)
-
-        self._host.installEventFilter(self)
-
     def open_popup(self):
         settings = load_settings()
-        self.cache_details.setChecked(bool(settings.get("cache_character_details", True)))
-        self.cache_artwork.setChecked(bool(settings.get("cache_character_artwork", True)))
-        self.cache_builds.setChecked(bool(settings.get("cache_character_builds", True)))
-        self._update_geometry()
-        self.show()
-        self.raise_()
-        self.panel.raise_()
-        if self.windowHandle() is not None:
-            self.windowHandle().raise_()
-        self.setFocus()
-        self.bring_to_front()
-
-    def bring_to_front(self):
-        if not self.isVisible():
-            return
-        self.raise_()
-        self.panel.raise_()
-        handle = self.windowHandle()
-        if handle is not None:
-            handle.raise_()
-
-    def close_popup(self):
-        self.hide()
-        self._host.setFocus()
-        self._host.activateWindow()
+        self.cache_details.setChecked(
+            bool(settings.get("cache_character_details", True))
+        )
+        self.cache_artwork.setChecked(
+            bool(settings.get("cache_character_artwork", True))
+        )
+        self.cache_builds.setChecked(
+            bool(settings.get("cache_character_builds", True))
+        )
+        self.show_overlay()
 
     def _save_and_apply(self):
         settings = {
@@ -139,51 +122,6 @@ class SettingsPopup(QWidget):
         self.clear_cache_btn.setEnabled(True)
         self.clear_cache_btn.setText("Clear cache")
 
-    def _update_geometry(self):
-        rect = self._host.rect()
-        self.setGeometry(rect)
-
-        width = min(
-            460,
-            max(320, int(rect.width() * 0.42)),
-            max(280, rect.width() - 32),
-        )
-        height = min(
-            360,
-            max(260, int(rect.height() * 0.45)),
-            max(220, rect.height() - 32),
-        )
-        self.panel.setGeometry(
-            (rect.width() - width) // 2,
-            (rect.height() - height) // 2,
-            width,
-            height,
-        )
-        self.raise_()
-        self.panel.raise_()
-        if self.windowHandle() is not None:
-            self.windowHandle().raise_()
-        self.update()
-        self.panel.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 160))
-        super().paintEvent(event)
-
-    def eventFilter(self, obj, event):
-        if obj is self._host and event.type() in (
-            QEvent.Type.Resize,
-            QEvent.Type.WindowStateChange,
-        ):
-            self._update_geometry()
-        return super().eventFilter(obj, event)
-
-    def mousePressEvent(self, event):
-        if not self.panel.geometry().contains(event.position().toPoint()):
-            self.close_popup()
-        super().mousePressEvent(event)
-
 
 def open_settings(parent):
     """Show the shared settings popup."""
@@ -195,6 +133,8 @@ def open_settings(parent):
     else:
         host = parent
 
+    if _settings_popup is not None and not is_alive(_settings_popup):
+        _settings_popup = None
     if _settings_popup is not None and _settings_popup._host is not host:
         _settings_popup.close_popup()
         _settings_popup = None

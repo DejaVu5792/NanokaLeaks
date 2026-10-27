@@ -1,7 +1,7 @@
 """Regression tests for the artwork fixes in the details view.
 
-* ``_ArtLabel`` centre-crops the scaled artwork instead of relying on QLabel
-  clipping (the old KeepAspectRatioByExpanding pixmap was cut at the top-left).
+* ``_ArtLabel`` centre-crops horizontally and keeps the top of the artwork
+  (where the character's face is) instead of relying on QLabel clipping.
 * ``_set_art_message`` drops the cached source pixmap, otherwise the next
   resize resurrected the previous character's artwork over "Art unavailable".
 """
@@ -37,7 +37,7 @@ def make_banded_pixmap(width: int = 100, height: int = 200) -> QPixmap:
 
 
 class ArtLabelTests(QtTestCase):
-    def test_scaled_art_is_centre_cropped(self):
+    def test_scaled_art_is_top_cropped(self):
         label = _ArtLabel()
         self.addCleanup(label.deleteLater)
         label.resize(100, 100)
@@ -51,11 +51,10 @@ class ArtLabelTests(QtTestCase):
         self.assertIsNotNone(pixmap)
         self.assertEqual(pixmap.size(), QSize(100, 100))
         image = pixmap.toImage()
-        # A 100x200 source scaled to cover a 100x100 label must be cropped to
-        # its vertically centred band, not its top-left corner.
-        self.assertEqual(image.pixelColor(50, 50).name(), GREEN)
-        self.assertEqual(image.pixelColor(2, 2).name(), GREEN)
-        self.assertEqual(image.pixelColor(97, 97).name(), GREEN)
+        # A 100x200 source scaled to cover a 100x100 label keeps the top band
+        # (the face) and crops the bottom, rather than centring vertically.
+        self.assertEqual(image.pixelColor(50, 10).name(), RED)
+        self.assertEqual(image.pixelColor(50, 90).name(), GREEN)
 
     def test_resize_refits_artwork(self):
         label = _ArtLabel()

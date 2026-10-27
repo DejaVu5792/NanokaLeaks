@@ -22,11 +22,13 @@ from PySide6.QtGui import QCursor
 from .styles import STYLESHEET
 from .section import GameSection
 from .loader import LoadThread
-from .image_loader import clear_image_cache
 from .settings import open_settings
-from ..api import get_name, GAMES, clear_cache, fetch_manifest
+from ..api import GAMES, fetch_manifest
 
 logger = logging.getLogger(__name__)
+
+# Loader threads that outlived their window (see NanokaViewer.closeEvent).
+_DETACHED_THREADS = set()
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
@@ -157,6 +159,11 @@ class NanokaViewer(QMainWindow):
         self.game_sections = {}
         self._loading_chars = {}
         self._loading_index = {}
+        self._load_generation = 0
+        self._load_threads = []
+        self._pending_sections = set()
+        self._fetch_finished = False
+        self._load_in_progress = False
         games_list = list(GAMES.items())
         for i, (game, info) in enumerate(games_list):
             section = GameSection(info["name"])
@@ -177,37 +184,76 @@ class NanokaViewer(QMainWindow):
         self.load_data()
 
     def load_data(self):
-        """Start loading character data."""
-        logger.info("Starting data load...")
+        """Start loading character data.
+
+        Every load gets a generation token.  Results from a superseded load
+        (the user pressed Reload while a previous load was still running) are
+        ignored instead of being appended to the freshly cleared sections.
+        """
+        if self._load_in_progress:
+            self.refresh_btn.setEnabled(False)
+            logger.info("Reload ignored: a load is already in progress")
+            return
+        self._load_in_progress = True
+        self._load_generation += 1
+        generation = self._load_generation
+        logger.info("Starting data load (generation %d)...", generation)
+
         self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setText("Reload")  # Reset text while loading
+        self.refresh_btn.setText("Loading...")
         self.status_label.setText("Loading...")
+        self._fetch_finished = False
+        self._loading_chars.clear()
+        self._loading_index.clear()
+        self._pending_sections = set(self.game_sections)
 
         for section in self.game_sections.values():
             section.clear_cards()
             section.set_status("Loading...")
 
-        self.load_thread = LoadThread()
-        self.load_thread.game_loaded.connect(self.on_game_loaded)
-        self.load_thread.load_finished.connect(self.on_load_finished)
-        self.load_thread.start()
+        thread = LoadThread(self)
+        thread.game_loaded.connect(
+            lambda game, chars, gen=generation: self.on_game_loaded(
+                game, chars, gen
+            )
+        )
+        thread.load_finished.connect(
+            lambda gen=generation: self.on_load_finished(gen)
+        )
+        thread.finished.connect(
+            lambda t=thread: self._on_load_thread_finished(t)
+        )
+        self.load_thread = thread
+        self._load_threads.append(thread)
+        thread.start()
+
+    def _on_load_thread_finished(self, thread):
+        """Release a finished loader thread without dropping it mid-flight."""
+        try:
+            self._load_threads.remove(thread)
+            if self.load_thread is thread:
+                self.load_thread = None
+        except (ValueError, RuntimeError):
+            pass
+        thread.deleteLater()
 
     def _open_settings(self):
         """Open the settings popup."""
-        from .settings import open_settings
-
         open_settings(self)
 
-    def on_game_loaded(self, game, chars):
+    def on_game_loaded(self, game, chars, generation=None):
         """Handle when a game's character data is loaded."""
+        if generation is not None and generation != self._load_generation:
+            logger.debug("Ignoring stale load for %s (generation %s)", game, generation)
+            return
+
         section = self.game_sections.get(game)
         if not section:
             return
 
-        section.clear_cards()
-
         if not chars:
             section.set_status("Failed to load characters")
+            self._mark_section_done(game)
             return
 
         # Update version badges in the game section header
@@ -226,42 +272,92 @@ class NanokaViewer(QMainWindow):
 
         # Start progressive loading
         section.set_status(f"Loading 0/{len(chars)}")
-        self._load_next_batch(game, chars)
+        self._load_next_batch(game, chars, self._load_generation)
 
-    def on_load_finished(self):
-        """Handle when all data loading is complete."""
+    def on_load_finished(self, generation=None):
+        """Handle when all network data has been fetched."""
+        if generation is not None and generation != self._load_generation:
+            return
+        self._fetch_finished = True
+        logger.info("Network load finished; finishing card layout")
+        # Cards may still be added in batches.  "Loaded" is only shown once
+        # every section has built all of its cards.
+        if not self._pending_sections:
+            self._finish_loading_ui()
+
+    def _mark_section_done(self, game):
+        self._pending_sections.discard(game)
+        if self._fetch_finished and not self._pending_sections:
+            self._finish_loading_ui()
+
+    def _finish_loading_ui(self):
+        self._load_in_progress = False
+        self.refresh_btn.setText("Reload")
         self.refresh_btn.setEnabled(True)
         self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")
 
-    def _load_next_batch(self, game, chars):
+    def _load_next_batch(self, game, chars, generation):
         """Load the next batch of character cards."""
-        # Load cards in batches. Since image loading is async, we can load more at once.
+        if generation != self._load_generation:
+            return
+        if game not in self._loading_index:
+            return
+
+        # Load cards in batches so the event loop stays responsive.
         batch_size = 10
         start_idx = self._loading_index[game]
         end_idx = min(start_idx + batch_size, len(chars))
 
         # Add cards for this batch
         batch_chars = chars[start_idx:end_idx]
+        section = self.game_sections[game]
         for char_id, char_data, is_new in batch_chars:
-            self.game_sections[game].add_card(game, char_id, char_data, is_new)
+            section.add_card(game, char_id, char_data, is_new)
 
         # Update progress
         self._loading_index[game] = end_idx
         # Update status less frequently to reduce overhead
         if end_idx % 20 == 0 or end_idx == len(chars):
-            self.game_sections[game].set_status(f"Loading {end_idx}/{len(chars)}")
+            section.set_status(f"Loading {end_idx}/{len(chars)}")
 
         # Continue loading if there are more cards with a minimal delay
         if end_idx < len(chars):
             # Use a very short delay to yield control back to the event loop
             QTimer.singleShot(
-                5, lambda: self._load_next_batch(game, chars)
-            )  # 5ms delay
+                0, lambda: self._load_next_batch(game, chars, generation)
+            )
         else:
             # Loading complete
-            self.game_sections[game].set_status(f"{len(chars)} total")
+            section.set_status(f"{len(chars)} total")
+            self._loading_chars.pop(game, None)
+            self._loading_index.pop(game, None)
             logger.info(f"Finished loading all {len(chars)} characters for {game}")
+            self._mark_section_done(game)
+
+    def closeEvent(self, event):
+        """Stop accepting loader results and avoid deleting a live thread.
+
+        A network fetch cannot be interrupted once it is in flight, so a
+        thread that is still running is detached from the window; the module
+        keeps a reference until it finishes instead of letting Qt destroy a
+        running QThread.
+        """
+        self._load_in_progress = False
+        self._load_generation += 1
+        for thread in list(self._load_threads):
+            try:
+                if thread.isRunning():
+                    thread.wait(1000)
+                if thread.isRunning():
+                    thread.setParent(None)
+                    _DETACHED_THREADS.add(thread)
+                    thread.finished.connect(
+                        lambda t=thread: _DETACHED_THREADS.discard(t)
+                    )
+            except RuntimeError:
+                pass
+        super().closeEvent(event)
 
     def changeEvent(self, event):
         """Handle theme, activation, and window state change events."""
