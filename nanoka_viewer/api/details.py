@@ -27,9 +27,9 @@ import requests
 from requests.adapters import HTTPAdapter
 
 from .cache_info import (
-    build_cache_entry,
+    build_cache_last_cached,
     clear_build_cache_info,
-    record_build_cache_for_game,
+    record_build_cache_write,
 )
 from .cache_io import directory_size_bytes, write_bytes_atomic
 from .constants import BASE_URL, CACHE_DIR
@@ -342,12 +342,12 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
                     with disk_path.open("rb") as handle:
                         data = pickle.load(handle)
                     _metadata_cache[cache_key] = data
-                    if not build_cache_entry(game):
+                    if build_cache_last_cached() <= 0:
                         # Backfill metadata for caches written before the
                         # last-cached record existed.
                         try:
-                            record_build_cache_for_game(
-                                game, timestamp=disk_path.stat().st_mtime
+                            record_build_cache_write(
+                                timestamp=disk_path.stat().st_mtime
                             )
                         except OSError:
                             pass
@@ -369,7 +369,7 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
                 else:
-                    record_build_cache_for_game(game)
+                    record_build_cache_write()
         return data
 
 

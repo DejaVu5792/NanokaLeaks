@@ -28,7 +28,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
-from .cache_info import record_build_cache_snapshot
+from .cache_info import record_build_cache_write
 from .characters import fetch_characters
 from .constants import GAMES
 from .details import (
@@ -330,11 +330,7 @@ def preload_characters(
 
     cached = summary.completed - summary.failed - summary.skipped
     if kind == PRELOAD_BUILDS and cached > 0 and not summary.cancelled:
-        # Record every game's live/latest version, even the ones with no build
-        # payload, so the settings info icon can explain the cache's age.  A
-        # cancelled run keeps the per-game entries written with each metadata
-        # file instead of claiming an untouched game was cached.
-        record_build_cache_snapshot()
+        record_build_cache_write()
 
     logger.info(
         "Preload %s finished: %d/%d completed, %d failed, %d skipped%s",

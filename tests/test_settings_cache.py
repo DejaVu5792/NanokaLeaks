@@ -10,7 +10,6 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 import nanoka_viewer.ui.settings as settings_ui
-from nanoka_viewer.api import GAMES
 from nanoka_viewer.api.preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
@@ -56,21 +55,7 @@ class SettingsCacheTests(QtTestCase):
             "builds": 3072,
             "artwork": 5 * 1024 * 1024,
         }
-        self.build_info = {
-            "last_cached": 1_700_000_000.0,
-            "games": {
-                "hsr": {
-                    "live": "3.8",
-                    "latest": "3.9",
-                    "cached_at": 1_700_000_000.0,
-                },
-                "ww": {
-                    "live": "2.6",
-                    "latest": "2.7",
-                    "cached_at": 1_700_000_000.0,
-                },
-            },
-        }
+        self.build_info = {"last_cached": 1_700_000_000.0}
         self.clear_calls = []
 
         self.window = QMainWindow()
@@ -103,14 +88,6 @@ class SettingsCacheTests(QtTestCase):
                 "read_build_cache_info",
                 side_effect=lambda: self.build_info,
             ),
-            patch.object(
-                settings_ui,
-                "get_cached_manifest",
-                return_value={
-                    "hsr": {"live": "3.9", "latest": "3.9"},
-                    "ww": {"live": "2.6", "latest": "2.7"},
-                },
-            ),
         ]
         for patcher in self._patches:
             patcher.start()
@@ -136,7 +113,7 @@ class SettingsCacheTests(QtTestCase):
     def _clear_api(self):
         self.clear_calls.append("api")
         self.cache_sizes_value = {"details": 0, "builds": 0, "artwork": 0}
-        self.build_info = {"last_cached": 0.0, "games": {}}
+        self.build_info = {"last_cached": 0.0}
 
     def test_cache_buttons_are_aligned_right(self):
         for checkbox, button in (
@@ -159,25 +136,16 @@ class SettingsCacheTests(QtTestCase):
         self.assertEqual(self.popup.builds_size.text(), "3 kB")
         self.assertEqual(self.popup.artwork_size.text(), "5,120 kB")
 
-    def test_builds_row_shows_last_cached_and_version_info(self):
-        self.assertIn("Last cached:", self.popup.builds_last.text())
-        self.assertNotIn("never", self.popup.builds_last.text())
-        self.assertIsNotNone(self.popup.builds_info)
-
-        tooltip = self.popup.builds_info.toolTip()
-        self.assertIn(GAMES["hsr"]["name"], tooltip)
-        self.assertIn("live 3.8", tooltip)
-        self.assertIn("latest 3.9", tooltip)
-        self.assertIn("(now 3.9)", tooltip)
-        self.assertIn(GAMES["ww"]["name"], tooltip)
-        self.assertIn("live 2.6", tooltip)
+    def test_builds_row_shows_last_cached(self):
+        text = self.popup.builds_last.text()
+        self.assertIn("Last cached:", text)
+        self.assertNotIn("never", text)
 
     def test_builds_row_shows_never_without_metadata(self):
-        self.build_info = {"last_cached": 0.0, "games": {}}
+        self.build_info = {"last_cached": 0.0}
         self.popup._update_cache_meta()
 
         self.assertEqual(self.popup.builds_last.text(), "Last cached: never")
-        self.assertIn("No build cache recorded", self.popup.builds_info.toolTip())
 
     def test_artwork_warning_cancel_does_not_start(self):
         self.popup._confirm_artwork_download = lambda: False

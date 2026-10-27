@@ -23,7 +23,7 @@ from .details import (
     load_character_build,
     load_character_detail,
 )
-from .manifest import fetch_manifest, get_cached_manifest, get_latest_version
+from .manifest import fetch_manifest, get_latest_version
 from .preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
@@ -64,7 +64,6 @@ __all__ = [
     "fetch_characters",
     "fetch_manifest",
     "get_all_characters_with_new_status",
-    "get_cached_manifest",
     "get_character_image",
     "get_character_url",
     "get_element",

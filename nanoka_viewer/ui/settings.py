@@ -14,18 +14,11 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ..api import (
-    GAMES,
-    cache_sizes,
-    clear_cache,
-    get_cached_manifest,
-    read_build_cache_info,
-)
+from ..api import cache_sizes, clear_cache, read_build_cache_info
 from ..api.preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
@@ -101,7 +94,6 @@ class SettingsPopup(OverlayPopup):
             self.cache_details_btn,
             self.details_size,
             _,
-            _,
         ) = self._add_cache_row(
             body_layout,
             "Cache character details",
@@ -113,19 +105,17 @@ class SettingsPopup(OverlayPopup):
             self.cache_builds_btn,
             self.builds_size,
             self.builds_last,
-            self.builds_info,
         ) = self._add_cache_row(
             body_layout,
             "Cache character builds",
             "Caches the per-version build metadata used by recommended builds.",
             PRELOAD_BUILDS,
-            show_builds_info=True,
+            show_last_cached=True,
         )
         (
             self.cache_artwork,
             self.cache_artwork_btn,
             self.artwork_size,
-            _,
             _,
         ) = self._add_cache_row(
             body_layout,
@@ -162,7 +152,7 @@ class SettingsPopup(OverlayPopup):
         tooltip: str,
         kind: str,
         *,
-        show_builds_info: bool = False,
+        show_last_cached: bool = False,
     ):
         checkbox = QCheckBox(title)
         checkbox.setToolTip(tooltip)
@@ -184,19 +174,10 @@ class SettingsPopup(OverlayPopup):
         meta_layout.setSpacing(6)
 
         last_label = None
-        info_btn = None
-        if show_builds_info:
+        if show_last_cached:
             last_label = QLabel("Last cached: never")
             last_label.setObjectName("settingsHint")
             meta_layout.addWidget(last_label)
-
-            info_btn = QToolButton()
-            info_btn.setObjectName("cacheInfoBtn")
-            info_btn.setText("i")
-            info_btn.setFixedSize(18, 18)
-            info_btn.setCursor(Qt.CursorShape.WhatsThisCursor)
-            info_btn.setAccessibleName("Build cache version details")
-            meta_layout.addWidget(info_btn)
 
         meta_layout.addStretch(1)
 
@@ -212,7 +193,7 @@ class SettingsPopup(OverlayPopup):
         row_layout.addWidget(meta)
         body_layout.addWidget(row)
 
-        return checkbox, button, size_label, last_label, info_btn
+        return checkbox, button, size_label, last_label
 
     def _make_cache_button(self) -> QPushButton:
         button = QPushButton("Cache")
@@ -431,7 +412,6 @@ class SettingsPopup(OverlayPopup):
             )
         else:
             self.builds_last.setText("Last cached: never")
-        self.builds_info.setToolTip(self._build_info_tooltip(info, last_cached))
 
     @staticmethod
     def _format_kb(size_bytes: int) -> str:
@@ -443,52 +423,6 @@ class SettingsPopup(OverlayPopup):
     @staticmethod
     def _format_time(timestamp: float) -> str:
         return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M")
-
-    def _build_info_tooltip(self, info: dict, last_cached: float) -> str:
-        games = info.get("games") or {}
-        if not games:
-            return "No build cache recorded yet."
-
-        try:
-            current = get_cached_manifest() or {}
-        except Exception:  # noqa: BLE001 - the recorded snapshot is still useful
-            current = {}
-
-        lines = ["<b>Live versions recorded with the build cache</b>", ""]
-        for game, game_info in GAMES.items():
-            entry = games.get(game)
-            if not entry:
-                lines.append(f"<b>{game_info['name']}</b>: not recorded")
-                continue
-            live = entry.get("live") or "unknown"
-            latest = entry.get("latest") or "unknown"
-            current_live = ""
-            if isinstance(current, dict):
-                current_live = str(
-                    (current.get(game) or {}).get("live") or ""
-                )
-            changed = (
-                current_live
-                and live not in ("", "unknown")
-                and current_live != live
-            )
-            suffix = (
-                f' <span style="color:#d08770">(now {current_live})</span>'
-                if changed
-                else ""
-            )
-            lines.append(
-                f"<b>{game_info['name']}</b>: live {live} · latest {latest}{suffix}"
-            )
-
-        if last_cached > 0:
-            lines.extend(
-                [
-                    "",
-                    f'<span style="color:gray">Recorded {self._format_time(last_cached)}</span>',
-                ]
-            )
-        return "<br>".join(lines)
 
 
 def open_settings(parent):

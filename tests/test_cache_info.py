@@ -1,4 +1,4 @@
-"""Tests for build-cache metadata and cache size reporting."""
+"""Tests for build-cache timestamp metadata and cache size reporting."""
 
 from __future__ import annotations
 
@@ -16,81 +16,62 @@ class BuildCacheInfoTests(unittest.TestCase):
         self._temp = tempfile.TemporaryDirectory()
         self.addCleanup(self._temp.cleanup)
         self.info_file = Path(self._temp.name) / "build_cache_info.json"
-        self.manifest = {
-            "hsr": {"live": "3.8", "latest": "3.9"},
-            "ww": {"live": "2.6", "latest": "2.7"},
-        }
-        self._patches = [
-            patch.object(cache_info, "BUILD_CACHE_INFO_FILE", self.info_file),
-            patch.object(cache_info, "fetch_manifest", return_value=self.manifest),
-            patch.object(
-                cache_info,
-                "GAMES",
-                {"hsr": {"name": "HSR"}, "ww": {"name": "WW"}},
-            ),
-        ]
-        for patcher in self._patches:
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        self._patch = patch.object(
+            cache_info, "BUILD_CACHE_INFO_FILE", self.info_file
+        )
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
 
     def test_missing_info_is_empty(self):
         info = cache_info.read_build_cache_info()
 
         self.assertEqual(info["last_cached"], 0.0)
-        self.assertEqual(info["games"], {})
+        self.assertEqual(cache_info.build_cache_last_cached(), 0.0)
 
-    def test_records_one_game_and_keeps_other_entries(self):
-        cache_info.record_build_cache_for_game("hsr", timestamp=1000.0)
-        cache_info.record_build_cache_for_game("ww", timestamp=2000.0)
-
-        info = cache_info.read_build_cache_info()
-        self.assertEqual(info["last_cached"], 2000.0)
-        self.assertEqual(info["games"]["hsr"]["live"], "3.8")
-        self.assertEqual(info["games"]["hsr"]["latest"], "3.9")
-        self.assertEqual(info["games"]["hsr"]["cached_at"], 1000.0)
-        self.assertEqual(info["games"]["ww"]["live"], "2.6")
-        self.assertEqual(info["games"]["ww"]["cached_at"], 2000.0)
-
-    def test_entry_lookup(self):
-        self.assertIsNone(cache_info.build_cache_entry("hsr"))
-
-        cache_info.record_build_cache_for_game("hsr", timestamp=1000.0)
-
-        entry = cache_info.build_cache_entry("hsr")
-        self.assertIsNotNone(entry)
-        self.assertEqual(entry["live"], "3.8")
-        self.assertIsNone(cache_info.build_cache_entry("ww"))
-
-    def test_snapshot_records_every_game(self):
-        cache_info.record_build_cache_snapshot(timestamp=3000.0)
+    def test_records_write_timestamp(self):
+        cache_info.record_build_cache_write(timestamp=1000.0)
 
         info = cache_info.read_build_cache_info()
-        self.assertEqual(info["last_cached"], 3000.0)
-        self.assertEqual(set(info["games"]), {"hsr", "ww"})
-        self.assertEqual(info["games"]["hsr"]["live"], "3.8")
-        self.assertEqual(info["games"]["ww"]["latest"], "2.7")
+        self.assertEqual(info["last_cached"], 1000.0)
+        self.assertEqual(cache_info.build_cache_last_cached(), 1000.0)
         self.assertTrue(self.info_file.exists())
 
+    def test_keeps_the_latest_timestamp(self):
+        cache_info.record_build_cache_write(timestamp=2000.0)
+        cache_info.record_build_cache_write(timestamp=1000.0)
+
+        self.assertEqual(cache_info.build_cache_last_cached(), 2000.0)
+
     def test_clear_removes_the_record(self):
-        cache_info.record_build_cache_snapshot(timestamp=3000.0)
+        cache_info.record_build_cache_write(timestamp=1000.0)
         self.assertTrue(self.info_file.exists())
 
         cache_info.clear_build_cache_info()
 
         self.assertFalse(self.info_file.exists())
-        self.assertEqual(cache_info.read_build_cache_info()["games"], {})
+        self.assertEqual(cache_info.build_cache_last_cached(), 0.0)
 
     def test_bad_payload_is_normalized(self):
         self.info_file.write_text(
-            '{"last_cached": "bad", "games": {"hsr": {"live": 3.8}, "ww": 4}}',
+            '{"last_cached": "bad", "games": {"hsr": {"live": "3.8"}}}',
             encoding="utf-8",
         )
 
         info = cache_info.read_build_cache_info()
 
         self.assertEqual(info["last_cached"], 0.0)
-        self.assertEqual(info["games"]["hsr"]["live"], "3.8")
-        self.assertNotIn("ww", info["games"])
+        self.assertNotIn("games", info)
+
+    def test_old_version_fields_are_ignored(self):
+        self.info_file.write_text(
+            '{"last_cached": 1234.0, "games": {"hsr": {"live": "3.8"}}}',
+            encoding="utf-8",
+        )
+
+        info = cache_info.read_build_cache_info()
+
+        self.assertEqual(info["last_cached"], 1234.0)
+        self.assertNotIn("games", info)
 
 
 class CacheSizeTests(unittest.TestCase):

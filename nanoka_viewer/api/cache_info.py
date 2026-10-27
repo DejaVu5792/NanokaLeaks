@@ -1,10 +1,8 @@
 """Metadata for the recommended-build cache.
 
-Build metadata changes more often than character detail text: each live game
-version ships a new relic/weapon/item table.  This module records when the
-build cache was last written and which live/latest versions were current at
-that moment, so the settings dialog can explain why a build cache may be
-stale.
+Build metadata changes with every live game release, so the settings dialog
+shows when the build cache was last written.  That timestamp is the only
+metadata we need to keep.
 """
 
 from __future__ import annotations
@@ -16,8 +14,7 @@ import time
 from typing import Any
 
 from .cache_io import write_bytes_atomic
-from .constants import CACHE_DIR, GAMES
-from .manifest import fetch_manifest
+from .constants import CACHE_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +24,7 @@ _LOCK = threading.Lock()
 
 
 def _empty_info() -> dict[str, Any]:
-    return {"version": 1, "last_cached": 0.0, "games": {}}
+    return {"version": 1, "last_cached": 0.0}
 
 
 def _normalize(data: Any) -> dict[str, Any]:
@@ -38,20 +35,6 @@ def _normalize(data: Any) -> dict[str, Any]:
         info["last_cached"] = float(data.get("last_cached") or 0.0)
     except (TypeError, ValueError):
         pass
-    games = data.get("games")
-    if isinstance(games, dict):
-        for game, entry in games.items():
-            if not isinstance(entry, dict):
-                continue
-            try:
-                cached_at = float(entry.get("cached_at") or 0.0)
-            except (TypeError, ValueError):
-                cached_at = 0.0
-            info["games"][str(game)] = {
-                "live": str(entry.get("live") or ""),
-                "latest": str(entry.get("latest") or ""),
-                "cached_at": cached_at,
-            }
     return info
 
 
@@ -66,9 +49,9 @@ def read_build_cache_info() -> dict[str, Any]:
     return _empty_info()
 
 
-def build_cache_entry(game: str) -> dict[str, Any] | None:
-    """Return the recorded build-cache entry for *game*, if any."""
-    return read_build_cache_info()["games"].get(game)
+def build_cache_last_cached() -> float:
+    """Return the last build-cache write time, or ``0.0`` when unknown."""
+    return float(read_build_cache_info().get("last_cached") or 0.0)
 
 
 def _write_info(info: dict[str, Any]) -> None:
@@ -80,60 +63,12 @@ def _write_info(info: dict[str, Any]) -> None:
         logger.warning("Could not write build cache info: %s", exc)
 
 
-def _version_pair(game: str, manifest: Any) -> tuple[str, str]:
-    if not isinstance(manifest, dict):
-        return "", ""
-    entry = manifest.get(game)
-    if not isinstance(entry, dict):
-        return "", ""
-    return str(entry.get("live") or ""), str(entry.get("latest") or "")
-
-
-def _current_manifest() -> Any:
-    try:
-        return fetch_manifest()
-    except Exception as exc:  # noqa: BLE001 - version labels are optional
-        logger.warning("Could not read the manifest for build cache info: %s", exc)
-        return {}
-
-
-def record_build_cache_for_game(game: str, timestamp: float | None = None) -> None:
-    """Record that *game*'s build metadata was just written to disk."""
+def record_build_cache_write(timestamp: float | None = None) -> None:
+    """Record that build metadata was written to disk."""
     now = time.time() if timestamp is None else float(timestamp)
-    live, latest = _version_pair(game, _current_manifest())
     with _LOCK:
         info = read_build_cache_info()
-        info["games"][game] = {
-            "live": live,
-            "latest": latest,
-            "cached_at": now,
-        }
         info["last_cached"] = max(float(info.get("last_cached") or 0.0), now)
-        info["version"] = 1
-        _write_info(info)
-
-
-def record_build_cache_snapshot(timestamp: float | None = None) -> None:
-    """Record the current live/latest version of every game.
-
-    Called after a builds preload so the info icon covers all games, even the
-    ones whose current version has no build payload (GI and NTE).
-    """
-    now = time.time() if timestamp is None else float(timestamp)
-    manifest = _current_manifest()
-    if not manifest:
-        return
-    with _LOCK:
-        info = read_build_cache_info()
-        info["games"] = {}
-        for game in GAMES:
-            live, latest = _version_pair(game, manifest)
-            info["games"][game] = {
-                "live": live,
-                "latest": latest,
-                "cached_at": now,
-            }
-        info["last_cached"] = now
         info["version"] = 1
         _write_info(info)
 

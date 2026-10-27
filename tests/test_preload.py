@@ -209,7 +209,7 @@ class PreloadBuildsTests(unittest.TestCase):
             "3": make_detail("hsr", "3", "Gamma", build=True),
         }
         build_calls = []
-        snapshots = []
+        writes = []
 
         def fake_build(detail):
             build_calls.append(detail.name)
@@ -228,8 +228,8 @@ class PreloadBuildsTests(unittest.TestCase):
             patch.object(preload, "load_character_build", side_effect=fake_build),
             patch.object(
                 preload,
-                "record_build_cache_snapshot",
-                side_effect=lambda: snapshots.append(True),
+                "record_build_cache_write",
+                side_effect=lambda: writes.append(True),
             ),
         ):
             summary = preload_characters(PRELOAD_BUILDS)
@@ -239,31 +239,31 @@ class PreloadBuildsTests(unittest.TestCase):
         self.assertEqual(summary.failed, 0)
         self.assertEqual(summary.skipped, 1)
         self.assertCountEqual(build_calls, ["Alpha", "Gamma"])
-        self.assertEqual(snapshots, [True], "the live version snapshot is recorded")
+        self.assertEqual(writes, [True], "the build-cache timestamp is recorded")
 
-    def test_snapshot_is_not_recorded_when_nothing_completed(self):
+    def test_timestamp_is_not_recorded_when_nothing_completed(self):
         def fake_detail(game, char_id, *, remember=True):
             raise DetailUnavailable("not ready")
 
-        snapshots = []
+        writes = []
         with (
             patch.object(preload, "GAMES", {"hsr": {}}),
             patch.object(preload, "fetch_characters", return_value={"1": {}}),
             patch.object(preload, "load_character_detail", side_effect=fake_detail),
             patch.object(
                 preload,
-                "record_build_cache_snapshot",
-                side_effect=lambda: snapshots.append(True),
+                "record_build_cache_write",
+                side_effect=lambda: writes.append(True),
             ),
         ):
             summary = preload_characters(PRELOAD_BUILDS)
 
         self.assertEqual(summary.completed, 1)
         self.assertEqual(summary.skipped, 1)
-        self.assertEqual(snapshots, [])
+        self.assertEqual(writes, [])
 
-    def test_cancelled_run_does_not_claim_every_game_was_cached(self):
-        snapshots = []
+    def test_cancelled_run_does_not_record_timestamp(self):
+        writes = []
         checks = {"count": 0}
 
         def should_stop():
@@ -285,8 +285,8 @@ class PreloadBuildsTests(unittest.TestCase):
             patch.object(preload, "load_character_build", return_value=[]),
             patch.object(
                 preload,
-                "record_build_cache_snapshot",
-                side_effect=lambda: snapshots.append(True),
+                "record_build_cache_write",
+                side_effect=lambda: writes.append(True),
             ),
         ):
             summary = preload_characters(
@@ -295,7 +295,7 @@ class PreloadBuildsTests(unittest.TestCase):
 
         self.assertTrue(summary.cancelled)
         self.assertGreaterEqual(summary.completed, 1)
-        self.assertEqual(snapshots, [])
+        self.assertEqual(writes, [])
 
     def test_build_failure_is_reported(self):
         def fake_build(detail):
@@ -312,7 +312,7 @@ class PreloadBuildsTests(unittest.TestCase):
                 ),
             ),
             patch.object(preload, "load_character_build", side_effect=fake_build),
-            patch.object(preload, "record_build_cache_snapshot"),
+            patch.object(preload, "record_build_cache_write"),
             patch.object(preload.logger, "exception"),
         ):
             summary = preload_characters(PRELOAD_BUILDS)
