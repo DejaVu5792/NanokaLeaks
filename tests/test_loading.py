@@ -97,6 +97,7 @@ class ReloadRaceTests(QtTestCase):
             window.load_data()
             first_thread = window.load_thread
             self.assertFalse(window.refresh_btn.isEnabled())
+            self.assertEqual(window.refresh_btn.text(), "Loading...")
 
             window.load_data()
             self.assertIs(
@@ -106,6 +107,7 @@ class ReloadRaceTests(QtTestCase):
             )
 
             self._wait_for_idle(window)
+            self.assertEqual(window.refresh_btn.text(), "Reload")
             self.assertEqual(
                 len(window.game_sections["hsr"]._cards),
                 1,

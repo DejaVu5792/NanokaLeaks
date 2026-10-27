@@ -191,6 +191,7 @@ class NanokaViewer(QMainWindow):
         ignored instead of being appended to the freshly cleared sections.
         """
         if self._load_in_progress:
+            self.refresh_btn.setEnabled(False)
             logger.info("Reload ignored: a load is already in progress")
             return
         self._load_in_progress = True
@@ -199,7 +200,7 @@ class NanokaViewer(QMainWindow):
         logger.info("Starting data load (generation %d)...", generation)
 
         self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setText("Reload")  # Reset text while loading
+        self.refresh_btn.setText("Loading...")
         self.status_label.setText("Loading...")
         self._fetch_finished = False
         self._loading_chars.clear()
@@ -291,6 +292,7 @@ class NanokaViewer(QMainWindow):
 
     def _finish_loading_ui(self):
         self._load_in_progress = False
+        self.refresh_btn.setText("Reload")
         self.refresh_btn.setEnabled(True)
         self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")

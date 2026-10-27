@@ -22,6 +22,12 @@ QPushButton:pressed {
     background: palette(midlight);
 }
 
+QPushButton:disabled {
+    background: palette(midlight);
+    color: palette(placeholder-text);
+    border: 1px solid palette(mid);
+}
+
 QPushButton#viewBtn {
     padding: 4px 12px;
     border-radius: 4px;
@@ -57,6 +63,12 @@ QPushButton#iconBtn:hover {
 
 QPushButton#iconBtn:pressed {
     background: palette(midlight);
+}
+
+QPushButton#viewBtn:disabled, QPushButton#iconBtn:disabled {
+    background: palette(midlight);
+    color: palette(placeholder-text);
+    border: 1px solid palette(mid);
 }
 
 QScrollArea {
