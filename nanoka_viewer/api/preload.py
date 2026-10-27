@@ -36,6 +36,7 @@ from .details import (
     load_character_art,
     load_character_detail,
     prefetch_build_metadata,
+    reset_build_cache,
 )
 from .manifest import get_latest_version
 
@@ -265,7 +266,12 @@ def _preload_builds(
         PreloadProgress(kind=PRELOAD_BUILDS, completed=0, total=summary.total),
     )
 
-    any_written = False
+    # Build tables are volatile, so always revalidate instead of trusting the
+    # in-memory copy.  Disk files and ETags stay in place so unchanged tables
+    # can answer with a 304 rather than being downloaded again.
+    reset_build_cache()
+
+    any_current = False
     for index, game in enumerate(games, start=1):
         if should_stop():
             summary.cancelled = True
@@ -277,12 +283,14 @@ def _preload_builds(
             logger.exception("Preload could not read the latest version for %s", game)
             summary.failed += 1
         else:
-            fetched, expected = prefetch_build_metadata(game, version)
+            fetched, expected = prefetch_build_metadata(
+                game, version, refresh=True
+            )
             if expected == 0:
                 # GI and NTE do not publish recommended-build tables.
                 summary.skipped += 1
             elif fetched > 0:
-                any_written = True
+                any_current = True
                 if fetched < expected:
                     summary.failed += 1
             else:
@@ -302,7 +310,7 @@ def _preload_builds(
             ),
         )
 
-    if any_written and not summary.cancelled:
+    if any_current and not summary.cancelled:
         record_build_cache_write()
     return summary
 

@@ -194,8 +194,14 @@ class PreloadBuildsTests(unittest.TestCase):
     def _run(self, fetched_by_game, *, should_stop=None, version_lookup=None):
         writes = []
         progress = []
+        self.refreshes = []
+        self.resets = []
         versions = {"hsr": "1.0", "ww": "2.0", "gi": "3.0"}
         version_lookup = version_lookup or (lambda game: versions[game])
+
+        def fake_prefetch(game, version, *, refresh=False):
+            self.refreshes.append((game, refresh))
+            return fetched_by_game[game]
 
         with (
             patch.object(
@@ -211,9 +217,12 @@ class PreloadBuildsTests(unittest.TestCase):
                 preload, "get_latest_version", side_effect=version_lookup
             ),
             patch.object(
+                preload, "prefetch_build_metadata", side_effect=fake_prefetch
+            ),
+            patch.object(
                 preload,
-                "prefetch_build_metadata",
-                side_effect=lambda game, version: fetched_by_game[game],
+                "reset_build_cache",
+                side_effect=lambda: self.resets.append(True),
             ),
             patch.object(
                 preload,
@@ -246,6 +255,16 @@ class PreloadBuildsTests(unittest.TestCase):
         self.assertEqual(
             {item.name for item in progress if item.name},
             {"HSR", "WW", "GI"},
+        )
+
+    def test_builds_preload_always_revalidates(self):
+        self._run({"hsr": (3, 3), "ww": (1, 1), "gi": (0, 0)})
+
+        self.assertEqual(self.resets, [True], "the in-memory cache is reset")
+        self.assertEqual(
+            {refresh for _game, refresh in self.refreshes},
+            {True},
+            "every game is revalidated with ETags",
         )
 
     def test_partial_build_tables_are_failures(self):
@@ -295,10 +314,11 @@ class PreloadBuildsTests(unittest.TestCase):
                 raise OSError("offline")
             return {"hsr": "1.0", "gi": "3.0"}[game]
 
-        summary, writes, _ = self._run(
-            {"hsr": (3, 3), "ww": (1, 1), "gi": (0, 0)},
-            version_lookup=fake_version,
-        )
+        with patch.object(preload.logger, "exception"):
+            summary, writes, _ = self._run(
+                {"hsr": (3, 3), "ww": (1, 1), "gi": (0, 0)},
+                version_lookup=fake_version,
+            )
 
         self.assertEqual(summary.failed, 1)
         self.assertEqual(summary.skipped, 1)

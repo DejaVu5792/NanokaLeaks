@@ -108,7 +108,8 @@ class SettingsPopup(OverlayPopup):
         ) = self._add_cache_row(
             body_layout,
             "Cache character builds",
-            "Caches the per-version build metadata used by recommended builds.",
+            "Always refreshes the per-version build tables used by recommended "
+            "builds; unchanged tables are revalidated with ETags.",
             PRELOAD_BUILDS,
             show_last_cached=True,
         )

@@ -198,12 +198,16 @@ def _retry_delay(attempt: int, response: requests.Response | None = None) -> flo
     return delay + random.uniform(0.0, 0.25)
 
 
-def _request_with_retries(url: str) -> requests.Response:
+def _request_with_retries(
+    url: str, headers: dict[str, str] | None = None
+) -> requests.Response:
     """GET *url*, retrying transient failures with exponential backoff."""
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
-            response = _session.get(url, timeout=_DETAIL_TIMEOUT)
+            response = _session.get(
+                url, timeout=_DETAIL_TIMEOUT, headers=headers
+            )
         except (requests.ConnectionError, requests.Timeout) as exc:
             last_error = exc
             if attempt + 1 >= _MAX_ATTEMPTS:
@@ -249,12 +253,13 @@ def _get_json(url: str) -> Any:
     return response.json()
 
 
-def _safe_json(url: str) -> Any:
-    try:
-        return _get_json(url)
-    except Exception as exc:  # noqa: BLE001 - supporting data is optional
-        logger.warning("Could not fetch detail metadata %s: %s", url, exc)
-        return None
+def _get_json_with_etag(
+    url: str, headers: dict[str, str] | None = None
+) -> tuple[Any, str | None]:
+    """GET JSON and return its payload together with the response ETag."""
+    response = _request_with_retries(url, headers=headers)
+    response.raise_for_status()
+    return response.json(), response.headers.get("ETag")
 
 
 def _get_bytes(url: str) -> bytes | None:
@@ -323,7 +328,61 @@ def _metadata_disk_path(cache_key: tuple[str, str, str]) -> Path:
     return METADATA_CACHE_DIR / f"{digest}.pkl"
 
 
-def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) -> Any:
+def _metadata_etag_path(cache_key: tuple[str, str, str]) -> Path:
+    return _metadata_disk_path(cache_key).with_suffix(".etag")
+
+
+def _read_metadata_etag(path: Path) -> str | None:
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def _write_metadata_etag(path: Path, etag: str | None) -> None:
+    try:
+        if etag:
+            write_bytes_atomic(path, etag.encode("utf-8"))
+        else:
+            path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Could not write cache ETag %s: %s", path, exc)
+
+
+def _load_metadata_pickle(path: Path) -> Any | None:
+    try:
+        with path.open("rb") as handle:
+            return pickle.load(handle)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read cached metadata %s: %s", path, exc)
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return None
+
+
+def _save_metadata(
+    disk_path: Path, etag_path: Path, data: Any, etag: str | None
+) -> None:
+    write_bytes_atomic(disk_path, pickle.dumps(data))
+    _write_metadata_etag(etag_path, etag)
+
+
+def reset_build_cache() -> None:
+    """Drop build tables from memory so a refresh revalidates every table."""
+    _metadata_cache.clear()
+
+
+def _fetch_metadata_file(
+    game: str,
+    version: str,
+    resource_name: str,
+    url: str,
+    *,
+    refresh: bool = False,
+) -> Any:
     cache_key = (game, version, resource_name)
     # Build tables change with each live version, so they keep their own
     # setting (and their own last-cached metadata) separate from detail text.
@@ -331,45 +390,79 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
     # download the same shared table more than once.
     with _METADATA_LOCK:
         caching = get_setting("cache_character_builds")
+        disk_path = _metadata_disk_path(cache_key)
+        etag_path = _metadata_etag_path(cache_key)
 
-        if cache_key in _metadata_cache:
+        if not refresh and cache_key in _metadata_cache:
             return _metadata_cache[cache_key]
 
-        if caching:
-            disk_path = _metadata_disk_path(cache_key)
-            if disk_path.exists():
+        if refresh and caching and disk_path.exists():
+            etag = _read_metadata_etag(etag_path)
+            if etag:
                 try:
-                    with disk_path.open("rb") as handle:
-                        data = pickle.load(handle)
-                    _metadata_cache[cache_key] = data
-                    if build_cache_last_cached() <= 0:
-                        # Backfill metadata for caches written before the
-                        # last-cached record existed.
-                        try:
-                            record_build_cache_write(
-                                timestamp=disk_path.stat().st_mtime
-                            )
-                        except OSError:
-                            pass
-                    return data
+                    response = _request_with_retries(
+                        url, headers={"If-None-Match": etag}
+                    )
+                    if response.status_code == 304:
+                        response.close()
+                        data = _load_metadata_pickle(disk_path)
+                        if data is not None:
+                            _metadata_cache[cache_key] = data
+                            return data
+                    else:
+                        response.raise_for_status()
+                        data = response.json()
+                        new_etag = response.headers.get("ETag")
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("Could not read cached metadata %s: %s", disk_path, exc)
+                    logger.warning(
+                        "Could not revalidate build metadata %s: %s", url, exc
+                    )
+                else:
+                    if data is not None:
+                        _metadata_cache[cache_key] = data
+                        try:
+                            _save_metadata(
+                                disk_path, etag_path, data, new_etag
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "Could not write cached metadata %s: %s",
+                                disk_path,
+                                exc,
+                            )
+                        else:
+                            record_build_cache_write()
+                        return data
+
+        if not refresh and caching and disk_path.exists():
+            data = _load_metadata_pickle(disk_path)
+            if data is not None:
+                _metadata_cache[cache_key] = data
+                if build_cache_last_cached() <= 0:
+                    # Backfill metadata for caches written before the
+                    # last-cached record existed.
                     try:
-                        disk_path.unlink()
+                        record_build_cache_write(
+                            timestamp=disk_path.stat().st_mtime
+                        )
                     except OSError:
                         pass
+                return data
 
-        data = _safe_json(url)
-        if data is not None:
-            _metadata_cache[cache_key] = data
-            if caching:
-                disk_path = _metadata_disk_path(cache_key)
-                try:
-                    write_bytes_atomic(disk_path, pickle.dumps(data))
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
-                else:
-                    record_build_cache_write()
+        try:
+            data, etag = _get_json_with_etag(url)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not fetch detail metadata %s: %s", url, exc)
+            return None
+
+        _metadata_cache[cache_key] = data
+        if caching:
+            try:
+                _save_metadata(disk_path, etag_path, data, etag)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
+            else:
+                record_build_cache_write()
         return data
 
 
@@ -412,17 +505,26 @@ def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, A
     return {}
 
 
-def prefetch_build_metadata(game: str, version: str) -> tuple[int, int]:
+def prefetch_build_metadata(
+    game: str, version: str, *, refresh: bool = False
+) -> tuple[int, int]:
     """Warm a game version's shared build tables without scanning characters.
 
     Recommended builds all read from the same per-version tables, so a bulk
-    preload only needs these few files.  Returns ``(fetched, expected)``;
-    GI and NTE have no build tables.
+    preload only needs these few files.  With *refresh* the tables are
+    revalidated with their stored ETags, so unchanged tables cost a 304
+    instead of a full download.  Returns ``(fetched, expected)``; GI and NTE
+    have no build tables.
     """
     specs = _build_metadata_specs(game, version)
     fetched = 0
     for resource_name, url in specs:
-        if _fetch_metadata_file(game, version, resource_name, url) is not None:
+        if (
+            _fetch_metadata_file(
+                game, version, resource_name, url, refresh=refresh
+            )
+            is not None
+        ):
             fetched += 1
     return fetched, len(specs)
 
