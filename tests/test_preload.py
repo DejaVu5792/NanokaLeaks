@@ -47,16 +47,11 @@ class PreloadDetailsTests(unittest.TestCase):
             ("ww", "3"): make_detail("ww", "3", "Gamma", build=True),
         }
         detail_calls = []
-        build_calls = []
         progress = []
 
         def fake_detail(game, char_id, *, remember=True):
             detail_calls.append((game, char_id, remember))
             return details_by_key[(game, char_id)]
-
-        def fake_build(detail):
-            build_calls.append(detail.name)
-            return []
 
         with (
             patch.object(preload, "GAMES", {"hsr": {}, "ww": {}}),
@@ -68,7 +63,6 @@ class PreloadDetailsTests(unittest.TestCase):
                 else {"3": {}},
             ),
             patch.object(preload, "load_character_detail", side_effect=fake_detail),
-            patch.object(preload, "load_character_build", side_effect=fake_build),
         ):
             summary = preload_characters(PRELOAD_DETAILS, progress.append)
 
@@ -80,11 +74,6 @@ class PreloadDetailsTests(unittest.TestCase):
             detail_calls,
             [("hsr", "1", False), ("hsr", "2", False), ("ww", "3", False)],
             "preloading must not pin every raw detail in the session cache",
-        )
-        self.assertEqual(
-            build_calls,
-            [],
-            "the details preload must not pull build metadata",
         )
         self.assertEqual(progress[0].completed, 0)
         self.assertEqual(progress[0].total, 3)
@@ -202,87 +191,30 @@ class PreloadConcurrencyTests(unittest.TestCase):
 
 
 class PreloadBuildsTests(unittest.TestCase):
-    def test_caches_only_characters_with_build_data(self):
-        details_by_id = {
-            "1": make_detail("hsr", "1", "Alpha", build=True),
-            "2": make_detail("hsr", "2", "Beta"),
-            "3": make_detail("hsr", "3", "Gamma", build=True),
-        }
-        build_calls = []
+    def _run(self, fetched_by_game, *, should_stop=None, version_lookup=None):
         writes = []
-
-        def fake_build(detail):
-            build_calls.append(detail.name)
-            return []
+        progress = []
+        versions = {"hsr": "1.0", "ww": "2.0", "gi": "3.0"}
+        version_lookup = version_lookup or (lambda game: versions[game])
 
         with (
-            patch.object(preload, "GAMES", {"hsr": {}}),
             patch.object(
-                preload, "fetch_characters", return_value={"1": {}, "2": {}, "3": {}}
+                preload,
+                "GAMES",
+                {
+                    "hsr": {"name": "HSR"},
+                    "ww": {"name": "WW"},
+                    "gi": {"name": "GI"},
+                },
+            ),
+            patch.object(
+                preload, "get_latest_version", side_effect=version_lookup
             ),
             patch.object(
                 preload,
-                "load_character_detail",
-                side_effect=lambda game, char_id, *, remember=True: details_by_id[char_id],
+                "prefetch_build_metadata",
+                side_effect=lambda game, version: fetched_by_game[game],
             ),
-            patch.object(preload, "load_character_build", side_effect=fake_build),
-            patch.object(
-                preload,
-                "record_build_cache_write",
-                side_effect=lambda: writes.append(True),
-            ),
-        ):
-            summary = preload_characters(PRELOAD_BUILDS)
-
-        self.assertEqual(summary.total, 3)
-        self.assertEqual(summary.completed, 3)
-        self.assertEqual(summary.failed, 0)
-        self.assertEqual(summary.skipped, 1)
-        self.assertCountEqual(build_calls, ["Alpha", "Gamma"])
-        self.assertEqual(writes, [True], "the build-cache timestamp is recorded")
-
-    def test_timestamp_is_not_recorded_when_nothing_completed(self):
-        def fake_detail(game, char_id, *, remember=True):
-            raise DetailUnavailable("not ready")
-
-        writes = []
-        with (
-            patch.object(preload, "GAMES", {"hsr": {}}),
-            patch.object(preload, "fetch_characters", return_value={"1": {}}),
-            patch.object(preload, "load_character_detail", side_effect=fake_detail),
-            patch.object(
-                preload,
-                "record_build_cache_write",
-                side_effect=lambda: writes.append(True),
-            ),
-        ):
-            summary = preload_characters(PRELOAD_BUILDS)
-
-        self.assertEqual(summary.completed, 1)
-        self.assertEqual(summary.skipped, 1)
-        self.assertEqual(writes, [])
-
-    def test_cancelled_run_does_not_record_timestamp(self):
-        writes = []
-        checks = {"count": 0}
-
-        def should_stop():
-            checks["count"] += 1
-            return checks["count"] > 1
-
-        with (
-            patch.object(preload, "GAMES", {"hsr": {}}),
-            patch.object(
-                preload, "fetch_characters", return_value={"1": {}, "2": {}}
-            ),
-            patch.object(
-                preload,
-                "load_character_detail",
-                side_effect=lambda game, char_id, *, remember=True: make_detail(
-                    game, char_id, build=True
-                ),
-            ),
-            patch.object(preload, "load_character_build", return_value=[]),
             patch.object(
                 preload,
                 "record_build_cache_write",
@@ -290,35 +222,87 @@ class PreloadBuildsTests(unittest.TestCase):
             ),
         ):
             summary = preload_characters(
-                PRELOAD_BUILDS, should_stop=should_stop
+                PRELOAD_BUILDS,
+                progress.append,
+                should_stop=should_stop,
             )
+        return summary, writes, progress
 
-        self.assertTrue(summary.cancelled)
-        self.assertGreaterEqual(summary.completed, 1)
+    def test_preloads_shared_build_tables_per_game(self):
+        summary, writes, progress = self._run(
+            {
+                "hsr": (3, 3),
+                "ww": (1, 1),
+                "gi": (0, 0),
+            }
+        )
+
+        self.assertEqual(summary.total, 3)
+        self.assertEqual(summary.completed, 3)
+        self.assertEqual(summary.failed, 0)
+        self.assertEqual(summary.skipped, 1)
+        self.assertEqual(writes, [True])
+        self.assertEqual(progress[0].total, 3)
+        self.assertEqual(
+            {item.name for item in progress if item.name},
+            {"HSR", "WW", "GI"},
+        )
+
+    def test_partial_build_tables_are_failures(self):
+        summary, writes, _ = self._run(
+            {
+                "hsr": (2, 3),
+                "ww": (0, 1),
+                "gi": (0, 0),
+            }
+        )
+
+        self.assertEqual(summary.failed, 2)
+        self.assertEqual(summary.skipped, 1)
+        self.assertEqual(
+            writes,
+            [True],
+            "partial tables still update the cache timestamp",
+        )
+        self.assertEqual(summary.completed - summary.failed - summary.skipped, 0)
+
+    def test_nothing_written_does_not_update_timestamp(self):
+        summary, writes, _ = self._run(
+            {
+                "hsr": (0, 3),
+                "ww": (0, 1),
+                "gi": (0, 0),
+            }
+        )
+
+        self.assertEqual(summary.failed, 2)
+        self.assertEqual(summary.skipped, 1)
         self.assertEqual(writes, [])
 
-    def test_build_failure_is_reported(self):
-        def fake_build(detail):
-            raise RuntimeError("metadata missing")
+    def test_cancelled_run_does_not_update_timestamp(self):
+        summary, writes, _ = self._run(
+            {"hsr": (3, 3), "ww": (1, 1), "gi": (0, 0)},
+            should_stop=lambda: True,
+        )
 
-        with (
-            patch.object(preload, "GAMES", {"hsr": {}}),
-            patch.object(preload, "fetch_characters", return_value={"1": {}}),
-            patch.object(
-                preload,
-                "load_character_detail",
-                side_effect=lambda game, char_id, *, remember=True: make_detail(
-                    game, char_id, build=True
-                ),
-            ),
-            patch.object(preload, "load_character_build", side_effect=fake_build),
-            patch.object(preload, "record_build_cache_write"),
-            patch.object(preload.logger, "exception"),
-        ):
-            summary = preload_characters(PRELOAD_BUILDS)
+        self.assertTrue(summary.cancelled)
+        self.assertEqual(summary.completed, 0)
+        self.assertEqual(writes, [])
+
+    def test_version_lookup_failure_is_reported(self):
+        def fake_version(game):
+            if game == "ww":
+                raise OSError("offline")
+            return {"hsr": "1.0", "gi": "3.0"}[game]
+
+        summary, writes, _ = self._run(
+            {"hsr": (3, 3), "ww": (1, 1), "gi": (0, 0)},
+            version_lookup=fake_version,
+        )
 
         self.assertEqual(summary.failed, 1)
-        self.assertEqual(summary.skipped, 0)
+        self.assertEqual(summary.skipped, 1)
+        self.assertEqual(writes, [True])
 
 
 class PreloadArtworkTests(unittest.TestCase):

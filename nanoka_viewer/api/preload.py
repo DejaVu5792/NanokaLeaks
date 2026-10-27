@@ -34,9 +34,10 @@ from .constants import GAMES
 from .details import (
     DetailUnavailable,
     load_character_art,
-    load_character_build,
     load_character_detail,
+    prefetch_build_metadata,
 )
+from .manifest import get_latest_version
 
 logger = logging.getLogger(__name__)
 
@@ -142,29 +143,6 @@ def _store_details(game: str, char_id: str) -> tuple[int, int, str]:
     return 0, 0, detail.name
 
 
-def _store_builds(game: str, char_id: str) -> tuple[int, int, str]:
-    """Cache recommended-build metadata.  Returns ``(failed, skipped, name)``."""
-    try:
-        detail = load_character_detail(game, char_id, remember=False)
-    except DetailUnavailable:
-        return 0, 1, char_id
-    except Exception:  # noqa: BLE001
-        logger.exception("Preload could not resolve build data for %s/%s", game, char_id)
-        return 1, 0, char_id
-
-    if detail.build_context is None:
-        # GI and NTE have no recommended-build payload; other games may not
-        # have published one for a brand-new character yet.
-        return 0, 1, detail.name
-
-    try:
-        load_character_build(detail)
-    except Exception:  # noqa: BLE001 - keep going through the rest of the list
-        logger.exception("Preload could not cache build %s/%s", game, char_id)
-        return 1, 0, detail.name
-    return 0, 0, detail.name
-
-
 def _store_artwork(game: str, char_id: str) -> tuple[int, int, str]:
     """Cache the details artwork.  Returns ``(failed, skipped, name)``."""
     try:
@@ -195,8 +173,6 @@ def _worker_count(kind: str) -> int:
 def _store_job(kind: str, game: str, char_id: str) -> tuple[int, int, str]:
     if kind == PRELOAD_DETAILS:
         return _store_details(game, char_id)
-    if kind == PRELOAD_BUILDS:
-        return _store_builds(game, char_id)
     return _store_artwork(game, char_id)
 
 
@@ -272,6 +248,65 @@ def _run_jobs(
     return cancelled
 
 
+def _preload_builds(
+    on_progress: ProgressCallback | None,
+    should_stop: StopCallback,
+) -> PreloadSummary:
+    """Warm the shared build tables once per game version.
+
+    Character builds all read the same per-version tables, so there is no need
+    to fetch every character detail page just to discover them.
+    """
+    summary = PreloadSummary(kind=PRELOAD_BUILDS)
+    games = list(GAMES)
+    summary.total = len(games)
+    _emit(
+        on_progress,
+        PreloadProgress(kind=PRELOAD_BUILDS, completed=0, total=summary.total),
+    )
+
+    any_written = False
+    for index, game in enumerate(games, start=1):
+        if should_stop():
+            summary.cancelled = True
+            break
+
+        try:
+            version = str(get_latest_version(game))
+        except Exception:  # noqa: BLE001 - one game must not block the rest
+            logger.exception("Preload could not read the latest version for %s", game)
+            summary.failed += 1
+        else:
+            fetched, expected = prefetch_build_metadata(game, version)
+            if expected == 0:
+                # GI and NTE do not publish recommended-build tables.
+                summary.skipped += 1
+            elif fetched > 0:
+                any_written = True
+                if fetched < expected:
+                    summary.failed += 1
+            else:
+                summary.failed += 1
+
+        summary.completed = index
+        _emit(
+            on_progress,
+            PreloadProgress(
+                kind=PRELOAD_BUILDS,
+                completed=index,
+                total=summary.total,
+                game=game,
+                name=GAMES[game]["name"],
+                failed=summary.failed,
+                skipped=summary.skipped,
+            ),
+        )
+
+    if any_written and not summary.cancelled:
+        record_build_cache_write()
+    return summary
+
+
 def preload_characters(
     kind: str,
     on_progress: ProgressCallback | None = None,
@@ -287,6 +322,9 @@ def preload_characters(
         raise ValueError(f"Unknown preload kind: {kind!r}")
 
     stop = should_stop or (lambda: False)
+    if kind == PRELOAD_BUILDS:
+        return _preload_builds(on_progress, stop)
+
     summary = PreloadSummary(kind=kind)
     jobs, summary.failed_games = _collect_jobs()
     summary.total = len(jobs)
@@ -327,10 +365,6 @@ def preload_characters(
         on_result,
         stop,
     )
-
-    cached = summary.completed - summary.failed - summary.skipped
-    if kind == PRELOAD_BUILDS and cached > 0 and not summary.cancelled:
-        record_build_cache_write()
 
     logger.info(
         "Preload %s finished: %d/%d completed, %d failed, %d skipped%s",

@@ -291,9 +291,9 @@ class SettingsCacheTests(QtTestCase):
         self.popup._on_preload_finished(summary)
 
         text = self.popup.cache_status.text()
-        self.assertIn("Preloaded 7 builds.", text)
+        self.assertIn("Preloaded 7 build tables.", text)
         self.assertIn("1 failed", text)
-        self.assertIn("2 without builds", text)
+        self.assertIn("2 without build tables", text)
 
     def test_summary_reports_unavailable_details(self):
         summary = PreloadSummary(

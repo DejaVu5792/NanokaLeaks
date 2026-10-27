@@ -373,21 +373,58 @@ def _fetch_metadata_file(game: str, version: str, resource_name: str, url: str) 
         return data
 
 
+def _build_metadata_specs(game: str, version: str) -> list[tuple[str, str]]:
+    """Return the shared build-table resources for *game*/*version*."""
+    if game == "hsr":
+        return [
+            ("relicset", f"{BASE_URL}/hsr/{version}/relicset.json"),
+            ("lightcone", f"{BASE_URL}/hsr/{version}/lightcone.json"),
+            ("character", f"{BASE_URL}/hsr/{version}/character.json"),
+        ]
+    if game == "ww":
+        return [("weapon", f"{BASE_URL}/ww/{version}/weapon.json")]
+    if game == "zzz":
+        return [("item", f"{BASE_URL}/zzz/{version}/en/item.json")]
+    return []
+
+
 def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, Any]:
     """Fetch only the small metadata files needed for a recommended build."""
+    specs = dict(_build_metadata_specs(game, version))
     if game == "hsr" and any(
         raw.get(key) for key in ("relics", "lightcones", "teams")
     ):
         return {
-            "relicset": _fetch_metadata_file(game, version, "relicset", f"{BASE_URL}/hsr/{version}/relicset.json"),
-            "lightcone": _fetch_metadata_file(game, version, "lightcone", f"{BASE_URL}/hsr/{version}/lightcone.json"),
-            "characters": _fetch_metadata_file(game, version, "character", f"{BASE_URL}/hsr/{version}/character.json"),
+            "relicset": _fetch_metadata_file(game, version, "relicset", specs["relicset"]),
+            "lightcone": _fetch_metadata_file(game, version, "lightcone", specs["lightcone"]),
+            "characters": _fetch_metadata_file(game, version, "character", specs["character"]),
         }
     if game == "ww" and (raw.get("recommend") or {}).get("weapon"):
-        return {"weapon": _fetch_metadata_file(game, version, "weapon", f"{BASE_URL}/ww/{version}/weapon.json")}
+        return {
+            "weapon": _fetch_metadata_file(
+                game, version, "weapon", specs["weapon"]
+            )
+        }
     if game == "zzz" and raw.get("fairy_recommend"):
-        return {"item": _fetch_metadata_file(game, version, "item", f"{BASE_URL}/zzz/{version}/en/item.json")}
+        return {
+            "item": _fetch_metadata_file(game, version, "item", specs["item"])
+        }
     return {}
+
+
+def prefetch_build_metadata(game: str, version: str) -> tuple[int, int]:
+    """Warm a game version's shared build tables without scanning characters.
+
+    Recommended builds all read from the same per-version tables, so a bulk
+    preload only needs these few files.  Returns ``(fetched, expected)``;
+    GI and NTE have no build tables.
+    """
+    specs = _build_metadata_specs(game, version)
+    fetched = 0
+    for resource_name, url in specs:
+        if _fetch_metadata_file(game, version, resource_name, url) is not None:
+            fetched += 1
+    return fetched, len(specs)
 
 
 def _detail_disk_path(cache_key: tuple[str, str, str]) -> Path:

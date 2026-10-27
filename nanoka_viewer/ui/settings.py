@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 _PRELOAD_LABELS = {
     PRELOAD_DETAILS: "detail pages",
-    PRELOAD_BUILDS: "builds",
+    PRELOAD_BUILDS: "build tables",
     PRELOAD_ARTWORK: "artwork images",
 }
 
@@ -355,7 +355,7 @@ class SettingsPopup(OverlayPopup):
             text += f" {summary.failed} failed."
         if summary.skipped:
             if summary.kind == PRELOAD_BUILDS:
-                text += f" {summary.skipped} without builds."
+                text += f" {summary.skipped} without build tables."
             else:
                 text += f" {summary.skipped} unavailable."
         if summary.failed_games:

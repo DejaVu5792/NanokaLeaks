@@ -36,7 +36,7 @@ PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
 _CACHE_LABELS = {
     PRELOAD_DETAILS: "details",
-    PRELOAD_BUILDS: "builds",
+    PRELOAD_BUILDS: "build tables",
     PRELOAD_ARTWORK: "artwork",
 }
 
