@@ -81,9 +81,41 @@ class ImageVisibilityTests(QtTestCase):
 
 
 class ReloadRaceTests(QtTestCase):
+    def _wait_for_idle(self, window, timeout=2000):
+        elapsed = 0
+        while not window.refresh_btn.isEnabled():
+            support.wait(10)
+            elapsed += 10
+            if elapsed >= timeout:
+                self.fail("window did not finish loading")
+
+    def test_reload_is_ignored_while_a_load_is_active(self):
+        with real_viewer() as (window, card):
+            self.assertIsNotNone(card)
+            self._wait_for_idle(window)
+
+            window.load_data()
+            first_thread = window.load_thread
+            self.assertFalse(window.refresh_btn.isEnabled())
+
+            window.load_data()
+            self.assertIs(
+                window.load_thread,
+                first_thread,
+                "a second Reload must not start another load",
+            )
+
+            self._wait_for_idle(window)
+            self.assertEqual(
+                len(window.game_sections["hsr"]._cards),
+                1,
+                "spamming Reload must not duplicate cards",
+            )
+
     def test_stale_generation_cannot_add_cards(self):
         with real_viewer() as (window, card):
             self.assertIsNotNone(card)
+            self._wait_for_idle(window)
             window.load_data()
             stale_generation = window._load_generation - 1
 

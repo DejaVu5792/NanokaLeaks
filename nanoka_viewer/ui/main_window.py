@@ -163,6 +163,7 @@ class NanokaViewer(QMainWindow):
         self._load_threads = []
         self._pending_sections = set()
         self._fetch_finished = False
+        self._load_in_progress = False
         games_list = list(GAMES.items())
         for i, (game, info) in enumerate(games_list):
             section = GameSection(info["name"])
@@ -189,6 +190,10 @@ class NanokaViewer(QMainWindow):
         (the user pressed Reload while a previous load was still running) are
         ignored instead of being appended to the freshly cleared sections.
         """
+        if self._load_in_progress:
+            logger.info("Reload ignored: a load is already in progress")
+            return
+        self._load_in_progress = True
         self._load_generation += 1
         generation = self._load_generation
         logger.info("Starting data load (generation %d)...", generation)
@@ -285,6 +290,7 @@ class NanokaViewer(QMainWindow):
             self._finish_loading_ui()
 
     def _finish_loading_ui(self):
+        self._load_in_progress = False
         self.refresh_btn.setEnabled(True)
         self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")
@@ -335,6 +341,7 @@ class NanokaViewer(QMainWindow):
         keeps a reference until it finishes instead of letting Qt destroy a
         running QThread.
         """
+        self._load_in_progress = False
         self._load_generation += 1
         for thread in list(self._load_threads):
             try:
