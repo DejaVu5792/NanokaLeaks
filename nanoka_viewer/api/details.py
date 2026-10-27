@@ -469,7 +469,8 @@ def load_character_detail(
                     detail = pickle.load(handle)
                 if remember:
                     _detail_cache[cache_key] = detail
-                return copy.deepcopy(detail)
+                    return copy.deepcopy(detail)
+                return detail
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not read cached detail %s: %s", disk_path, exc)
                 try:
@@ -502,7 +503,8 @@ def load_character_detail(
                         detail = pickle.load(handle)
                     if remember:
                         _detail_cache[cache_key] = detail
-                    return copy.deepcopy(detail)
+                        return copy.deepcopy(detail)
+                    return detail
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Could not read cached detail %s: %s", disk_path, exc)
                     try:
@@ -541,15 +543,16 @@ def load_character_detail(
     if has_build:
         detail.build_context = BuildContext(game, version, raw)
 
-    if remember:
-        _detail_cache[cache_key] = detail
     if caching:
         disk_path = _detail_disk_path(cache_key)
         try:
             write_bytes_atomic(disk_path, pickle.dumps(detail))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Could not write cached detail %s: %s", disk_path, exc)
-    return copy.deepcopy(detail)
+    if remember:
+        _detail_cache[cache_key] = detail
+        return copy.deepcopy(detail)
+    return detail
 
 
 def load_character_build(detail: CharacterDetail) -> list[BuildSection]:
