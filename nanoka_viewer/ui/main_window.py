@@ -210,17 +210,17 @@ class NanokaViewer(QMainWindow):
         if progress.total:
             label = _CACHE_LABELS.get(progress.kind, progress.kind)
             self.cache_label.setText(
-                f"Caching {label} {progress.completed}/{progress.total}"
+                f"Preloading {label} {progress.completed}/{progress.total}"
             )
         else:
-            self.cache_label.setText("Preparing cache...")
+            self.cache_label.setText("Preparing preload...")
 
     def _on_preload_finished(self, summary):
         label = _CACHE_LABELS.get(summary.kind, summary.kind)
         if summary.cancelled:
-            text = f"Cache stopped at {summary.completed}/{summary.total}"
+            text = f"Preload stopped at {summary.completed}/{summary.total}"
         else:
-            text = f"Cached {summary.completed}/{summary.total} {label}"
+            text = f"Preloaded {summary.completed}/{summary.total} {label}"
             if summary.failed:
                 text += f", {summary.failed} failed"
             if summary.failed_games:

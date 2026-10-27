@@ -196,7 +196,7 @@ class SettingsPopup(OverlayPopup):
         return checkbox, button, size_label, last_label
 
     def _make_cache_button(self) -> QPushButton:
-        button = QPushButton("Cache")
+        button = QPushButton("Preload")
         button.setObjectName("cacheBtn")
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.setFixedWidth(84)
@@ -251,7 +251,7 @@ class SettingsPopup(OverlayPopup):
         if kind == PRELOAD_ARTWORK and not self._confirm_artwork_download():
             return
 
-        # An explicit Cache click is a promise that the data will be used
+        # An explicit Preload click is a promise that the data will be used
         # later, so make sure the matching setting is on before starting.
         checkbox = self._checkbox_for(kind)
         if not checkbox.isChecked():
@@ -261,16 +261,16 @@ class SettingsPopup(OverlayPopup):
 
         if not manager.start(kind):
             return
-        self.cache_status.setText("Preparing cache...")
+        self.cache_status.setText("Preparing preload...")
         self._sync_preload_state()
 
     def _confirm_artwork_download(self) -> bool:
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Cache character artwork?")
+        box.setWindowTitle("Preload character artwork?")
         box.setText("Character artwork is a large download.")
         box.setInformativeText(
-            "Caching the details artwork for every character can use hundreds "
+            "Preloading the details artwork for every character can use hundreds "
             "of megabytes of disk space and take a while.\n\n"
             "Do you still want to continue?"
         )
@@ -307,11 +307,11 @@ class SettingsPopup(OverlayPopup):
                 button.setToolTip("Stop after the current character")
                 button.setEnabled(True)
             elif running:
-                button.setText("Cache")
-                button.setToolTip("Another cache is already running")
+                button.setText("Preload")
+                button.setToolTip("Another preload is already running")
                 button.setEnabled(False)
             else:
-                button.setText("Cache")
+                button.setText("Preload")
                 button.setToolTip("")
                 button.setEnabled(True)
 
@@ -320,7 +320,7 @@ class SettingsPopup(OverlayPopup):
         self.cache_artwork.setEnabled(not running)
         self.clear_cache_btn.setEnabled(not running)
         self.clear_cache_btn.setToolTip(
-            "Stop the running cache before clearing it." if running else ""
+            "Stop the running preload before clearing it." if running else ""
         )
 
         if running:
@@ -328,18 +328,18 @@ class SettingsPopup(OverlayPopup):
             if progress is not None and progress.total:
                 self._show_progress(progress)
             else:
-                self.cache_status.setText("Preparing cache...")
+                self.cache_status.setText("Preparing preload...")
         elif manager.last_summary is not None:
             self._show_summary(manager.last_summary)
         elif manager.last_error:
-            self.cache_status.setText(f"Cache failed: {manager.last_error}")
+            self.cache_status.setText(f"Preload failed: {manager.last_error}")
 
     def _show_progress(self, progress: PreloadProgress):
         label = _PRELOAD_LABELS.get(progress.kind, progress.kind)
         name = progress.name
         if len(name) > 28:
             name = name[:27].rstrip() + "..."
-        text = f"Caching {label} {progress.completed}/{progress.total}"
+        text = f"Preloading {label} {progress.completed}/{progress.total}"
         if name:
             text += f" - {name}"
         self.cache_status.setText(text)
@@ -348,9 +348,9 @@ class SettingsPopup(OverlayPopup):
         label = _PRELOAD_LABELS.get(summary.kind, summary.kind)
         cached = max(0, summary.completed - summary.failed - summary.skipped)
         if summary.cancelled:
-            text = f"Stopped. Cached {cached} {label}."
+            text = f"Stopped. Preloaded {cached} {label}."
         else:
-            text = f"Cached {cached} {label}."
+            text = f"Preloaded {cached} {label}."
         if summary.failed:
             text += f" {summary.failed} failed."
         if summary.skipped:
@@ -371,13 +371,13 @@ class SettingsPopup(OverlayPopup):
 
     def _on_preload_failed(self, message: str):
         self._update_cache_meta()
-        self.cache_status.setText(f"Cache failed: {message}")
+        self.cache_status.setText(f"Preload failed: {message}")
         self._sync_preload_state()
 
     def _clear_cache(self):
         manager = get_preload_manager()
         if manager.running:
-            self.cache_status.setText("Stop the running cache before clearing it.")
+            self.cache_status.setText("Stop the running preload before clearing it.")
             return
         if not self._confirm_clear_cache():
             return

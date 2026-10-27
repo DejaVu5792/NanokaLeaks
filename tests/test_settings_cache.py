@@ -129,7 +129,7 @@ class SettingsCacheTests(QtTestCase):
                 layout.itemAt(1).alignment() & Qt.AlignmentFlag.AlignRight,
                 "the Cache button must be right-aligned in its row",
             )
-            self.assertEqual(button.text(), "Cache")
+            self.assertEqual(button.text(), "Preload")
 
     def test_sizes_are_shown_in_kb(self):
         self.assertEqual(self.popup.details_size.text(), "2 kB")
@@ -291,7 +291,7 @@ class SettingsCacheTests(QtTestCase):
         self.popup._on_preload_finished(summary)
 
         text = self.popup.cache_status.text()
-        self.assertIn("Cached 7 builds.", text)
+        self.assertIn("Preloaded 7 builds.", text)
         self.assertIn("1 failed", text)
         self.assertIn("2 without builds", text)
 
@@ -308,7 +308,7 @@ class SettingsCacheTests(QtTestCase):
         self.popup._on_preload_finished(summary)
 
         text = self.popup.cache_status.text()
-        self.assertIn("Cached 7 detail pages.", text)
+        self.assertIn("Preloaded 7 detail pages.", text)
         self.assertIn("2 unavailable", text)
 
 
