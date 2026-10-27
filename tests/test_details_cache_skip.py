@@ -17,7 +17,6 @@ from support import SAMPLE_DETAIL, QtTestCase, flush, wait
 import nanoka_viewer.ui.details as details_ui
 from nanoka_viewer.api.details import BuildContext, BuildSection, CharacterDetail
 
-BUILD_SKELETON_WIDTHS = (30, 92, 74, 86)
 ART_URL = "https://example.test/art.webp"
 
 
@@ -80,15 +79,15 @@ class CacheAwareLoadingTests(QtTestCase):
         popup._show_loading = lambda: calls.append(1)
         return calls
 
-    def _record_skeletons(self, popup):
+    def _record_build_skeletons(self, popup):
         calls = []
-        original = popup._build_skeleton_card
+        original = popup._build_build_skeleton
 
-        def record(widths):
-            calls.append(widths)
-            return original(widths)
+        def record():
+            calls.append(1)
+            return original()
 
-        popup._build_skeleton_card = record
+        popup._build_build_skeleton = record
         return calls
 
     def _build_labels(self, popup):
@@ -166,15 +165,15 @@ class CacheAwareLoadingTests(QtTestCase):
             BuildSection("Relic", ["Test Relic"])
         ]
         popup = self._make_popup()
-        skeletons = self._record_skeletons(popup)
+        skeletons = self._record_build_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
         self._wait_for_build(popup)
 
-        self.assertNotIn(
-            BUILD_SKELETON_WIDTHS,
+        self.assertEqual(
             skeletons,
+            [],
             "a cached build must not insert the build skeleton",
         )
         self.assertIn("Recommended Build", self._build_labels(popup))
@@ -188,12 +187,12 @@ class CacheAwareLoadingTests(QtTestCase):
         )
         details_ui.load_character_build = lambda detail: []
         popup = self._make_popup()
-        skeletons = self._record_skeletons(popup)
+        skeletons = self._record_build_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
 
-        self.assertIn(BUILD_SKELETON_WIDTHS, skeletons)
+        self.assertEqual(len(skeletons), 1, "the build skeleton must be shown")
         self._wait_for_build(popup)
 
     def test_slow_cached_build_falls_back_to_the_build_skeleton(self):
@@ -210,20 +209,20 @@ class CacheAwareLoadingTests(QtTestCase):
 
         details_ui.load_character_build = slow_build
         popup = self._make_popup()
-        skeletons = self._record_skeletons(popup)
+        skeletons = self._record_build_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
-        self.assertNotIn(
-            BUILD_SKELETON_WIDTHS,
+        self.assertEqual(
             skeletons,
+            [],
             "the build skeleton must wait for the fallback delay",
         )
 
         wait(details_ui.LOADING_FALLBACK_MS + 100)
-        self.assertIn(
-            BUILD_SKELETON_WIDTHS,
-            skeletons,
+        self.assertEqual(
+            len(skeletons),
+            1,
             "a slow cached build must fall back to the skeleton",
         )
 
@@ -233,17 +232,18 @@ class CacheAwareLoadingTests(QtTestCase):
 
     # -- artwork cache -----------------------------------------------------
 
-    def _record_art_label_text(self, popup):
-        texts = []
+    def _record_art_skeletons(self, popup):
+        shown = []
         original = popup._build_art_panel
 
         def record(detail):
             widget = original(detail)
-            texts.append(popup._art_label.text())
+            skeleton = popup._art_skeleton
+            shown.append(bool(skeleton is not None and not skeleton.isHidden()))
             return widget
 
         popup._build_art_panel = record
-        return texts
+        return shown
 
     def test_cached_art_skips_the_loading_placeholder(self):
         details_ui.has_cached_detail = lambda game, char_id: True
@@ -252,12 +252,14 @@ class CacheAwareLoadingTests(QtTestCase):
             art_url=ART_URL
         )
         popup = self._make_popup()
-        texts = self._record_art_label_text(popup)
+        shown = self._record_art_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
 
-        self.assertEqual(texts[:1], [""], "cached art must not say 'Loading art...'")
+        self.assertEqual(
+            shown[:1], [False], "cached art must not flash the art skeleton"
+        )
         self._wait_for_art(popup)
 
     def test_uncached_art_shows_the_loading_placeholder(self):
@@ -267,12 +269,12 @@ class CacheAwareLoadingTests(QtTestCase):
             art_url=ART_URL
         )
         popup = self._make_popup()
-        texts = self._record_art_label_text(popup)
+        shown = self._record_art_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
 
-        self.assertEqual(texts[:1], ["Loading art..."])
+        self.assertEqual(shown[:1], [True])
         self._wait_for_art(popup)
 
     def test_slow_cached_art_falls_back_to_the_placeholder(self):
@@ -287,17 +289,17 @@ class CacheAwareLoadingTests(QtTestCase):
 
         details_ui.load_character_art = slow_art
         popup = self._make_popup()
-        texts = self._record_art_label_text(popup)
+        shown = self._record_art_skeletons(popup)
 
         popup.open_character("hsr", "1")
         self._wait_for_detail(popup)
-        self.assertEqual(texts[:1], [""])
+        self.assertEqual(shown[:1], [False])
 
         wait(details_ui.LOADING_FALLBACK_MS + 100)
-        self.assertEqual(
-            popup._art_label.text(),
-            "Loading art...",
-            "a slow cached artwork read must fall back to the placeholder",
+        self.assertIsNotNone(popup._art_skeleton)
+        self.assertFalse(
+            popup._art_skeleton.isHidden(),
+            "a slow cached artwork read must fall back to the art skeleton",
         )
         self._wait_for_art(popup)
 

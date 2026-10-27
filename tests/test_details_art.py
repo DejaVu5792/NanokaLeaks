@@ -9,12 +9,22 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtCore import QBuffer, QIODevice, QSize
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QWidget
-from support import SAMPLE_DETAIL, QtTestCase, flush, wait
 
+from support import (
+    SAMPLE_DETAIL,
+    QtTestCase,
+    flush,
+    make_details_host,
+    open_details_for,
+    wait,
+)
+
+import nanoka_viewer.ui.details as details
 from nanoka_viewer.ui.details import CharacterDetailsPopup, _ArtLabel
 
 RED = "#ff0000"
@@ -109,6 +119,39 @@ class ArtLabelTests(QtTestCase):
         flush()
         self.assertEqual(label.text(), "Art unavailable")
         self.assertIsNone(label._source)
+
+
+class ArtSkeletonTests(QtTestCase):
+    def _png_bytes(self) -> bytes:
+        image = QImage(120, 200, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#ff0000"))
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        self.assertTrue(image.save(buffer, "PNG"))
+        return bytes(buffer.data())
+
+    def test_artwork_replaces_the_skeleton_that_reserved_its_space(self):
+        details.load_character_art = lambda url: self._png_bytes()
+        details.load_character_detail = lambda game, char_id: replace(
+            SAMPLE_DETAIL, art_url="https://example.invalid/art.png"
+        )
+
+        window, _central, _scroll, button, _anchor = make_details_host()
+        self.track_window(window)
+        popup = open_details_for(window, button)
+
+        for _ in range(60):
+            if popup._art_label is not None and popup._art_label._source is not None:
+                break
+            wait(20)
+        wait(300)  # the artwork cross-fades over the skeleton
+
+        self.assertIsNotNone(popup._art_label)
+        self.assertIsNotNone(popup._art_label._source)
+        self.assertIsNone(
+            popup._art_skeleton,
+            "the art skeleton must be dropped once the artwork is visible",
+        )
 
 
 if __name__ == "__main__":

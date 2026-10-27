@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import unittest
 
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QColor, QPixmap
+
 import support
 from support import QtTestCase, flush, real_viewer
 
@@ -27,7 +30,7 @@ class ImageVisibilityTests(QtTestCase):
         self._original_request_image = card_module.request_image
         self.requests = []
 
-        def fake_request_image(url, callback, size=(100, 100)):
+        def fake_request_image(url, callback, size=(100, 100), on_failed=None):
             self.requests.append((url, size))
             return None
 
@@ -78,6 +81,54 @@ class ImageVisibilityTests(QtTestCase):
         requested_after = [card for card in section._cards if card._images_requested]
         self.assertGreater(len(requested_after), len(requested_cards))
         self.assertEqual(len(self.requests), len(requested_after) * 3)
+
+
+class PlaceholderGeometryTests(QtTestCase):
+    """Loading placeholders must occupy exactly the real content's footprint."""
+
+    def test_portrait_skeleton_matches_the_loaded_image_size(self):
+        card = CardWidget("hsr", "1001", _HSR_CHAR)
+        self.addCleanup(card.deleteLater)
+        label = card.char_img_label
+
+        self.assertEqual(label.size(), QSize(80, 80))
+        self.assertFalse(label.has_image)
+        self.assertLess(label.pulseAlpha, 255, "the portrait skeleton should pulse")
+
+        before = [
+            card.layout().itemAt(index).geometry()
+            for index in range(card.layout().count())
+        ]
+        pixmap = QPixmap(80, 80)
+        pixmap.fill(QColor("#ff0000"))
+        card._on_char_image_loaded(pixmap)
+        after = [
+            card.layout().itemAt(index).geometry()
+            for index in range(card.layout().count())
+        ]
+
+        self.assertTrue(label.has_image)
+        self.assertEqual(label.size(), QSize(80, 80))
+        self.assertEqual(
+            label.pulseAlpha, 255, "the skeleton pulse must stop on success"
+        )
+        self.assertEqual(
+            before, after, "loading the image must not move the card contents"
+        )
+
+    def test_failed_portrait_stops_loading(self):
+        card = CardWidget("hsr", "1001", _HSR_CHAR)
+        self.addCleanup(card.deleteLater)
+
+        card._on_char_image_failed()
+
+        self.assertFalse(card.char_img_label.has_image)
+        self.assertEqual(
+            card.char_img_label.pulseAlpha,
+            255,
+            "a failed image must not keep pulsing",
+        )
+
 
 
 class ReloadRaceTests(QtTestCase):

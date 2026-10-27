@@ -187,6 +187,20 @@ class ImageLoaderTests(unittest.TestCase):
         self.assertIsNone(result)
         submit.assert_not_called()
 
+    def test_failure_callbacks_run_and_cancelled_ones_are_skipped(self):
+        key = ("https://example.invalid/missing.png", (80, 80))
+        calls = []
+        first = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("first"))
+        second = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("second"))
+        cancelled = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("cancelled"))
+        cancelled.cancelled = True
+        with il._LOCK:
+            il._CALLBACKS[key] = [first, second, cancelled]
+
+        il._handle_image_failed(key)
+
+        self.assertEqual(calls, ["first", "second"])
+
     def test_failed_url_retries_after_ttl(self):
         url = "https://example.invalid/missing.png"
         key = (url, (18, 18))
