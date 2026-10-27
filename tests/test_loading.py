@@ -129,6 +129,75 @@ class PlaceholderGeometryTests(QtTestCase):
             "a failed image must not keep pulsing",
         )
 
+    def test_pending_images_do_not_change_card_positions(self):
+        section = GameSection("Test")
+        section.resize(800, 240)
+        section.show()
+        self.addCleanup(section.deleteLater)
+
+        for index in range(6):
+            section.add_card("hsr", str(1000 + index), _HSR_CHAR)
+        flush()
+
+        positions = [card.pos() for card in section._cards]
+        self.assertEqual(
+            [second.x() - first.x() for first, second in zip(positions, positions[1:])],
+            [188] * 5,
+            "cards must sit on the normal 180px + 8px spacing grid",
+        )
+        self.assertEqual(
+            len(section.cards_container.findChildren(CardWidget)),
+            len(section._cards),
+            "no extra loading widget may share the card row",
+        )
+        self.assertEqual(
+            section.cards_container.width(),
+            4 + 6 * 180 + 5 * 8 + 4,
+            "the scrollable row must be exactly as wide as its card slots",
+        )
+
+        pixmap = QPixmap(80, 80)
+        pixmap.fill(QColor("#ff0000"))
+        for card in section._cards:
+            card._on_char_image_loaded(pixmap)
+        flush()
+
+        self.assertEqual(
+            [card.pos() for card in section._cards],
+            positions,
+            "loading the portraits must not move or resize the card row",
+        )
+
+    def test_card_grid_ignores_small_size_hints(self):
+        """A card must keep its 180px slot even if its hint is stale/small.
+
+        A QHBoxLayout can place fixed-size widgets using their *content* size
+        hint (136px for a card whose icons/images are not loaded yet), which
+        made the row overlap until a later relayout.  The grid is positioned
+        explicitly, so hints can no longer affect it.
+        """
+        original_hint = CardWidget.sizeHint
+        CardWidget.sizeHint = lambda self: QSize(136, 208)
+        try:
+            section = GameSection("Test")
+            section.resize(800, 240)
+            section.show()
+            self.addCleanup(section.deleteLater)
+
+            for index in range(4):
+                section.add_card("hsr", str(1000 + index), _HSR_CHAR)
+            flush()
+
+            self.assertEqual(
+                [card.x() for card in section._cards],
+                [4, 192, 380, 568],
+                "card positions must come from the grid, not from hints",
+            )
+            self.assertEqual(
+                [card.width() for card in section._cards], [180] * 4
+            )
+        finally:
+            CardWidget.sizeHint = original_hint
 
 
 class ReloadRaceTests(QtTestCase):
