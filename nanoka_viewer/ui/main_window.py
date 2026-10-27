@@ -23,7 +23,9 @@ from .styles import STYLESHEET
 from .section import GameSection
 from .loader import LoadThread
 from .settings import open_settings
+from .preload import get_preload_manager
 from ..api import GAMES, fetch_manifest
+from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,12 @@ logger = logging.getLogger(__name__)
 _DETACHED_THREADS = set()
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
+
+_CACHE_LABELS = {
+    PRELOAD_DETAILS: "details",
+    PRELOAD_BUILDS: "builds",
+    PRELOAD_ARTWORK: "artwork",
+}
 
 _TRACED_MOUSE_EVENTS = frozenset(
     {
@@ -128,6 +136,11 @@ class NanokaViewer(QMainWindow):
 
         header_layout.addStretch()
 
+        self.cache_label = QLabel("")
+        self.cache_label.setStyleSheet("color: palette(placeholder-text);")
+        self.cache_label.setToolTip("Background cache progress")
+        header_layout.addWidget(self.cache_label)
+
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: palette(placeholder-text);")
         header_layout.addWidget(self.status_label)
@@ -179,9 +192,41 @@ class NanokaViewer(QMainWindow):
 
         self.load_thread = None
 
+        self._cache_label_timer = QTimer(self)
+        self._cache_label_timer.setSingleShot(True)
+        self._cache_label_timer.timeout.connect(lambda: self.cache_label.setText(""))
+
+        self.preload_manager = get_preload_manager()
+        self.preload_manager.progress.connect(self._on_preload_progress)
+        self.preload_manager.finished.connect(self._on_preload_finished)
+
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
+
+    def _on_preload_progress(self, progress):
+        """Show background cache progress in the header."""
+        self._cache_label_timer.stop()
+        if progress.total:
+            label = _CACHE_LABELS.get(progress.kind, progress.kind)
+            self.cache_label.setText(
+                f"Caching {label} {progress.completed}/{progress.total}"
+            )
+        else:
+            self.cache_label.setText("Preparing cache...")
+
+    def _on_preload_finished(self, summary):
+        label = _CACHE_LABELS.get(summary.kind, summary.kind)
+        if summary.cancelled:
+            text = f"Cache stopped at {summary.completed}/{summary.total}"
+        else:
+            text = f"Cached {summary.completed}/{summary.total} {label}"
+            if summary.failed:
+                text += f", {summary.failed} failed"
+            if summary.failed_games:
+                text += f", {summary.failed_games} game(s) unavailable"
+        self.cache_label.setText(text)
+        self._cache_label_timer.start(6000)
 
     def load_data(self):
         """Start loading character data.
