@@ -138,11 +138,10 @@ class _ArtLabel(QLabel):
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Centre-crop to match the label size cleanly
+        # Centre horizontally, but keep the top: character faces live there.
         if scaled.width() > target.width() or scaled.height() > target.height():
             x = max(0, (scaled.width() - target.width()) // 2)
-            y = max(0, (scaled.height() - target.height()) // 2)
-            scaled = scaled.copy(x, y, target.width(), target.height())
+            scaled = scaled.copy(x, 0, target.width(), target.height())
         self.setPixmap(scaled)
 
     def resizeEvent(self, event):

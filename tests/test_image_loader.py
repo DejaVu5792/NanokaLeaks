@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from PySide6.QtCore import QBuffer, QIODevice
-from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
 import support
 
@@ -28,6 +28,22 @@ from nanoka_viewer.ui import image_loader as il
 def png_bytes(width=20, height=10, color="#ff0000") -> bytes:
     image = QImage(width, height, QImage.Format.Format_ARGB32)
     image.fill(QColor(color))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+def banded_png(width=100, height=200) -> bytes:
+    """Red top quarter, green middle half, blue bottom quarter."""
+    image = QImage(width, height, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#ff0000"))
+    painter = QPainter(image)
+    try:
+        painter.fillRect(0, height // 4, width, height // 2, QColor("#00ff00"))
+        painter.fillRect(0, height * 3 // 4, width, height // 4, QColor("#0000ff"))
+    finally:
+        painter.end()
     buffer = QBuffer()
     buffer.open(QIODevice.OpenModeFlag.WriteOnly)
     assert image.save(buffer, "PNG")
@@ -93,6 +109,20 @@ class ImageLoaderTests(unittest.TestCase):
         )
         # The encoded payload is shared on disk: only one download.
         self.assertEqual(session.calls, 1)
+
+    def test_image_is_cover_cropped_not_stretched(self):
+        session = FakeSession(banded_png(100, 200))
+        il._get_session = lambda: session
+        url = "https://example.invalid/tall.png"
+
+        image = il.load_qt_image_sync(url, (100, 100))
+
+        self.assertIsNotNone(image)
+        self.assertEqual((image.width(), image.height()), (100, 100))
+        # A stretched 100x200 source would put the blue bottom band in the
+        # lower half. Cover-cropping keeps the top, so only red/green remain.
+        self.assertEqual(image.pixelColor(50, 10).name(), "#ff0000")
+        self.assertEqual(image.pixelColor(50, 90).name(), "#00ff00")
 
     def test_corrupt_disk_entry_is_replaced(self):
         url = "https://example.invalid/portrait.png"

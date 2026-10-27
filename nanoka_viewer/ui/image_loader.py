@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import threading
 from collections import OrderedDict
@@ -31,6 +32,7 @@ from PySide6.QtCore import (
     QSize,
     QBuffer,
     QIODevice,
+    Qt,
 )
 from PySide6.QtGui import QPixmap, QImage, QImageReader
 
@@ -153,8 +155,41 @@ def _cache_clear():
     _CACHE_BYTES = 0
 
 
+def _cover_size(source: QSize, target: tuple[int, int]) -> QSize:
+    """Return the smallest size that covers *target* without distorting."""
+    target_width, target_height = target
+    if source.width() <= 0 or source.height() <= 0:
+        return QSize(target_width, target_height)
+    scale = max(
+        target_width / source.width(),
+        target_height / source.height(),
+    )
+    return QSize(
+        max(target_width, math.ceil(source.width() * scale)),
+        max(target_height, math.ceil(source.height() * scale)),
+    )
+
+
+def _crop_cover(image: QImage, target: tuple[int, int]) -> QImage:
+    """Scale to cover *target*, centre horizontally and align to the top.
+
+    Character faces sit near the top of the source artwork, so vertical
+    centring crops away the part people actually want to see.
+    """
+    target_width, target_height = target
+    if image.width() < target_width or image.height() < target_height:
+        image = image.scaled(
+            target_width,
+            target_height,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    x = max(0, (image.width() - target_width) // 2)
+    return image.copy(x, 0, target_width, target_height)
+
+
 def _decode(data: bytes, size) -> QImage | None:
-    """Decode image *data* into a QImage, scaled to *size* when given."""
+    """Decode image *data* into a QImage, cropped to *size* when given."""
     buf = QBuffer()
     buf.setData(data)
     buf.open(QIODevice.OpenModeFlag.ReadOnly)
@@ -162,10 +197,17 @@ def _decode(data: bytes, size) -> QImage | None:
     reader.setAutoTransform(True)
     size_key = _size_key(size)
     if size_key is not None:
-        reader.setScaledSize(QSize(*size_key))
+        source_size = reader.size()
+        if source_size.isValid() and not source_size.isEmpty():
+            # Decode close to the final cover size instead of the full asset.
+            reader.setScaledSize(_cover_size(source_size, size_key))
+        else:
+            reader.setScaledSize(QSize(*size_key))
     image = reader.read()
     if image.isNull():
         return None
+    if size_key is not None:
+        image = _crop_cover(image, size_key)
     return image
 
 
