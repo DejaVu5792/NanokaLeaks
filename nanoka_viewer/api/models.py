@@ -192,6 +192,7 @@ def get_specialty_image(game, char_data):
             4: "Support",
             5: "Defense",
             6: "Rupture",
+            7: "Armorer",
         }
         specialty = type_map.get(char_data.get("type", 1), "Attack")
         return f"https://static.nanoka.cc/assets/zzz/Icon{specialty}.webp"

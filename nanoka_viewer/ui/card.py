@@ -42,6 +42,7 @@ class CardWidget(QWidget):
                 4: "Support",
                 5: "Defense",
                 6: "Rupture",
+                7: "Armorer",
             }
             return type_map.get(char_data.get("type", 1), "Attack")
         elif game == "hsr":
