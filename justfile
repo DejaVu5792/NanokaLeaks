@@ -6,5 +6,9 @@ run:
 build:
     uv run nuitka --standalone --onefile --onefile-as-archive --enable-plugin=pyside6 --assume-yes-for-downloads -o NanokaLeaks main.py
 
+# Build a standalone AppImage under dist/. Downloads appimagetool on first use.
+appimage:
+    packaging/build_appimage.sh
+
 test:
     uv run python -m unittest discover -s tests
