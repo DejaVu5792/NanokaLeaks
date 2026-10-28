@@ -21,6 +21,7 @@ fi
 APPIMAGETOOL_VERSION="${APPIMAGETOOL_VERSION:-1.9.1}"
 APPIMAGETOOL_SHA256="${APPIMAGETOOL_SHA256:-ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0}"
 APPIMAGETOOL="${APPIMAGETOOL:-${XDG_CACHE_HOME:-$HOME/.cache}/nanokaleaks/appimagetool-${APPIMAGETOOL_VERSION}-${ARCH}.AppImage}"
+UPDATE_INFO="${UPDATE_INFO:-gh-releases-zsync|DejaVu5792|NanokaLeaks|latest|NanokaLeaks-*-x86_64.AppImage.zsync}"
 
 if [ ! -x "$APPIMAGETOOL" ]; then
     mkdir -p "$(dirname "$APPIMAGETOOL")"
@@ -37,6 +38,19 @@ fi
 if [ -n "$APPIMAGETOOL_SHA256" ]; then
     echo "$APPIMAGETOOL_SHA256  $APPIMAGETOOL" | sha256sum -c -
 fi
+
+# Extract once so we can use the bundled mksquashfs/zsyncmake without FUSE.
+APPIMAGETOOL_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/nanokaleaks/appimagetool-${APPIMAGETOOL_VERSION}-${ARCH}"
+if [ ! -x "$APPIMAGETOOL_DIR/squashfs-root/AppRun" ]; then
+    rm -rf "$APPIMAGETOOL_DIR"
+    mkdir -p "$APPIMAGETOOL_DIR"
+    (
+        cd "$APPIMAGETOOL_DIR"
+        "$APPIMAGETOOL" --appimage-extract >/dev/null
+    )
+fi
+APPIMAGETOOL_RUN="$APPIMAGETOOL_DIR/squashfs-root/AppRun"
+ZSYNC_MAKE="$APPIMAGETOOL_DIR/squashfs-root/usr/bin/zsyncmake"
 
 echo "Building standalone Nuitka distribution..."
 uv run nuitka \
@@ -60,10 +74,23 @@ install -m 644 "$ROOT/nanoka_viewer/assets/nanokaleaks.png" \
     "$APPDIR/usr/share/icons/hicolor/512x512/apps/nanokaleaks.png"
 
 OUTPUT="$ROOT/dist/NanokaLeaks-${VERSION}-${ARCH}.AppImage"
-rm -f "$OUTPUT"
-ARCH="$ARCH" VERSION="$VERSION" "$APPIMAGETOOL" \
-    --appimage-extract-and-run \
-    --no-appstream \
-    "$APPDIR" \
-    "$OUTPUT"
+rm -f "$OUTPUT" "$OUTPUT.zsync"
+(
+    cd "$ROOT/dist"
+    ARCH="$ARCH" VERSION="$VERSION" "$APPIMAGETOOL_RUN" \
+        --no-appstream \
+        --updateinformation "$UPDATE_INFO" \
+        "$APPDIR" \
+        "$OUTPUT"
+)
+
+# zsyncmake writes relative to its working directory and appimagetool runs it
+# inside its extracted runtime, so generate the control file explicitly.
+"$ZSYNC_MAKE" -u "$(basename "$OUTPUT")" -o "$OUTPUT.zsync" "$OUTPUT"
+
+if [ ! -f "$OUTPUT.zsync" ]; then
+    echo "Failed to create $OUTPUT.zsync" >&2
+    exit 1
+fi
 echo "Created $OUTPUT"
+echo "Created $OUTPUT.zsync"

@@ -121,11 +121,18 @@ jobs:
       - name: Build AppImage
         run: bash packaging/build_appimage.sh
 
+      - name: Verify AppImage update metadata
+        run: |
+          ./dist/*.AppImage --appimage-updateinformation
+          test -s dist/*.AppImage.zsync
+
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: dist/*.AppImage
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.zsync
           if-no-files-found: error
 
   release:
