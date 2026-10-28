@@ -5,9 +5,10 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QFrame, QMainWindow, QWidget
+from PySide6.QtWidgets import QFrame, QMainWindow, QStyle, QStyleOption, QWidget
 from support import QtTestCase, flush
 
 import nanoka_viewer.ui.settings as settings_ui
@@ -216,6 +217,61 @@ class SettingsGamesTabTests(QtTestCase):
     def test_view_order_uses_the_compact_drag_handle(self):
         first = self.popup.game_order_list.item(0)
         self.assertTrue(first.text().startswith("\u28ff"))
+
+    def test_drag_pixmap_is_nearly_transparent(self):
+        order_list = self.popup.game_order_list
+        order_list.setCurrentRow(0)
+        captured = {}
+
+        class FakeDrag:
+            def __init__(self, source):
+                pass
+
+            def setMimeData(self, mime):
+                captured["mime"] = mime
+
+            def setPixmap(self, pixmap):
+                captured["pixmap"] = pixmap
+
+            def setHotSpot(self, point):
+                captured["hotspot"] = point
+
+            def exec(self, actions):
+                return Qt.DropAction.IgnoreAction
+
+        with patch.object(settings_ui, "QDrag", FakeDrag):
+            order_list.startDrag(Qt.DropAction.MoveAction)
+
+        pixmap = captured["pixmap"]
+        image = pixmap.toImage()
+        self.assertTrue(image.hasAlphaChannel())
+        alpha = image.pixelColor(image.width() // 2, image.height() // 2).alpha()
+        self.assertLessEqual(alpha, 32)  # about 10% opacity
+        self.assertTrue(
+            captured["mime"].hasFormat("application/x-qabstractitemmodeldatalist")
+        )
+
+    def test_drop_indicator_is_four_pixels_thick(self):
+        order_list = self.popup.game_order_list
+        option = QStyleOption()
+        option.rect = QRect(0, 40, 180, 2)
+        option.palette = order_list.palette()
+
+        image = QImage(180, 80, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.white)
+        painter = QPainter(image)
+        order_list.style().drawPrimitive(
+            QStyle.PrimitiveElement.PE_IndicatorItemViewItemDrop,
+            option,
+            painter,
+            order_list,
+        )
+        painter.end()
+
+        background = image.pixelColor(10, 0)
+        painted = [y for y in range(80) if image.pixelColor(10, y) != background]
+        self.assertEqual(len(painted), 4)
+        self.assertIn(40, painted)
 
 
 if __name__ == "__main__":

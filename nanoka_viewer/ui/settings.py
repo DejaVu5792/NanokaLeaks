@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QDrag, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProxyStyle,
     QPushButton,
     QScrollArea,
     QStyle,
@@ -53,10 +54,59 @@ _PRELOAD_LABELS = {
 }
 
 
+class _ThickDropIndicatorStyle(QProxyStyle):
+    """Draw a thicker insertion line while reordering the game list."""
+
+    _THICKNESS = 4
+
+    def drawPrimitive(self, element, option, painter, widget=None):
+        if element == QStyle.PrimitiveElement.PE_IndicatorItemViewItemDrop:
+            rect = QRect(option.rect)
+            if rect.height() > self._THICKNESS:
+                rect.setHeight(self._THICKNESS)
+            else:
+                center = rect.center().y()
+                rect.setTop(center - self._THICKNESS // 2)
+                rect.setHeight(self._THICKNESS)
+            painter.save()
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(option.palette.highlight())
+            painter.drawRect(rect)
+            painter.restore()
+            return
+        super().drawPrimitive(element, option, painter, widget)
+
+
 class _GameOrderList(QListWidget):
     """Vertical list whose rows can be reordered by dragging."""
 
     order_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._drop_style = _ThickDropIndicatorStyle()
+        self.setStyle(self._drop_style)
+
+    def startDrag(self, supported_actions):
+        item = self.currentItem()
+        indexes = self.selectedIndexes()
+        if item is None or not indexes:
+            return
+
+        rect = self.visualItemRect(item)
+        source = self.viewport().grab(rect)
+        faded = QPixmap(source.size())
+        faded.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(faded)
+        painter.setOpacity(0.1)
+        painter.drawPixmap(0, 0, source)
+        painter.end()
+
+        drag = QDrag(self)
+        drag.setMimeData(self.model().mimeData(indexes))
+        drag.setPixmap(faded)
+        drag.setHotSpot(QPoint(rect.width() // 2, rect.height() // 2))
+        drag.exec(supported_actions)
 
     def dropEvent(self, event):
         super().dropEvent(event)
