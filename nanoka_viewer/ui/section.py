@@ -9,7 +9,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer
 
-from .card import CardWidget
+from .card import CARD_HEIGHT, CARD_WIDTH, CardWidget
+
+CARD_SPACING = 8
+CARD_MARGIN_X = 4
+CARD_MARGIN_Y = 2
 
 
 class HorizontalScrollArea(QScrollArea):
@@ -100,11 +104,16 @@ class GameSection(QWidget):
         )
         self.scroll_area.setFixedHeight(230)
 
+        # The card grid is positioned explicitly instead of by a QHBoxLayout.
+        # A layout can compute item positions from a widget's *content* size
+        # hint (136px for a card with no images yet) while setFixedSize keeps
+        # the card itself 180px wide, which makes neighbouring cards overlap
+        # until a later relayout.  Fixed geometry removes that failure mode
+        # entirely: a slot only changes when a card is added or removed.
         self.cards_container = QWidget()
-        self.cards_layout = QHBoxLayout(self.cards_container)
-        self.cards_layout.setContentsMargins(4, 0, 4, 0)
-        self.cards_layout.setSpacing(8)
-        self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.cards_container.setFixedSize(
+            CARD_MARGIN_X * 2, CARD_HEIGHT + CARD_MARGIN_Y * 2
+        )
 
         self.scroll_area.setWidget(self.cards_container)
         main_layout.addWidget(self.scroll_area)
@@ -120,7 +129,7 @@ class GameSection(QWidget):
         self.scroll_area.horizontalScrollBar().valueChanged.connect(
             self._update_visible_cards
         )
-        # The row grows after cards are added; recheck once the layout has
+        # The row grows after cards are added; recheck once its geometry has
         # settled instead of trusting the geometry at add-time.
         self.cards_container.installEventFilter(self)
 
@@ -128,18 +137,34 @@ class GameSection(QWidget):
         """Remove all cards from the section."""
         for card in self._cards:
             card.cancel_image_requests()
+            card.setParent(None)
+            card.deleteLater()
         self._cards.clear()
-        while self.cards_layout.count():
-            child = self.cards_layout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
+        self._resize_cards_container()
 
     def add_card(self, game, char_id, char_data, is_new=False):
         """Add a character card to the section."""
-        card = CardWidget(game, char_id, char_data, is_new)
-        self.cards_layout.addWidget(card)
+        card = CardWidget(
+            game, char_id, char_data, is_new, parent=self.cards_container
+        )
+        card.move(self._card_slot_x(len(self._cards)), CARD_MARGIN_Y)
+        card.show()
         self._cards.append(card)
+        self._resize_cards_container()
         self._schedule_visible_update()
+
+    @staticmethod
+    def _card_slot_x(index: int) -> int:
+        """Return the x offset of card *index* on the fixed grid."""
+        return CARD_MARGIN_X + index * (CARD_WIDTH + CARD_SPACING)
+
+    def _resize_cards_container(self):
+        """Keep the scrollable row exactly as wide as its card slots."""
+        if self._cards:
+            right = self._cards[-1].x() + CARD_WIDTH + CARD_MARGIN_X
+        else:
+            right = CARD_MARGIN_X * 2
+        self.cards_container.setFixedWidth(max(right, CARD_MARGIN_X * 2))
 
     def _schedule_visible_update(self):
         """Coalesce visibility checks while a batch of cards is added."""
@@ -159,18 +184,8 @@ class GameSection(QWidget):
         if not self._cards:
             return
 
-        # A deferred update can fire before Qt has positioned the new cards;
-        # they report geometry (0, 0, ...) until the row layout is applied, so
-        # the new batch would look visible.  Wait until the container has
-        # actually grown to fit the row (its Resize event re-schedules us).
-        hint = self.cards_layout.sizeHint().width()
-        if hint > 0 and self.cards_container.width() + 1 < hint:
-            return
-        if len(self._cards) > 1 and (
-            self._cards[0].geometry() == self._cards[-1].geometry()
-        ):
-            return
-
+        # Cards are positioned synchronously in add_card(), so the viewport
+        # math can run immediately; no layout pass has to settle first.
         viewport = self.scroll_area.viewport()
         # The container is a child of the viewport, so map *from* the
         # viewport into container coordinates (this is the scroll offset).

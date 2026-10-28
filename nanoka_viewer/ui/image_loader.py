@@ -304,11 +304,12 @@ def _background_load(signals: _ImageLoaderSignals, key, size):
 class ImageRequest:
     """Handle returned by :func:`request_image` so callers can cancel it."""
 
-    __slots__ = ("key", "callback", "cancelled")
+    __slots__ = ("key", "callback", "on_failed", "cancelled")
 
-    def __init__(self, key, callback):
+    def __init__(self, key, callback, on_failed=None):
         self.key = key
         self.callback = callback
+        self.on_failed = on_failed
         self.cancelled = False
 
     def cancel(self):
@@ -356,16 +357,30 @@ def _handle_image_failed(key):
     """Remember a failed asset so reloads do not hammer it immediately."""
     _FAILED[key] = time.monotonic()
     with _LOCK:
-        _CALLBACKS.pop(key, None)
+        callbacks = _CALLBACKS.pop(key, [])
+
+    for request in callbacks:
+        if request.cancelled or request.on_failed is None:
+            continue
+        try:
+            request.on_failed()
+        except RuntimeError:
+            # The widget was destroyed while the request was in flight.
+            continue
+        except Exception as exc:
+            logger.error("Error in image failure callback for %s: %s", key[0], exc)
+
     logger.debug("Image request failed; suppressing retries for %ss: %s", FAILURE_TTL, key[0])
 
 
-def request_image(url, callback, size=(100, 100)) -> ImageRequest | None:
+def request_image(url, callback, size=(100, 100), on_failed=None) -> ImageRequest | None:
     """Request an image asynchronously.
 
     If the (url, size) pair is cached, the callback is invoked immediately.
     Otherwise it is loaded in the background and invoked on the GUI thread
-    when ready.  Returns a handle that can be cancelled.
+    when ready.  *on_failed* runs on the GUI thread when the image cannot be
+    loaded, so a loading placeholder can leave its loading state.  Returns a
+    handle that can be cancelled.
     """
     if not url:
         return None
@@ -382,7 +397,7 @@ def request_image(url, callback, size=(100, 100)) -> ImageRequest | None:
             pass  # The widget was destroyed before it could be updated.
         except Exception as exc:
             logger.error("Error in image callback for %s: %s", url, exc)
-        return ImageRequest(key, callback)
+        return ImageRequest(key, callback, on_failed)
 
     failed_at = _FAILED.get(key)
     if failed_at is not None:
@@ -390,7 +405,7 @@ def request_image(url, callback, size=(100, 100)) -> ImageRequest | None:
             return None
         _FAILED.pop(key, None)
 
-    request = ImageRequest(key, callback)
+    request = ImageRequest(key, callback, on_failed)
     with _LOCK:
         callbacks = _CALLBACKS.get(key)
         if callbacks is not None:

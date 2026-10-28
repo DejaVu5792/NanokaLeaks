@@ -26,8 +26,16 @@ from ..api import (
 )
 from .icons import apply_icon_or_text
 from .image_loader import request_image
+from .skeleton import SkeletonThumbnail
 
 logger = logging.getLogger(__name__)
+
+# The loading skeleton and the real card must agree on these numbers: a card
+# that changes size when its data arrives makes the whole row jump.
+CARD_WIDTH = 180
+CARD_HEIGHT = 220
+CARD_PORTRAIT_SIZE = 80
+CARD_ICON_SIZE = 20
 
 
 class CardWidget(QWidget):
@@ -40,7 +48,7 @@ class CardWidget(QWidget):
         self.char_id = char_id
         self.char_data = char_data
         self.setObjectName("card")
-        self.setFixedSize(180, 220)
+        self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -67,12 +75,10 @@ class CardWidget(QWidget):
         rarity_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(rarity_label)
 
-        self.char_img_label = QLabel()
-        self.char_img_label.setFixedSize(80, 80)
-        self.char_img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.char_img_label = SkeletonThumbnail(
+            CARD_PORTRAIT_SIZE, CARD_PORTRAIT_SIZE, radius=8
+        )
         self.char_img_label.setToolTip(name)
-        self.char_img_label.setText("...")
-        self.char_img_label.setStyleSheet("color: palette(placeholder-text);")
         layout.addWidget(self.char_img_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         icons_widget = QWidget()
@@ -83,7 +89,7 @@ class CardWidget(QWidget):
 
         self.element_label = QLabel()
         self.element_label.setObjectName("elementIcon")
-        self.element_label.setFixedSize(20, 20)
+        self.element_label.setFixedSize(CARD_ICON_SIZE, CARD_ICON_SIZE)
         self.element_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.element_label.setToolTip(element if element else "Unknown Element")
         self.element_label.setText(element[:1] if element else "?")
@@ -93,7 +99,7 @@ class CardWidget(QWidget):
         self.specialty_label = QLabel()
         self.specialty_label.setObjectName("specialtyIcon")
         if self._specialty_img_url:
-            self.specialty_label.setFixedSize(20, 20)
+            self.specialty_label.setFixedSize(CARD_ICON_SIZE, CARD_ICON_SIZE)
             self.specialty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.specialty_label.setToolTip(specialty_type)
             self.specialty_label.setText("?")
@@ -164,17 +170,30 @@ class CardWidget(QWidget):
         if self._images_requested:
             return
         self._images_requested = True
-        self._request(self._char_img_url, self._on_char_image_loaded, (80, 80))
+        self._request(
+            self._char_img_url,
+            self._on_char_image_loaded,
+            (CARD_PORTRAIT_SIZE, CARD_PORTRAIT_SIZE),
+            self._on_char_image_failed,
+        )
         self._request(self._element_img_url, self._on_element_image_loaded, (18, 18))
         if self._specialty_img_url:
             self._request(
                 self._specialty_img_url, self._on_specialty_image_loaded, (18, 18)
             )
 
-    def _request(self, url, callback, size):
-        request = request_image(url, callback, size)
+    def _request(self, url, callback, size, on_failed=None):
+        if not url:
+            if on_failed is not None:
+                on_failed()
+            return
+        request = request_image(url, callback, size, on_failed=on_failed)
         if request is not None:
             self._image_requests.append(request)
+        elif on_failed is not None:
+            # The loader suppresses retries for a while after a failure; do
+            # not leave the skeleton pulsing during that window.
+            on_failed()
 
     def cancel_image_requests(self):
         """Drop pending image callbacks (called before the card is deleted)."""
@@ -229,10 +248,16 @@ class CardWidget(QWidget):
     def _on_char_image_loaded(self, pixmap):
         """Update character image when loaded."""
         try:
-            self.char_img_label.setText("")
-            self.char_img_label.setPixmap(pixmap)
+            self.char_img_label.set_image(pixmap)
         except RuntimeError:
             pass  # The card was deleted while the image was in flight.
+
+    def _on_char_image_failed(self):
+        """Replace the pulsing portrait with a quiet unavailable state."""
+        try:
+            self.char_img_label.set_failed()
+        except RuntimeError:
+            pass
 
     def _on_element_image_loaded(self, pixmap):
         """Update element image when loaded."""
@@ -249,3 +274,4 @@ class CardWidget(QWidget):
             self.specialty_label.setPixmap(pixmap)
         except RuntimeError:
             pass
+

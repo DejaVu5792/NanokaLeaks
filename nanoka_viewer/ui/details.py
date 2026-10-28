@@ -46,6 +46,12 @@ from ..api.details import (
     load_character_detail,
 )
 from .overlay import OverlayPopup, is_alive
+from .skeleton import (
+    REVEAL_DURATION_MS,
+    SkeletonBlock,
+    start_pulse,
+    stop_pulse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -218,9 +224,10 @@ class CharacterDetailsPopup(OverlayPopup):
         self._build_thread: _BuildLoadThread | None = None
         self._art_thread: _ArtLoadThread | None = None
         self._art_label: _ArtLabel | None = None
+        self._art_skeleton: SkeletonBlock | None = None
+        self._art_fade: QPropertyAnimation | None = None
         self._build_skeleton: QWidget | None = None
         self._build_insert_index: int | None = None
-        self._skeleton_animation: QPropertyAnimation | None = None
         self._deferred_request_id: int | None = None
         self._deferred_build_request_id: int | None = None
         self._deferred_art_request_id: int | None = None
@@ -371,9 +378,9 @@ class CharacterDetailsPopup(OverlayPopup):
                 self._deferred_build_request_id = request_id
                 self._build_loading_timer.start()
             else:
-                self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
+                self._build_skeleton = self._build_build_skeleton()
                 self.content_layout.insertWidget(0, self._build_skeleton)
-                self._start_skeleton_pulse(self._build_skeleton)
+                start_pulse(self._build_skeleton)
             self._start_build_load(request_id, detail)
         if detail.art_url:
             if has_cached_art(detail.art_url):
@@ -426,8 +433,8 @@ class CharacterDetailsPopup(OverlayPopup):
             index = self.content_layout.indexOf(skeleton)
         else:
             index = insert_index
-        self._stop_skeleton_pulse()
         if skeleton is not None:
+            stop_pulse(skeleton)
             self.content_layout.removeWidget(skeleton)
             skeleton.setParent(None)
             skeleton.deleteLater()
@@ -489,6 +496,7 @@ class CharacterDetailsPopup(OverlayPopup):
             return
         self._art_label.setText("")
         self._art_label.set_source(pixmap)
+        self._reveal_art()
 
     def _on_art_failed(self, request_id: int):
         if request_id != self._request_id or not self.isVisible():
@@ -498,9 +506,74 @@ class CharacterDetailsPopup(OverlayPopup):
 
     def _set_art_message(self, message: str):
         self._cancel_deferred_art_loading()
+        self._stop_art_fade()
+        self._hide_art_skeleton()
         if self._art_label is not None:
             self._art_label.clear_source()
             self._art_label.setText(message)
+
+    def _stop_art_fade(self):
+        fade = self._art_fade
+        self._art_fade = None
+        if fade is not None:
+            fade.stop()
+            fade.deleteLater()
+        label = self._art_label
+        if label is not None:
+            try:
+                label.setGraphicsEffect(None)
+            except RuntimeError:
+                pass
+
+    def _reveal_art(self):
+        """Cross-fade the artwork in over the skeleton that reserved its space."""
+        skeleton = self._art_skeleton
+        label = self._art_label
+        if skeleton is None or label is None:
+            self._hide_art_skeleton()
+            return
+
+        previous = self._art_fade
+        self._art_fade = None
+        if previous is not None:
+            previous.stop()
+            previous.deleteLater()
+
+        effect = QGraphicsOpacityEffect(label)
+        effect.setOpacity(0.0)
+        label.setGraphicsEffect(effect)
+
+        fade = QPropertyAnimation(effect, b"opacity", self)
+        fade.setDuration(REVEAL_DURATION_MS)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade.finished.connect(self._finish_art_reveal)
+        self._art_fade = fade
+        fade.start()
+
+    def _finish_art_reveal(self):
+        self._hide_art_skeleton()
+        label = self._art_label
+        if label is not None:
+            try:
+                label.setGraphicsEffect(None)
+            except RuntimeError:
+                pass
+        fade = self._art_fade
+        self._art_fade = None
+        if fade is not None:
+            fade.deleteLater()
+
+    def _hide_art_skeleton(self):
+        skeleton = self._art_skeleton
+        if skeleton is None:
+            return
+        self._art_skeleton = None
+        stop_pulse(skeleton)
+        skeleton.hide()
+        skeleton.setParent(None)
+        skeleton.deleteLater()
 
     def _on_failed(self, request_id: int, message: str):
         if request_id != self._request_id or not self.isVisible():
@@ -556,9 +629,9 @@ class CharacterDetailsPopup(OverlayPopup):
             or self._build_insert_index is None
         ):
             return
-        self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
+        self._build_skeleton = self._build_build_skeleton()
         self.content_layout.insertWidget(0, self._build_skeleton)
-        self._start_skeleton_pulse(self._build_skeleton)
+        start_pulse(self._build_skeleton)
 
     def _show_deferred_art_placeholder(self):
         """Show the art placeholder if cached artwork IO is unexpectedly slow."""
@@ -568,10 +641,15 @@ class CharacterDetailsPopup(OverlayPopup):
             return
         if not self.isVisible() or self._art_thread is None:
             return
+        skeleton = self._art_skeleton
         label = self._art_label
-        if label is None or label._source is not None or label.text():
+        if skeleton is None or label is None:
             return
-        label.setText("Loading art...")
+        if label._source is not None or label.text():
+            return
+        if skeleton.isHidden():
+            skeleton.show()
+        start_pulse(skeleton)
 
     def _cancel_deferred_loading(self):
         self._deferred_request_id = None
@@ -586,7 +664,7 @@ class CharacterDetailsPopup(OverlayPopup):
         self._art_loading_timer.stop()
 
     def _show_loading(self):
-        self.art_layout.addWidget(self._build_art_placeholder("Loading art..."), 1)
+        self.art_layout.addWidget(self._build_art_loading(), 1)
 
         wrapper = QWidget()
         layout = QVBoxLayout(wrapper)
@@ -599,28 +677,21 @@ class CharacterDetailsPopup(OverlayPopup):
         )
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(label)
-
-        skeleton = QWidget()
-        skeleton_layout = QVBoxLayout(skeleton)
-        skeleton_layout.setContentsMargins(0, 0, 0, 0)
-        skeleton_layout.setSpacing(12)
-        skeleton_layout.addWidget(self._build_skeleton_card((32, 90, 72, 96)))
-        skeleton_layout.addWidget(self._build_skeleton_card((44, 86, 78, 92)))
-        skeleton_layout.addWidget(self._build_skeleton_card((28, 88, 82)))
-        layout.addWidget(skeleton)
+        layout.addWidget(self._build_details_skeleton())
 
         self.content_layout.addStretch(1)
         self.content_layout.addWidget(wrapper)
         self.content_layout.addStretch(1)
-        self._start_skeleton_pulse(skeleton)
 
     def _clear_content(self):
         self._cancel_deferred_loading()
         self._cancel_deferred_build_loading()
         self._cancel_deferred_art_loading()
-        self._stop_skeleton_pulse()
+        self._stop_art_fade()
+
         self._build_skeleton = None
         self._build_insert_index = None
+        self._art_skeleton = None
         self._art_label = None
         for layout in (self.art_layout, self.content_layout):
             while layout.count():
@@ -630,54 +701,119 @@ class CharacterDetailsPopup(OverlayPopup):
                     widget.setParent(None)
                     widget.deleteLater()
 
-    def _build_skeleton_card(self, widths: tuple[int, ...]) -> QFrame:
+    def _build_details_skeleton(self) -> QWidget:
+        """Loading skeleton that mirrors the real stack of detail cards."""
+        skeleton = QWidget()
+        skeleton.setAccessibleName("Loading character details")
+        layout = QVBoxLayout(skeleton)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+
+        # Recommended build: title, note, then two columns of build sections.
+        layout.addWidget(
+            self._build_skeleton_card(
+                (
+                    ((26, 16),),
+                    ((40, 9),),
+                    ((34, 12), (30, 12)),
+                    ((46, 10), (34, 10)),
+                    ((42, 10), (30, 10)),
+                    ((38, 10), (26, 10)),
+                )
+            )
+        )
+        # Overview: title plus a few paragraph lines.
+        layout.addWidget(
+            self._build_skeleton_card(
+                (
+                    ((22, 16),),
+                    ((94, 9), (86, 9), (66, 9)),
+                    ((92, 9), (78, 9), (58, 9)),
+                )
+            )
+        )
+        # Stats: title plus label/value rows.
+        stats_rows = [((20, 16),)]
+        for _ in range(4):
+            stats_rows.append(((16, 9), (12, 9)))
+        layout.addWidget(self._build_skeleton_card(tuple(stats_rows)))
+        # Skills: title plus collapsed disclosure rows.
+        layout.addWidget(
+            self._build_skeleton_card(
+                (
+                    ((18, 16),),
+                    ((98, 30),),
+                    ((98, 30),),
+                    ((98, 30),),
+                )
+            )
+        )
+
+        start_pulse(skeleton)
+        return skeleton
+
+    def _build_build_skeleton(self) -> QFrame:
+        """Skeleton inserted where the recommended-build card will appear."""
+        return self._build_skeleton_card(
+            (
+                ((26, 16),),
+                ((40, 9),),
+                ((34, 12), (30, 12)),
+                ((46, 10), (34, 10)),
+                ((42, 10), (30, 10)),
+                ((38, 10), (26, 10)),
+            )
+        )
+
+    def _build_skeleton_card(
+        self, rows: tuple[tuple[tuple[int, int], ...], ...]
+    ) -> QFrame:
         card = QFrame()
         card.setObjectName("detailSkeletonCard")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
-        for index, width in enumerate(widths):
-            layout.addWidget(self._skeleton_line(width, 14 if index == 0 else 10))
+        for row in rows:
+            layout.addWidget(self._skeleton_row(row))
         return card
 
-    def _skeleton_line(self, width: int, height: int) -> QWidget:
+    def _skeleton_row(self, bars: tuple[tuple[int, int], ...]) -> QWidget:
+        """Lay out skeleton bars whose widths are percentages of the row."""
         row = QWidget()
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(12)
 
-        bar = QFrame()
-        bar.setObjectName("detailSkeletonBar")
-        bar.setFixedHeight(height)
-        bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout.addWidget(bar, max(1, width))
-        remaining = 100 - width
-        if remaining > 0:
-            layout.addStretch(remaining)
+        used = 0
+        for width, height in bars:
+            bar = SkeletonBlock(radius=4)
+            bar.setFixedHeight(height)
+            bar.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            layout.addWidget(bar, max(1, width))
+            used += width
+
+        if used < 100:
+            layout.addStretch(100 - used)
         return row
 
-    def _start_skeleton_pulse(self, widget: QWidget):
-        self._stop_skeleton_pulse()
-        effect = QGraphicsOpacityEffect(widget)
-        widget.setGraphicsEffect(effect)
+    def _build_art_loading(self) -> QWidget:
+        """Reserve the full art column while the details payload loads."""
+        frame = QFrame()
+        frame.setObjectName("detailArtFrame")
+        frame.setAccessibleName("Loading character artwork")
+        grid = QGridLayout(frame)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(0)
 
-        animation = QPropertyAnimation(effect, b"opacity", self)
-        animation.setDuration(1800)
-        animation.setKeyValueAt(0.0, 0.55)
-        animation.setKeyValueAt(0.5, 0.95)
-        animation.setKeyValueAt(1.0, 0.55)
-        animation.setEasingCurve(QEasingCurve.Type.InOutSine)
-        animation.setLoopCount(-1)
-        animation.start()
-        self._skeleton_animation = animation
-
-    def _stop_skeleton_pulse(self):
-        animation = self._skeleton_animation
-        if animation is None:
-            return
-        animation.stop()
-        animation.deleteLater()
-        self._skeleton_animation = None
+        skeleton = SkeletonBlock(radius=0)
+        skeleton.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        grid.addWidget(skeleton, 0, 0)
+        start_pulse(skeleton)
+        return frame
 
     def _make_card(self, title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
         card = QFrame()
@@ -769,10 +905,21 @@ class CharacterDetailsPopup(OverlayPopup):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(0)
 
+        skeleton = SkeletonBlock(radius=0)
+        skeleton.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        grid.addWidget(skeleton, 0, 0)
+        self._art_skeleton = skeleton
+        if has_cached_art(detail.art_url):
+            # The deferred art timer reveals the skeleton if this proves slow.
+            skeleton.hide()
+        else:
+            start_pulse(skeleton)
+
         art = _ArtLabel()
         art.setObjectName("detailArt")
-        if not has_cached_art(detail.art_url):
-            art.setText("Loading art...")
+        art.setAccessibleName("Character artwork")
         self._art_label = art
         grid.addWidget(art, 0, 0)
 

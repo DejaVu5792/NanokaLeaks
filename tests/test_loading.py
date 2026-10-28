@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import unittest
 
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QColor, QPixmap
+
 import support
 from support import QtTestCase, flush, real_viewer
 
@@ -27,7 +30,7 @@ class ImageVisibilityTests(QtTestCase):
         self._original_request_image = card_module.request_image
         self.requests = []
 
-        def fake_request_image(url, callback, size=(100, 100)):
+        def fake_request_image(url, callback, size=(100, 100), on_failed=None):
             self.requests.append((url, size))
             return None
 
@@ -78,6 +81,123 @@ class ImageVisibilityTests(QtTestCase):
         requested_after = [card for card in section._cards if card._images_requested]
         self.assertGreater(len(requested_after), len(requested_cards))
         self.assertEqual(len(self.requests), len(requested_after) * 3)
+
+
+class PlaceholderGeometryTests(QtTestCase):
+    """Loading placeholders must occupy exactly the real content's footprint."""
+
+    def test_portrait_skeleton_matches_the_loaded_image_size(self):
+        card = CardWidget("hsr", "1001", _HSR_CHAR)
+        self.addCleanup(card.deleteLater)
+        label = card.char_img_label
+
+        self.assertEqual(label.size(), QSize(80, 80))
+        self.assertFalse(label.has_image)
+        self.assertLess(label.pulseAlpha, 255, "the portrait skeleton should pulse")
+
+        before = [
+            card.layout().itemAt(index).geometry()
+            for index in range(card.layout().count())
+        ]
+        pixmap = QPixmap(80, 80)
+        pixmap.fill(QColor("#ff0000"))
+        card._on_char_image_loaded(pixmap)
+        after = [
+            card.layout().itemAt(index).geometry()
+            for index in range(card.layout().count())
+        ]
+
+        self.assertTrue(label.has_image)
+        self.assertEqual(label.size(), QSize(80, 80))
+        self.assertEqual(
+            label.pulseAlpha, 255, "the skeleton pulse must stop on success"
+        )
+        self.assertEqual(
+            before, after, "loading the image must not move the card contents"
+        )
+
+    def test_failed_portrait_stops_loading(self):
+        card = CardWidget("hsr", "1001", _HSR_CHAR)
+        self.addCleanup(card.deleteLater)
+
+        card._on_char_image_failed()
+
+        self.assertFalse(card.char_img_label.has_image)
+        self.assertEqual(
+            card.char_img_label.pulseAlpha,
+            255,
+            "a failed image must not keep pulsing",
+        )
+
+    def test_pending_images_do_not_change_card_positions(self):
+        section = GameSection("Test")
+        section.resize(800, 240)
+        section.show()
+        self.addCleanup(section.deleteLater)
+
+        for index in range(6):
+            section.add_card("hsr", str(1000 + index), _HSR_CHAR)
+        flush()
+
+        positions = [card.pos() for card in section._cards]
+        self.assertEqual(
+            [second.x() - first.x() for first, second in zip(positions, positions[1:])],
+            [188] * 5,
+            "cards must sit on the normal 180px + 8px spacing grid",
+        )
+        self.assertEqual(
+            len(section.cards_container.findChildren(CardWidget)),
+            len(section._cards),
+            "no extra loading widget may share the card row",
+        )
+        self.assertEqual(
+            section.cards_container.width(),
+            4 + 6 * 180 + 5 * 8 + 4,
+            "the scrollable row must be exactly as wide as its card slots",
+        )
+
+        pixmap = QPixmap(80, 80)
+        pixmap.fill(QColor("#ff0000"))
+        for card in section._cards:
+            card._on_char_image_loaded(pixmap)
+        flush()
+
+        self.assertEqual(
+            [card.pos() for card in section._cards],
+            positions,
+            "loading the portraits must not move or resize the card row",
+        )
+
+    def test_card_grid_ignores_small_size_hints(self):
+        """A card must keep its 180px slot even if its hint is stale/small.
+
+        A QHBoxLayout can place fixed-size widgets using their *content* size
+        hint (136px for a card whose icons/images are not loaded yet), which
+        made the row overlap until a later relayout.  The grid is positioned
+        explicitly, so hints can no longer affect it.
+        """
+        original_hint = CardWidget.sizeHint
+        CardWidget.sizeHint = lambda self: QSize(136, 208)
+        try:
+            section = GameSection("Test")
+            section.resize(800, 240)
+            section.show()
+            self.addCleanup(section.deleteLater)
+
+            for index in range(4):
+                section.add_card("hsr", str(1000 + index), _HSR_CHAR)
+            flush()
+
+            self.assertEqual(
+                [card.x() for card in section._cards],
+                [4, 192, 380, 568],
+                "card positions must come from the grid, not from hints",
+            )
+            self.assertEqual(
+                [card.width() for card in section._cards], [180] * 4
+            )
+        finally:
+            CardWidget.sizeHint = original_hint
 
 
 class ReloadRaceTests(QtTestCase):

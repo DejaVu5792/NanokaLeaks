@@ -393,12 +393,6 @@ QFrame#detailSkeletonCard {
     border-radius: 8px;
 }
 
-QFrame#detailSkeletonBar {
-    background: palette(midlight);
-    border: none;
-    border-radius: 4px;
-}
-
 QLabel#detailBuildItem {
     color: palette(text);
     font-size: 11px;
