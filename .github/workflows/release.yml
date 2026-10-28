@@ -75,6 +75,7 @@ jobs:
           --onefile-as-archive
           --enable-plugin=pyside6
           --assume-yes-for-downloads
+          --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png
           ${{ matrix.extra_flags }}
           -o ${{ matrix.binary_name }}
           main.py

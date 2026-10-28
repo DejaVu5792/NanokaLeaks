@@ -4,9 +4,10 @@ import logging
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
-from PySide6.QtGui import QCursor
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -611,12 +612,31 @@ def main(argv=None):
         return _run_app(remaining)
 
 
+def _app_icon() -> QIcon:
+    """Return the app icon bundled next to the executable or in the source tree."""
+    candidates = (
+        Path(QCoreApplication.applicationDirPath()) / "nanokaleaks.png",
+        Path(__file__).resolve().parent.parent / "assets" / "nanokaleaks.png",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return QIcon(str(candidate))
+    return QIcon()
+
+
 def _run_app(argv):
     """Create and run the QApplication."""
     import os
 
     app = QApplication(argv if argv else sys.argv)
     app.setStyle("Fusion")
+    app.setApplicationName("NanokaLeaks")
+    # Match the installed desktop entry and give KWin the icon through
+    # xdg_toplevel_icon_v1, which Wayland compositors use for titlebars.
+    app.setDesktopFileName("nanokaleaks")
+    icon = _app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     if os.environ.get("NANOKA_TRACE_MOUSE"):
         _install_mouse_trace(app)
 

@@ -43,6 +43,7 @@ uv run nuitka \
     --standalone \
     --enable-plugin=pyside6 \
     --assume-yes-for-downloads \
+    --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png \
     -o NanokaLeaks \
     main.py
 
@@ -53,9 +54,9 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/icons/hicolor/512x512/apps" "$ROOT
 cp -a "$ROOT/main.dist/." "$APPDIR/usr/bin/"
 install -m 755 "$ROOT/packaging/AppRun" "$APPDIR/AppRun"
 install -m 644 "$ROOT/packaging/nanokaleaks.desktop" "$APPDIR/nanokaleaks.desktop"
-install -m 644 "$ROOT/packaging/nanokaleaks.png" "$APPDIR/nanokaleaks.png"
-install -m 644 "$ROOT/packaging/nanokaleaks.png" "$APPDIR/.DirIcon"
-install -m 644 "$ROOT/packaging/nanokaleaks.png" \
+install -m 644 "$ROOT/nanoka_viewer/assets/nanokaleaks.png" "$APPDIR/nanokaleaks.png"
+install -m 644 "$ROOT/nanoka_viewer/assets/nanokaleaks.png" "$APPDIR/.DirIcon"
+install -m 644 "$ROOT/nanoka_viewer/assets/nanokaleaks.png" \
     "$APPDIR/usr/share/icons/hicolor/512x512/apps/nanokaleaks.png"
 
 OUTPUT="$ROOT/dist/NanokaLeaks-${VERSION}-${ARCH}.AppImage"
