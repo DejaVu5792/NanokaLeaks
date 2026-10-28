@@ -173,10 +173,16 @@ class QtTestCase(unittest.TestCase):
             details.load_character_detail,
             details.load_character_art,
             details.load_character_build,
+            details.has_cached_detail,
+            details.has_cached_build,
+            details.has_cached_art,
         )
         details.load_character_detail = lambda game, char_id: SAMPLE_DETAIL
         details.load_character_art = lambda url: None
         details.load_character_build = lambda detail: []
+        details.has_cached_detail = lambda game, char_id: False
+        details.has_cached_build = lambda detail: False
+        details.has_cached_art = lambda url: False
         reset_popup()
 
     def tearDown(self):
@@ -185,6 +191,9 @@ class QtTestCase(unittest.TestCase):
             details.load_character_detail,
             details.load_character_art,
             details.load_character_build,
+            details.has_cached_detail,
+            details.has_cached_build,
+            details.has_cached_art,
         ) = self._original_loaders
         self.application.setPalette(self._old_palette)
         flush(2)
@@ -253,6 +262,9 @@ def real_viewer(with_card=True):
         details.load_character_detail,
         details.load_character_art,
         details.load_character_build,
+        details.has_cached_detail,
+        details.has_cached_build,
+        details.has_cached_art,
     )
 
     # Stub only the network boundaries.
@@ -275,6 +287,9 @@ def real_viewer(with_card=True):
     )
     details.load_character_art = lambda url: None
     details.load_character_build = lambda detail: []
+    details.has_cached_detail = lambda game, char_id: False
+    details.has_cached_build = lambda detail: False
+    details.has_cached_art = lambda url: False
 
     reset_popup()
     window = main_window.NanokaViewer()
@@ -304,6 +319,9 @@ def real_viewer(with_card=True):
             details.load_character_detail,
             details.load_character_art,
             details.load_character_build,
+            details.has_cached_detail,
+            details.has_cached_build,
+            details.has_cached_art,
         ) = originals
         reset_popup()
         try:

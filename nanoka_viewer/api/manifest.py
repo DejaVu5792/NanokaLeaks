@@ -75,6 +75,32 @@ def get_latest_version(game):
     return manifest[game]["latest"]
 
 
+def cached_latest_version(game):
+    """Return the latest known version without ever touching the network.
+
+    ``get_latest_version`` may block on an HTTP request when both caches are
+    cold or stale.  Callers that only want a cheap "is this cached?" probe can
+    use this instead: it checks the memory cache and then the on-disk manifest,
+    regardless of the disk cache's age, and returns ``None`` when neither is
+    available.  It deliberately does not refresh ``_manifest_cache`` so a stale
+    on-disk manifest cannot postpone the normal revalidation.
+    """
+    if _manifest_cache is not None:
+        try:
+            return str(_manifest_cache[game]["latest"])
+        except (KeyError, TypeError):
+            return None
+
+    try:
+        if MANIFEST_CACHE_FILE.exists():
+            with open(MANIFEST_CACHE_FILE, "r") as f:
+                data = json.load(f)
+            return str(data[game]["latest"])
+    except Exception as exc:  # noqa: BLE001 - a missing cache is not an error
+        logger.debug("Could not read cached manifest: %s", exc)
+    return None
+
+
 def clear_manifest_cache():
     """Clear manifest cache (memory and disk)."""
     global _manifest_cache, _manifest_cache_time

@@ -33,7 +33,7 @@ from .cache_info import (
 )
 from .cache_io import directory_size_bytes, write_bytes_atomic
 from .constants import BASE_URL, CACHE_DIR
-from .manifest import get_latest_version
+from .manifest import cached_latest_version, get_latest_version
 from .models import get_character_url, get_name
 from ..settings import get_setting
 
@@ -274,6 +274,11 @@ def _get_bytes(url: str) -> bytes | None:
         return None
 
 
+def _art_disk_path(url: str) -> Path:
+    digest = hashlib.md5(url.encode()).hexdigest()
+    return DETAIL_ART_CACHE_DIR / f"{digest}.bin"
+
+
 def load_character_art(url: str, *, remember: bool = True) -> bytes | None:
     """Fetch character art separately so text never waits for the image.
 
@@ -286,7 +291,7 @@ def load_character_art(url: str, *, remember: bool = True) -> bytes | None:
         return None
 
     caching = get_setting("cache_character_artwork")
-    cache_file = DETAIL_ART_CACHE_DIR / f"{hashlib.md5(url.encode()).hexdigest()}.bin"
+    cache_file = _art_disk_path(url)
 
     if remember and url in _art_cache:
         return _art_cache[url]
@@ -675,6 +680,78 @@ def load_character_build(detail: CharacterDetail) -> list[BuildSection]:
     if context.game == "zzz":
         return _zzz_build(context.raw, metadata)
     return []
+
+
+# ---------------------------------------------------------------------------
+# Cache probes (never touch the network)
+#
+# The details popup uses these to decide whether the loader will be answered
+# from a warm cache.  They mirror the settings checks and disk layouts of the
+# matching loaders, so a probe hit means the loader can render without a
+# skeleton screen.
+
+
+def has_cached_detail(game: str, char_id: str) -> bool:
+    """Return whether the detail text can be served from cache."""
+    version = cached_latest_version(game)
+    if version is None:
+        return False
+    cache_key = (game, version, str(char_id))
+    if cache_key in _detail_cache:
+        return True
+    return bool(
+        get_setting("cache_character_details")
+        and _detail_disk_path(cache_key).exists()
+    )
+
+
+def _required_build_resources(context: BuildContext) -> tuple[str, ...]:
+    raw = context.raw
+    if context.game == "hsr":
+        if any(raw.get(key) for key in ("relics", "lightcones", "teams")):
+            return ("relicset", "lightcone", "character")
+        return ()
+    if context.game == "ww":
+        return ("weapon",) if (raw.get("recommend") or {}).get("weapon") else ()
+    if context.game == "zzz":
+        return ("item",) if raw.get("fairy_recommend") else ()
+    return ()
+
+
+def has_cached_build(detail: CharacterDetail) -> bool:
+    """Return whether the recommended build can be served from cache.
+
+    A detail without a build section has nothing to wait for, so it counts as
+    cached.
+    """
+    context = detail.build_context
+    if context is None:
+        return True
+
+    resources = _required_build_resources(context)
+    if not resources:
+        return True
+
+    caching = get_setting("cache_character_builds")
+    for resource in resources:
+        cache_key = (context.game, context.version, resource)
+        if cache_key in _metadata_cache:
+            continue
+        if caching and _metadata_disk_path(cache_key).exists():
+            continue
+        return False
+    return True
+
+
+def has_cached_art(url: str) -> bool:
+    """Return whether character artwork can be served from cache."""
+    if not url:
+        return False
+    if url in _art_cache:
+        return True
+    return bool(
+        get_setting("cache_character_artwork") and _art_disk_path(url).exists()
+    )
 
 
 # ---------------------------------------------------------------------------
