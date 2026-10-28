@@ -218,6 +218,17 @@ class SettingsGamesTabTests(QtTestCase):
         first = self.popup.game_order_list.item(0)
         self.assertTrue(first.text().startswith("\u28ff"))
 
+    def test_view_order_fits_every_row_without_an_inner_scrollbar(self):
+        order_list = self.popup.game_order_list
+        self.assertEqual(
+            order_list.verticalScrollBarPolicy(),
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+        )
+        self.assertGreaterEqual(
+            order_list.minimumHeight(),
+            order_list.count() * order_list.sizeHintForRow(0),
+        )
+
     def test_drag_pixmap_is_nearly_transparent(self):
         order_list = self.popup.game_order_list
         order_list.setCurrentRow(0)

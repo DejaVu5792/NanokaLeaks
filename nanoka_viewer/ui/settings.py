@@ -182,7 +182,6 @@ class SettingsPopup(OverlayPopup):
         header_layout.addStretch(1)
 
         close_btn = QPushButton("Close")
-        close_btn.setObjectName("settingsCloseBtn")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close_popup)
         header_layout.addWidget(close_btn)
@@ -398,6 +397,12 @@ class SettingsPopup(OverlayPopup):
             QAbstractItemView.SelectionMode.SingleSelection
         )
         self.game_order_list.setDropIndicatorShown(True)
+        self.game_order_list.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.game_order_list.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.game_order_list.setMinimumHeight(140)
         self.game_order_list.order_changed.connect(self._on_game_order_changed)
         order_layout.addWidget(self.game_order_list, 1)
@@ -539,8 +544,20 @@ class SettingsPopup(OverlayPopup):
                 item.setData(Qt.ItemDataRole.UserRole, game)
                 item.setToolTip("Drag to change the section order")
                 self.game_order_list.addItem(item)
+            self._fit_order_list_height()
         finally:
             self.game_order_list.blockSignals(False)
+
+    def _fit_order_list_height(self):
+        """Grow the list so every enabled game fits without an inner scrollbar."""
+        count = self.game_order_list.count()
+        if not count:
+            self.game_order_list.setMinimumHeight(0)
+            return
+        row_height = max(
+            self.game_order_list.sizeHintForRow(index) for index in range(count)
+        )
+        self.game_order_list.setMinimumHeight(count * row_height + 8)
 
     def visible_game_order(self) -> list[str]:
         """Return the game ids currently shown in the View Order list."""

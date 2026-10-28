@@ -164,24 +164,6 @@ QLabel#settingsHint {
     padding: 0px 2px;
 }
 
-QPushButton#settingsCloseBtn {
-    padding: 4px 10px;
-    font-size: 11px;
-    background: transparent;
-    color: palette(placeholder-text);
-    border: 1px solid transparent;
-}
-
-QPushButton#settingsCloseBtn:hover {
-    background: palette(alternate-base);
-    color: palette(text);
-}
-
-QPushButton#settingsCloseBtn:pressed {
-    background: palette(midlight);
-    color: palette(text);
-}
-
 QPushButton#cacheBtn {
     padding: 4px 12px;
     font-size: 11px;
@@ -279,14 +261,15 @@ QScrollArea#settingsScroll, QWidget#settingsPage {
 QListWidget#gameOrderList {
     background: palette(base);
     border: none;
-    padding: 0px;
+    padding: 4px;
 }
 
 QListWidget#gameOrderList::item {
-    background: palette(base);
+    background: transparent;
     padding: 9px 10px;
+    margin: 1px 2px;
+    border-radius: 4px;
     color: palette(text);
-    border-bottom: 1px solid palette(midlight);
 }
 
 QListWidget#gameOrderList::item:hover {
@@ -294,8 +277,8 @@ QListWidget#gameOrderList::item:hover {
 }
 
 QListWidget#gameOrderList::item:selected {
-    background: palette(highlight);
-    color: palette(highlighted-text);
+    background: palette(alternate-base);
+    color: palette(text);
 }
 
 
