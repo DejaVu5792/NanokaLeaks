@@ -1,6 +1,7 @@
 """Nanoka API module for fetching and caching game data."""
 
 from .characters import (
+    cached_character_count,
     clear_cache,
     fetch_characters,
     get_all_characters_with_new_status,
@@ -59,6 +60,7 @@ __all__ = [
     "PreloadSummary",
     "SkillDetail",
     "cache_sizes",
+    "cached_character_count",
     "clear_cache",
     "clear_detail_cache",
     "fetch_characters",

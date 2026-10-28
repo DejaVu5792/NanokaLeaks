@@ -205,6 +205,44 @@ QWidget#settingsPage QCheckBox {
     color: palette(text);
 }
 
+QWidget#gameToggleRow {
+    background: transparent;
+    border-radius: 4px;
+}
+
+QWidget#gameToggleRow:hover {
+    background: palette(alternate-base);
+}
+
+QWidget#gameToggleRow:pressed {
+    background: palette(midlight);
+}
+
+QWidget#gameToggleRow QCheckBox {
+    padding: 0px;
+    background: transparent;
+}
+
+QLabel#settingsCount {
+    color: palette(placeholder-text);
+    font-size: 11px;
+}
+
+QPushButton#sectionResetBtn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 0px;
+}
+
+QPushButton#sectionResetBtn:hover {
+    background: palette(alternate-base);
+}
+
+QPushButton#sectionResetBtn:pressed {
+    background: palette(midlight);
+}
+
 QTabWidget#settingsTabs::pane {
     border: none;
     background: transparent;

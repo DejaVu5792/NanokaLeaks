@@ -5,6 +5,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFrame, QMainWindow, QWidget
 from support import QtTestCase, flush
 
@@ -32,6 +34,11 @@ class SettingsGamesTabTests(QtTestCase):
             patch.object(settings_ui, "cache_sizes", return_value={}),
             patch.object(
                 settings_ui, "read_build_cache_info", return_value={"last_cached": 0}
+            ),
+            patch.object(
+                settings_ui,
+                "cached_character_count",
+                side_effect=lambda game: {"zzz": 1234, "hsr": 40}.get(game),
             ),
         ]
         for patcher in self._patches:
@@ -135,6 +142,80 @@ class SettingsGamesTabTests(QtTestCase):
 
         self.assertEqual(self.saved[-1]["disabled_games"], ["ww"])
         self.assertFalse(self.saved[-1]["cache_character_details"])
+
+    def test_toggle_rows_show_right_aligned_character_counts(self):
+        label = self.popup.game_count_labels["zzz"]
+        self.assertEqual(label.text(), "1,234 characters")
+        self.assertTrue(label.alignment() & Qt.AlignmentFlag.AlignRight)
+
+        # Games without cached data show a placeholder instead of fetching.
+        self.assertEqual(self.popup.game_count_labels["gi"].text(), "\u2014")
+
+    def test_clicking_a_toggle_row_toggles_the_game(self):
+        self.popup.tabs.setCurrentIndex(1)
+        flush()
+        row = self.popup.game_rows["hsr"]
+
+        QTest.mouseClick(
+            row,
+            Qt.MouseButton.LeftButton,
+            pos=QPoint(row.width() - 12, row.height() // 2),
+        )
+        flush()
+
+        self.assertFalse(self.popup.game_checkboxes["hsr"].isChecked())
+        self.assertEqual(self.settings["disabled_games"], ["hsr"])
+        self.assertNotIn("hsr", self.popup.visible_game_order())
+
+    def test_toggle_reset_enables_every_game(self):
+        self.popup.game_checkboxes["gi"].setChecked(False)
+        self.popup.game_checkboxes["ww"].setChecked(False)
+        flush()
+        self.saved.clear()
+        self.changes.clear()
+
+        self.popup.section_resets["Toggle View"].click()
+        flush()
+
+        self.assertTrue(
+            all(box.isChecked() for box in self.popup.game_checkboxes.values())
+        )
+        self.assertEqual(self.settings["disabled_games"], [])
+        self.assertEqual(self.popup.visible_game_order(), list(GAMES))
+        self.assertEqual(self.saved[-1]["disabled_games"], [])
+        self.assertEqual(self.changes, [True])
+
+    def test_order_reset_restores_the_default_order(self):
+        item = self.popup.game_order_list.takeItem(4)
+        self.popup.game_order_list.insertItem(0, item)
+        self.popup._on_game_order_changed()
+        self.assertEqual(self.popup.visible_game_order()[0], "nte")
+
+        self.popup.section_resets["View Order"].click()
+        flush()
+
+        self.assertEqual(self.popup.visible_game_order(), list(GAMES))
+        self.assertEqual(self.settings["game_order"], list(GAMES))
+
+    def test_cache_reset_restores_the_default_options(self):
+        self.popup.tabs.setCurrentIndex(0)
+        self.popup.cache_details.setChecked(False)
+        self.popup.cache_builds.setChecked(False)
+        flush()
+        self.saved.clear()
+
+        self.popup.section_resets["Caching"].click()
+        flush()
+
+        self.assertTrue(self.popup.cache_details.isChecked())
+        self.assertTrue(self.popup.cache_builds.isChecked())
+        self.assertTrue(self.popup.cache_artwork.isChecked())
+        self.assertTrue(self.saved[-1]["cache_character_details"])
+        self.assertTrue(self.saved[-1]["cache_character_builds"])
+
+    def test_view_order_uses_the_compact_drag_handle(self):
+        first = self.popup.game_order_list.item(0)
+        self.assertTrue(first.text().startswith("\u28ff"))
 
 
 if __name__ == "__main__":

@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -18,12 +19,19 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStyle,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from ..api import GAMES, cache_sizes, clear_cache, read_build_cache_info
+from ..api import (
+    GAMES,
+    cache_sizes,
+    cached_character_count,
+    clear_cache,
+    read_build_cache_info,
+)
 from ..api.preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
@@ -31,7 +39,7 @@ from ..api.preload import (
     PreloadProgress,
     PreloadSummary,
 )
-from ..settings import load_settings, save_settings
+from ..settings import DEFAULT_SETTINGS, load_settings, save_settings
 from .image_loader import clear_image_cache
 from .overlay import OverlayPopup, is_alive
 from .preload import get_preload_manager
@@ -53,6 +61,39 @@ class _GameOrderList(QListWidget):
     def dropEvent(self, event):
         super().dropEvent(event)
         self.order_changed.emit()
+
+
+class _GameToggleRow(QWidget):
+    """Hoverable row that toggles its checkbox when clicked anywhere."""
+
+    def __init__(self, checkbox: QCheckBox, count_label: QLabel):
+        super().__init__()
+        self.checkbox = checkbox
+        self.setObjectName("gameToggleRow")
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(2, 10, 8, 10)
+        layout.setSpacing(8)
+        layout.addWidget(checkbox, 1)
+
+        count_label.setObjectName("settingsCount")
+        count_label.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        count_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout.addWidget(count_label, 0)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(
+            event.position().toPoint()
+        ):
+            self.checkbox.toggle()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 class SettingsPopup(OverlayPopup):
@@ -100,6 +141,9 @@ class SettingsPopup(OverlayPopup):
 
         self._loading_games = False
         self.game_checkboxes: dict[str, QCheckBox] = {}
+        self.game_count_labels: dict[str, QLabel] = {}
+        self.game_rows: dict[str, _GameToggleRow] = {}
+        self.section_resets: dict[str, QPushButton] = {}
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("settingsTabs")
@@ -141,6 +185,37 @@ class SettingsPopup(OverlayPopup):
         separator.setFixedHeight(1)
         return separator
 
+    def _make_section_header(self, title: str, tooltip: str, on_reset) -> QWidget:
+        """Build a section title with a right-aligned reset button."""
+        header = QWidget()
+        header.setObjectName("settingsSectionHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(2, 0, 0, 0)
+        header_layout.setSpacing(6)
+
+        label = QLabel(title)
+        label.setObjectName("settingsSectionTitle")
+        header_layout.addWidget(label)
+        header_layout.addStretch(1)
+
+        reset = QPushButton()
+        reset.setObjectName("sectionResetBtn")
+        reset.setIcon(
+            QIcon.fromTheme(
+                "edit-undo",
+                self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload),
+            )
+        )
+        reset.setIconSize(QSize(14, 14))
+        reset.setFixedSize(24, 24)
+        reset.setFlat(True)
+        reset.setToolTip(tooltip)
+        reset.setCursor(Qt.CursorShape.PointingHandCursor)
+        reset.clicked.connect(on_reset)
+        header_layout.addWidget(reset)
+        self.section_resets[title] = reset
+        return header
+
     def _build_cache_tab(self) -> QWidget:
         body = QWidget()
         body.setObjectName("settingsPage")
@@ -148,9 +223,12 @@ class SettingsPopup(OverlayPopup):
         body_layout.setContentsMargins(20, 18, 20, 20)
         body_layout.setSpacing(8)
 
-        cache_label = QLabel("Caching")
-        cache_label.setObjectName("settingsSectionTitle")
-        body_layout.addWidget(cache_label)
+        cache_header = self._make_section_header(
+            "Caching",
+            "Reset the cache options to their defaults",
+            self._reset_cache_section,
+        )
+        body_layout.addWidget(cache_header)
 
         card, card_layout = self._make_form_card()
         (
@@ -215,9 +293,12 @@ class SettingsPopup(OverlayPopup):
         body_layout.setContentsMargins(20, 18, 20, 20)
         body_layout.setSpacing(8)
 
-        toggle_label = QLabel("Toggle View")
-        toggle_label.setObjectName("settingsSectionTitle")
-        body_layout.addWidget(toggle_label)
+        toggle_header = self._make_section_header(
+            "Toggle View",
+            "Enable every game",
+            self._reset_toggle_section,
+        )
+        body_layout.addWidget(toggle_header)
 
         toggle_card, toggle_layout = self._make_form_card()
         for index, (game, info) in enumerate(GAMES.items()):
@@ -232,15 +313,22 @@ class SettingsPopup(OverlayPopup):
             checkbox.toggled.connect(
                 lambda checked, game=game: self._on_game_toggled(game, checked)
             )
-            toggle_layout.addWidget(checkbox)
+            count_label = QLabel("")
+            row = _GameToggleRow(checkbox, count_label)
+            toggle_layout.addWidget(row)
             self.game_checkboxes[game] = checkbox
+            self.game_count_labels[game] = count_label
+            self.game_rows[game] = row
         body_layout.addWidget(toggle_card)
 
         body_layout.addSpacing(8)
 
-        order_label = QLabel("View Order")
-        order_label.setObjectName("settingsSectionTitle")
-        body_layout.addWidget(order_label)
+        order_header = self._make_section_header(
+            "View Order",
+            "Restore the default game order",
+            self._reset_order_section,
+        )
+        body_layout.addWidget(order_header)
 
         order_hint = QLabel("Drag the enabled games to reorder their sections.")
         order_hint.setObjectName("settingsHint")
@@ -335,6 +423,7 @@ class SettingsPopup(OverlayPopup):
             bool(settings.get("cache_character_artwork", True))
         )
         self._load_game_settings(settings)
+        self._refresh_game_counts()
         self.tabs.setCurrentIndex(0)
         self._sync_preload_state()
         self._update_cache_meta()
@@ -396,7 +485,7 @@ class SettingsPopup(OverlayPopup):
             for game in order:
                 if game in disabled:
                     continue
-                item = QListWidgetItem(f"\u22ee\u22ee  {GAMES[game]['name']}")
+                item = QListWidgetItem(f"\u28ff  {GAMES[game]['name']}")
                 item.setData(Qt.ItemDataRole.UserRole, game)
                 item.setToolTip("Drag to change the section order")
                 self.game_order_list.addItem(item)
@@ -454,6 +543,58 @@ class SettingsPopup(OverlayPopup):
         settings["disabled_games"] = [
             game_id for game_id in new_order if game_id in disabled
         ]
+        save_settings(settings)
+        self.games_changed.emit()
+
+    def _refresh_game_counts(self):
+        """Update the cached character counts shown on the toggle rows."""
+        for game, label in self.game_count_labels.items():
+            count = cached_character_count(game)
+            if count is None:
+                label.setText("\u2014")
+                label.setToolTip("No cached characters for this game yet")
+            else:
+                label.setText(f"{count:,} characters")
+                label.setToolTip(f"{count:,} characters cached for this game")
+
+    def _reset_cache_section(self):
+        for key, checkbox in (
+            ("cache_character_details", self.cache_details),
+            ("cache_character_builds", self.cache_builds),
+            ("cache_character_artwork", self.cache_artwork),
+        ):
+            checkbox.blockSignals(True)
+            checkbox.setChecked(bool(DEFAULT_SETTINGS[key]))
+            checkbox.blockSignals(False)
+        self._save_and_apply()
+        self._sync_preload_state()
+
+    def _reset_toggle_section(self):
+        settings = dict(load_settings())
+        order = self._game_order_from(settings)
+        self._loading_games = True
+        try:
+            for checkbox in self.game_checkboxes.values():
+                checkbox.setChecked(True)
+            self._populate_order_list(order, set())
+        finally:
+            self._loading_games = False
+        settings["game_order"] = order
+        settings["disabled_games"] = []
+        save_settings(settings)
+        self.games_changed.emit()
+
+    def _reset_order_section(self):
+        settings = dict(load_settings())
+        disabled = self._disabled_games_from(settings)
+        order = list(GAMES)
+        self._loading_games = True
+        try:
+            self._populate_order_list(order, disabled)
+        finally:
+            self._loading_games = False
+        settings["game_order"] = order
+        settings["disabled_games"] = [game for game in order if game in disabled]
         save_settings(settings)
         self.games_changed.emit()
 
@@ -599,10 +740,12 @@ class SettingsPopup(OverlayPopup):
 
     def _on_preload_finished(self, summary: PreloadSummary):
         self._update_cache_meta()
+        self._refresh_game_counts()
         self._sync_preload_state()
 
     def _on_preload_failed(self, message: str):
         self._update_cache_meta()
+        self._refresh_game_counts()
         self.cache_status.setText(f"Preload failed: {message}")
         self._sync_preload_state()
 
@@ -620,6 +763,7 @@ class SettingsPopup(OverlayPopup):
         manager.last_progress = None
         manager.last_error = ""
         self._update_cache_meta()
+        self._refresh_game_counts()
         self.cache_status.setText("Cache cleared.")
         self.clear_cache_btn.setEnabled(False)
         self.clear_cache_btn.setText("Cleared")
