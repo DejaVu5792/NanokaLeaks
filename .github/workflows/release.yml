@@ -2,8 +2,27 @@ name: Build and Release Binaries
 
 on:
   push:
+    # Tag pushes always run (path filters do not apply to tags).
     tags:
       - 'v*'
+    # Dependency/toolchain changes on main warm the build cache used by tag
+    # builds. GitHub cache entries are ref-scoped, so a tag cannot restore a
+    # cache saved by an older tag, only one from the default branch.
+    branches:
+      - main
+    paths:
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - '.python-version'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+# Keep Nuitka's C/onefile caches inside the workspace so they can be restored
+# between runs. Nuitka also stores ccache/clcache output here.
+env:
+  NUITKA_CACHE_DIR: ${{ github.workspace }}/.nuitka-cache
+  CCACHE_MAXSIZE: 2G
+  CCACHE_COMPRESS: "true"
 
 jobs:
   build:
@@ -13,7 +32,7 @@ jobs:
         include:
           - os: ubuntu-latest
             binary_name: NanokaLeaks
-            setup_command: sudo apt-get update && sudo apt-get install -y gcc patchelf
+            setup_command: sudo apt-get update && sudo apt-get install -y gcc patchelf ccache
             extra_flags: ""
           - os: windows-latest
             binary_name: NanokaLeaks.exe
@@ -36,14 +55,24 @@ jobs:
           enable-cache: true
           python-version: "3.13"
 
+      - name: Restore Nuitka build cache
+        uses: actions/cache@v4
+        with:
+          path: .nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-${{ hashFiles('uv.lock') }}-
+            nuitka-${{ runner.os }}-
+
       - name: Install Project Dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Compile with Nuitka
         run: >
           uv run nuitka
           --standalone
           --onefile
+          --onefile-as-archive
           --enable-plugin=pyside6
           --assume-yes-for-downloads
           ${{ matrix.extra_flags }}
@@ -51,6 +80,7 @@ jobs:
           main.py
 
       - name: Upload Build Artifact
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-binary
@@ -60,6 +90,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
 
     permissions:
