@@ -3,7 +3,11 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+# Nuitka build artifacts
+/main.build/
 /main.dist
+/main.onefile-build/
+/.nuitka-cache/
 /NanokaLeaks
 *.spec
 wheels/
