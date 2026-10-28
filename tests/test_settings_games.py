@@ -229,7 +229,7 @@ class SettingsGamesTabTests(QtTestCase):
             order_list.count() * order_list.sizeHintForRow(0),
         )
 
-    def test_drag_pixmap_is_nearly_transparent(self):
+    def test_drag_pixmap_uses_partial_transparency(self):
         order_list = self.popup.game_order_list
         order_list.setCurrentRow(0)
         captured = {}
@@ -257,7 +257,8 @@ class SettingsGamesTabTests(QtTestCase):
         image = pixmap.toImage()
         self.assertTrue(image.hasAlphaChannel())
         alpha = image.pixelColor(image.width() // 2, image.height() // 2).alpha()
-        self.assertLessEqual(alpha, 32)  # about 10% opacity
+        self.assertGreaterEqual(alpha, 80)
+        self.assertLessEqual(alpha, 120)  # about 40% opacity
         self.assertTrue(
             captured["mime"].hasFormat("application/x-qabstractitemmodeldatalist")
         )

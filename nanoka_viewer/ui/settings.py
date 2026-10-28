@@ -98,7 +98,7 @@ class _GameOrderList(QListWidget):
         faded = QPixmap(source.size())
         faded.fill(Qt.GlobalColor.transparent)
         painter = QPainter(faded)
-        painter.setOpacity(0.1)
+        painter.setOpacity(0.4)
         painter.drawPixmap(0, 0, source)
         painter.end()
 
