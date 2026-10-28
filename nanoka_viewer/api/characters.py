@@ -6,7 +6,12 @@ import logging
 import requests
 
 from .constants import BASE_URL, CHARACTER_CACHE_DIR
-from .manifest import fetch_manifest, get_latest_version, clear_manifest_cache
+from .manifest import (
+    cached_latest_version,
+    clear_manifest_cache,
+    fetch_manifest,
+    get_latest_version,
+)
 from .models import get_name
 
 logger = logging.getLogger(__name__)
@@ -72,6 +77,41 @@ def fetch_characters(game):
         )
 
     return data
+
+
+def cached_character_count(game):
+    """Return how many characters are cached for *game* without networking.
+
+    Returns ``None`` when no character data has been downloaded yet.  Like
+    :func:`get_all_characters_with_new_status`, the Genshin Manekina/Manekin
+    variants are excluded so the number matches what the viewer displays.
+    """
+    version = cached_latest_version(game)
+    if version is None:
+        return None
+
+    data = _character_cache.get(game, {}).get(version)
+    if data is None:
+        cache_file = CHARACTER_CACHE_DIR / f"{game}_{version}.json"
+        try:
+            if not cache_file.exists():
+                return None
+            with open(cache_file, "r") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError) as exc:
+            logger.debug("Could not read character cache for %s: %s", game, exc)
+            return None
+
+    if not isinstance(data, dict):
+        return None
+    if game == "gi":
+        return sum(
+            1
+            for char_id in data
+            if not char_id.startswith("10000118-")
+            and not char_id.startswith("10000117-")
+        )
+    return len(data)
 
 
 def parse_release(game, release_data):

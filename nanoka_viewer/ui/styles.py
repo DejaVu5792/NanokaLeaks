@@ -132,38 +132,153 @@ QFrame#detailsPanel {
 }
 
 QFrame#settingsPanel {
-    background: palette(base);
+    background: palette(window);
     border: 1px solid palette(mid);
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 QFrame#settingsHeader {
-    background: palette(alternate-base);
+    background: palette(window);
     border: none;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-bottom: 1px solid palette(midlight);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
 }
 
 QLabel#settingsTitle {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 600;
     color: palette(text);
 }
 
 QLabel#settingsSectionTitle {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     color: palette(text);
+    padding: 2px 2px 0px 2px;
 }
 
 QLabel#settingsHint {
     color: palette(placeholder-text);
     font-size: 11px;
+    padding: 0px 2px;
 }
 
 QPushButton#cacheBtn {
     padding: 4px 12px;
     font-size: 11px;
+}
+
+QFrame#settingsCard {
+    background: palette(base);
+    border: 1px solid palette(midlight);
+    border-radius: 6px;
+}
+
+QFrame#settingsRowSeparator {
+    background: palette(midlight);
+    border: none;
+    max-height: 1px;
+}
+
+QWidget#settingsPage QCheckBox {
+    spacing: 8px;
+    padding: 6px 0px;
+    color: palette(text);
+}
+
+QWidget#gameToggleRow {
+    background: transparent;
+    border-radius: 4px;
+}
+
+QWidget#gameToggleRow:hover {
+    background: palette(alternate-base);
+}
+
+QWidget#gameToggleRow:pressed {
+    background: palette(midlight);
+}
+
+QWidget#gameToggleRow QCheckBox {
+    padding: 0px;
+    background: transparent;
+}
+
+QLabel#settingsCount {
+    color: palette(placeholder-text);
+    font-size: 11px;
+}
+
+QPushButton#sectionResetBtn {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 0px;
+}
+
+QPushButton#sectionResetBtn:hover {
+    background: palette(alternate-base);
+}
+
+QPushButton#sectionResetBtn:pressed {
+    background: palette(midlight);
+}
+
+QTabWidget#settingsTabs::pane {
+    border: none;
+    background: transparent;
+    top: 0px;
+}
+
+QTabWidget#settingsTabs QTabBar {
+    background: transparent;
+}
+
+QTabWidget#settingsTabs QTabBar::tab {
+    background: transparent;
+    color: palette(placeholder-text);
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 16px;
+    font-weight: 600;
+}
+
+QTabWidget#settingsTabs QTabBar::tab:hover {
+    color: palette(text);
+}
+
+QTabWidget#settingsTabs QTabBar::tab:selected {
+    color: palette(text);
+    border-bottom: 2px solid palette(highlight);
+}
+
+QScrollArea#settingsScroll, QWidget#settingsPage {
+    background: transparent;
+    border: none;
+}
+
+QListWidget#gameOrderList {
+    background: palette(base);
+    border: none;
+    padding: 4px;
+}
+
+QListWidget#gameOrderList::item {
+    background: transparent;
+    padding: 9px 10px;
+    margin: 1px 2px;
+    border-radius: 4px;
+    color: palette(text);
+}
+
+QListWidget#gameOrderList::item:hover {
+    background: palette(alternate-base);
+}
+
+QListWidget#gameOrderList::item:selected {
+    background: palette(alternate-base);
+    color: palette(text);
 }
 
 

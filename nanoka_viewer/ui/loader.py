@@ -1,12 +1,12 @@
 """Data loading thread for fetching character data."""
 
-import time
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from PySide6.QtCore import QThread, Signal
 
-from ..api import get_all_characters_with_new_status, parse_release, GAMES
+from ..api import GAMES, get_all_characters_with_new_status, parse_release
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,10 @@ class LoadThread(QThread):
 
     game_loaded = Signal(str, list)
     load_finished = Signal()
+
+    def __init__(self, parent=None, games=None):
+        super().__init__(parent)
+        self._games = list(GAMES.keys() if games is None else games)
 
     def _get_sort_key(self, game, c):
         """Calculate sort key for a character."""
@@ -59,12 +63,16 @@ class LoadThread(QThread):
             self.game_loaded.emit(game, [])
 
     def run(self):
-        """Load data for all games in parallel."""
+        """Load data for all requested games in parallel."""
         total_start = time.time()
-        
+
+        if not self._games:
+            self.load_finished.emit()
+            return
+
         # Use ThreadPoolExecutor to fetch games in parallel
-        with ThreadPoolExecutor(max_workers=len(GAMES)) as executor:
-            executor.map(self._load_game, GAMES.keys())
+        with ThreadPoolExecutor(max_workers=len(self._games)) as executor:
+            executor.map(self._load_game, self._games)
 
         total_elapsed = time.time() - total_start
         logger.info(f"All data loaded in {total_elapsed:.3f}s")
