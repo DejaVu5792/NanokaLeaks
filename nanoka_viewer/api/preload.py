@@ -28,6 +28,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable
 
+from ..settings import get_enabled_games
 from .cache_info import record_build_cache_write
 from .characters import fetch_characters
 from .constants import GAMES
@@ -100,11 +101,17 @@ def _character_ids(game: str) -> list[str]:
     return ids
 
 
+def _enabled_games() -> list[str]:
+    """Return games to preload: enabled ones that this build knows about."""
+    enabled = set(get_enabled_games())
+    return [game for game in GAMES if game in enabled]
+
+
 def _collect_jobs() -> tuple[list[tuple[str, str]], int]:
     """Collect ``(game, character_id)`` pairs and the failed-game count."""
     jobs: list[tuple[str, str]] = []
     failed_games = 0
-    for game in GAMES:
+    for game in _enabled_games():
         try:
             ids = _character_ids(game)
         except Exception as exc:  # noqa: BLE001 - one game must not block the rest
@@ -259,7 +266,7 @@ def _preload_builds(
     to fetch every character detail page just to discover them.
     """
     summary = PreloadSummary(kind=PRELOAD_BUILDS)
-    games = list(GAMES)
+    games = _enabled_games()
     summary.total = len(games)
     _emit(
         on_progress,

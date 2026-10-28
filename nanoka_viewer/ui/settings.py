@@ -5,20 +5,25 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from ..api import cache_sizes, clear_cache, read_build_cache_info
+from ..api import GAMES, cache_sizes, clear_cache, read_build_cache_info
 from ..api.preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
@@ -40,6 +45,16 @@ _PRELOAD_LABELS = {
 }
 
 
+class _GameOrderList(QListWidget):
+    """Vertical list whose rows can be reordered by dragging."""
+
+    order_changed = Signal()
+
+    def dropEvent(self, event):
+        super().dropEvent(event)
+        self.order_changed.emit()
+
+
 class SettingsPopup(OverlayPopup):
     """Lightbox-style settings overlay."""
 
@@ -48,13 +63,15 @@ class SettingsPopup(OverlayPopup):
     log_name = "settings popup"
     logger = logging.getLogger(__name__)
 
+    games_changed = Signal()
+
     width_ratio = 0.46
     min_width = 360
     max_width = 520
     hard_min_width = 300
-    height_ratio = 0.58
-    min_height = 340
-    max_height = 500
+    height_ratio = 0.68
+    min_height = 400
+    max_height = 600
     hard_min_height = 280
     margin = 32
 
@@ -80,7 +97,34 @@ class SettingsPopup(OverlayPopup):
 
         panel_layout.addWidget(header)
 
+        self._loading_games = False
+        self.game_checkboxes: dict[str, QCheckBox] = {}
+
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("settingsTabs")
+        self.tabs.addTab(self._build_cache_tab(), "Cache")
+        self.tabs.addTab(self._build_games_tab(), "Games")
+        self.tabs.setCurrentIndex(0)
+        panel_layout.addWidget(self.tabs, 1)
+
+        manager = get_preload_manager()
+        manager.progress.connect(self._on_preload_progress)
+        manager.finished.connect(self._on_preload_finished)
+        manager.failed.connect(self._on_preload_failed)
+
+    @staticmethod
+    def _scroll_page(page: QWidget) -> QScrollArea:
+        """Wrap a tab page so the popup stays usable on small screens."""
+        scroll = QScrollArea()
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        return scroll
+
+    def _build_cache_tab(self) -> QWidget:
         body = QWidget()
+        body.setObjectName("settingsPage")
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(20, 20, 20, 20)
         body_layout.setSpacing(14)
@@ -136,15 +180,61 @@ class SettingsPopup(OverlayPopup):
         self.clear_cache_btn = QPushButton("Clear cache")
         self.clear_cache_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.clear_cache_btn.clicked.connect(self._clear_cache)
-        body_layout.addWidget(self.clear_cache_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        body_layout.addWidget(
+            self.clear_cache_btn, alignment=Qt.AlignmentFlag.AlignLeft
+        )
 
         body_layout.addStretch(1)
-        panel_layout.addWidget(body, 1)
+        return self._scroll_page(body)
 
-        manager = get_preload_manager()
-        manager.progress.connect(self._on_preload_progress)
-        manager.finished.connect(self._on_preload_finished)
-        manager.failed.connect(self._on_preload_failed)
+    def _build_games_tab(self) -> QWidget:
+        body = QWidget()
+        body.setObjectName("settingsPage")
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(20, 20, 20, 20)
+        body_layout.setSpacing(10)
+
+        toggle_label = QLabel("Toggle View")
+        toggle_label.setObjectName("settingsSectionTitle")
+        body_layout.addWidget(toggle_label)
+
+        for game, info in GAMES.items():
+            checkbox = QCheckBox(info["name"])
+            checkbox.setToolTip(
+                "Unchecking hides this game and stops the viewer from loading "
+                "its characters, details, builds, and artwork."
+            )
+            checkbox.toggled.connect(
+                lambda checked, game=game: self._on_game_toggled(game, checked)
+            )
+            body_layout.addWidget(checkbox)
+            self.game_checkboxes[game] = checkbox
+
+        body_layout.addSpacing(8)
+
+        order_label = QLabel("View Order")
+        order_label.setObjectName("settingsSectionTitle")
+        body_layout.addWidget(order_label)
+
+        order_hint = QLabel("Drag the enabled games to reorder their sections.")
+        order_hint.setObjectName("settingsHint")
+        order_hint.setWordWrap(True)
+        body_layout.addWidget(order_hint)
+
+        self.game_order_list = _GameOrderList()
+        self.game_order_list.setObjectName("gameOrderList")
+        self.game_order_list.setDragDropMode(
+            QAbstractItemView.DragDropMode.InternalMove
+        )
+        self.game_order_list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.game_order_list.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection
+        )
+        self.game_order_list.setDropIndicatorShown(True)
+        self.game_order_list.setMinimumHeight(140)
+        self.game_order_list.order_changed.connect(self._on_game_order_changed)
+        body_layout.addWidget(self.game_order_list, 1)
+        return self._scroll_page(body)
 
     def _add_cache_row(
         self,
@@ -204,27 +294,136 @@ class SettingsPopup(OverlayPopup):
         return button
 
     def open_popup(self):
-        settings = load_settings()
+        settings = dict(load_settings())
         self.cache_details.setChecked(
             bool(settings.get("cache_character_details", True))
         )
-        self.cache_builds.setChecked(
-            bool(settings.get("cache_character_builds", True))
-        )
+        self.cache_builds.setChecked(bool(settings.get("cache_character_builds", True)))
         self.cache_artwork.setChecked(
             bool(settings.get("cache_character_artwork", True))
         )
+        self._load_game_settings(settings)
+        self.tabs.setCurrentIndex(0)
         self._sync_preload_state()
         self._update_cache_meta()
         self.show_overlay()
 
     def _save_and_apply(self):
-        settings = {
-            "cache_character_details": self.cache_details.isChecked(),
-            "cache_character_builds": self.cache_builds.isChecked(),
-            "cache_character_artwork": self.cache_artwork.isChecked(),
-        }
+        # Merge into the stored settings: saving the Cache tab must not wipe
+        # the Games tab's enabled list or order.
+        settings = dict(load_settings())
+        settings.update(
+            {
+                "cache_character_details": self.cache_details.isChecked(),
+                "cache_character_builds": self.cache_builds.isChecked(),
+                "cache_character_artwork": self.cache_artwork.isChecked(),
+            }
+        )
         save_settings(settings)
+
+    # -- Games tab ---------------------------------------------------------
+
+    @staticmethod
+    def _game_order_from(settings: dict) -> list[str]:
+        """Return the full, sanitized game order for the settings dict."""
+        order: list[str] = []
+        raw = settings.get("game_order")
+        if isinstance(raw, (list, tuple)):
+            for value in raw:
+                game = str(value)
+                if game in GAMES and game not in order:
+                    order.append(game)
+        for game in GAMES:
+            if game not in order:
+                order.append(game)
+        return order
+
+    @staticmethod
+    def _disabled_games_from(settings: dict) -> set[str]:
+        raw = settings.get("disabled_games")
+        if not isinstance(raw, (list, tuple)):
+            return set()
+        return {str(value) for value in raw if str(value) in GAMES}
+
+    def _load_game_settings(self, settings: dict):
+        """Populate checkboxes and the order list without emitting changes."""
+        self._loading_games = True
+        try:
+            order = self._game_order_from(settings)
+            disabled = self._disabled_games_from(settings)
+            for game, checkbox in self.game_checkboxes.items():
+                checkbox.setChecked(game not in disabled)
+            self._populate_order_list(order, disabled)
+        finally:
+            self._loading_games = False
+
+    def _populate_order_list(self, order: list[str], disabled: set[str]):
+        self.game_order_list.blockSignals(True)
+        try:
+            self.game_order_list.clear()
+            for game in order:
+                if game in disabled:
+                    continue
+                item = QListWidgetItem(f"\u22ee\u22ee  {GAMES[game]['name']}")
+                item.setData(Qt.ItemDataRole.UserRole, game)
+                item.setToolTip("Drag to change the section order")
+                self.game_order_list.addItem(item)
+        finally:
+            self.game_order_list.blockSignals(False)
+
+    def visible_game_order(self) -> list[str]:
+        """Return the game ids currently shown in the View Order list."""
+        return [
+            str(self.game_order_list.item(index).data(Qt.ItemDataRole.UserRole))
+            for index in range(self.game_order_list.count())
+        ]
+
+    def _on_game_toggled(self, game: str, checked: bool):
+        if self._loading_games:
+            return
+        settings = dict(load_settings())
+        order = self._game_order_from(settings)
+        disabled = self._disabled_games_from(settings)
+        if checked:
+            disabled.discard(game)
+        else:
+            disabled.add(game)
+        settings["game_order"] = order
+        settings["disabled_games"] = [
+            game_id for game_id in order if game_id in disabled
+        ]
+        save_settings(settings)
+        self._populate_order_list(order, disabled)
+        self.games_changed.emit()
+
+    def _on_game_order_changed(self):
+        if self._loading_games:
+            return
+        visible = self.visible_game_order()
+        settings = dict(load_settings())
+        order = self._game_order_from(settings)
+        disabled = self._disabled_games_from(settings)
+
+        # Replace only the enabled slots so disabled games keep their stored
+        # position for when the user enables them again.
+        new_order: list[str] = []
+        cursor = 0
+        for game in order:
+            if game in disabled:
+                new_order.append(game)
+                continue
+            if cursor < len(visible):
+                new_order.append(visible[cursor])
+                cursor += 1
+            else:
+                new_order.append(game)
+
+        settings["game_order"] = new_order
+        settings["disabled_games"] = [
+            game_id for game_id in new_order if game_id in disabled
+        ]
+        save_settings(settings)
+        self.games_changed.emit()
 
     def _checkbox_for(self, kind: str) -> QCheckBox:
         return {
@@ -408,9 +607,7 @@ class SettingsPopup(OverlayPopup):
         info = read_build_cache_info()
         last_cached = float(info.get("last_cached") or 0.0)
         if last_cached > 0:
-            self.builds_last.setText(
-                f"Last cached: {self._format_time(last_cached)}"
-            )
+            self.builds_last.setText(f"Last cached: {self._format_time(last_cached)}")
         else:
             self.builds_last.setText("Last cached: never")
 

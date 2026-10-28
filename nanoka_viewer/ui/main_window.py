@@ -1,31 +1,32 @@
 """Main application window for Nanoka Viewer."""
 
+import logging
 import sys
 import time
-import logging
 from datetime import datetime
 
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QApplication,
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
+    QMainWindow,
     QPushButton,
     QScrollArea,
-    QFrame,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import QEvent, QObject, QTimer, Qt
-from PySide6.QtGui import QCursor
 
-from .styles import STYLESHEET
-from .section import GameSection
-from .loader import LoadThread
-from .settings import open_settings
-from .preload import get_preload_manager
 from ..api import GAMES, fetch_manifest
 from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
+from ..settings import get_enabled_games
+from .loader import LoadThread
+from .preload import get_preload_manager
+from .section import GameSection
+from .settings import open_settings
+from .styles import STYLESHEET
 
 logger = logging.getLogger(__name__)
 
@@ -177,18 +178,9 @@ class NanokaViewer(QMainWindow):
         self._pending_sections = set()
         self._fetch_finished = False
         self._load_in_progress = False
-        games_list = list(GAMES.items())
-        for i, (game, info) in enumerate(games_list):
-            section = GameSection(info["name"])
-            self.content_layout.addWidget(section)
-            self.game_sections[game] = section
-
-            if i < len(games_list) - 1:
-                separator = QFrame()
-                separator.setFrameShape(QFrame.Shape.HLine)
-                separator.setFixedHeight(1)
-                separator.setStyleSheet("background: palette(mid); border: none;")
-                self.content_layout.addWidget(separator)
+        self._reload_pending = False
+        self._settings_popup = None
+        self._sync_sections(self._desired_games())
 
         self.load_thread = None
 
@@ -244,19 +236,28 @@ class NanokaViewer(QMainWindow):
         generation = self._load_generation
         logger.info("Starting data load (generation %d)...", generation)
 
+        games = self._desired_games()
+        self._sync_sections(games)
+
         self.refresh_btn.setEnabled(False)
         self.refresh_btn.setText("Loading...")
         self.status_label.setText("Loading...")
         self._fetch_finished = False
         self._loading_chars.clear()
         self._loading_index.clear()
-        self._pending_sections = set(self.game_sections)
+        self._pending_sections = set(games)
 
         for section in self.game_sections.values():
             section.clear_cards()
             section.set_status("Loading...")
 
-        thread = LoadThread(self)
+        if not games:
+            self._fetch_finished = True
+            self.status_label.setText("No games enabled")
+            self._finish_loading_ui(no_games=True)
+            return
+
+        thread = LoadThread(self, games)
         thread.game_loaded.connect(
             lambda game, chars, gen=generation: self.on_game_loaded(
                 game, chars, gen
@@ -284,7 +285,98 @@ class NanokaViewer(QMainWindow):
 
     def _open_settings(self):
         """Open the settings popup."""
-        open_settings(self)
+        popup = open_settings(self)
+        if popup is not None and popup is not self._settings_popup:
+            popup.games_changed.connect(self.apply_game_settings)
+            self._settings_popup = popup
+
+    # -- game sections -----------------------------------------------------
+
+    @staticmethod
+    def _desired_games() -> list[str]:
+        """Return enabled game ids in the configured display order."""
+        return [game for game in get_enabled_games() if game in GAMES]
+
+    def _make_separator(self) -> QFrame:
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFixedHeight(1)
+        separator.setStyleSheet("background: palette(mid); border: none;")
+        return separator
+
+    def _create_section(self, game: str) -> GameSection:
+        section = GameSection(GAMES[game]["name"])
+        self.game_sections[game] = section
+        return section
+
+    def _remove_section(self, game: str):
+        """Drop a section and stop any pending work aimed at it."""
+        self._loading_chars.pop(game, None)
+        self._loading_index.pop(game, None)
+        self._pending_sections.discard(game)
+        section = self.game_sections.pop(game, None)
+        if section is None:
+            return
+        section.clear_cards()
+        self.content_layout.removeWidget(section)
+        section.setParent(None)
+        section.deleteLater()
+
+    def _arrange_sections(self, order: list[str]):
+        """Lay out existing sections in *order*, replacing separators."""
+        sections = set(self.game_sections.values())
+        while self.content_layout.count():
+            item = self.content_layout.takeAt(0)
+            widget = item.widget()
+            if widget is None:
+                continue
+            if widget not in sections:
+                widget.deleteLater()
+
+        visible = [game for game in order if game in self.game_sections]
+        for index, game in enumerate(visible):
+            self.content_layout.addWidget(self.game_sections[game])
+            if index < len(visible) - 1:
+                self.content_layout.addWidget(self._make_separator())
+
+    def _sync_sections(self, order: list[str]) -> bool:
+        """Create/remove sections to match *order*; report whether the set changed."""
+        previous = set(self.game_sections)
+        for game in list(self.game_sections):
+            if game not in order:
+                self._remove_section(game)
+        for game in order:
+            if game not in self.game_sections:
+                self._create_section(game)
+        self._arrange_sections(order)
+        return set(self.game_sections) != previous
+
+    def apply_game_settings(self):
+        """Apply Games-tab changes to the live view immediately."""
+        order = self._desired_games()
+        changed = self._sync_sections(order)
+
+        if self._load_in_progress:
+            if changed:
+                # Re-run the load once the in-flight one finishes; this picks
+                # up newly enabled games and drops stale disabled results.
+                self._reload_pending = True
+            if self._fetch_finished and not self._pending_sections:
+                self._finish_loading_ui(no_games=not order)
+            elif not order:
+                self.status_label.setText("No games enabled")
+            return
+
+        if not order:
+            self.status_label.setText("No games enabled")
+            self.refresh_btn.setEnabled(True)
+            self.refresh_btn.setText("Reload")
+            return
+
+        if changed:
+            # The disabled sections are already gone; a fresh load guarantees
+            # that newly enabled games are fetched and nothing stale is kept.
+            self.load_data()
 
     def on_game_loaded(self, game, chars, generation=None):
         """Handle when a game's character data is loaded."""
@@ -335,12 +427,22 @@ class NanokaViewer(QMainWindow):
         if self._fetch_finished and not self._pending_sections:
             self._finish_loading_ui()
 
-    def _finish_loading_ui(self):
+    def _finish_loading_ui(self, no_games: bool = False):
         self._load_in_progress = False
         self.refresh_btn.setText("Reload")
         self.refresh_btn.setEnabled(True)
-        self.status_label.setText(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
+        if no_games or not self._desired_games():
+            self.status_label.setText("No games enabled")
+        else:
+            self.status_label.setText(
+                f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
+            )
         logger.info("Load finished")
+
+        if self._reload_pending:
+            self._reload_pending = False
+            if self._desired_games():
+                QTimer.singleShot(0, self.load_data)
 
     def _load_next_batch(self, game, chars, generation):
         """Load the next batch of character cards."""
@@ -452,7 +554,8 @@ def main(argv=None):
 
     if args.verbose:
         import os
-        from PySide6.QtCore import qInstallMessageHandler, QtMsgType, qVersion
+
+        from PySide6.QtCore import QtMsgType, qInstallMessageHandler, qVersion
 
         qt_logger = logging.getLogger("qt")
 

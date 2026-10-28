@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 import nanoka_viewer.ui.details as details
+from nanoka_viewer.api import GAMES
 from nanoka_viewer.api.details import CharacterDetail
 from nanoka_viewer.ui.styles import STYLESHEET
 
@@ -240,24 +241,28 @@ _HSR_TEST_CHARS = {
 
 
 @contextmanager
-def real_viewer(with_card=True):
+def real_viewer(with_card=True, games=None):
     """Boot the real ``NanokaViewer`` window with only the network stubbed.
 
     The whole widget tree (native anchor removal, card sections, the real
     ``view_btn`` -> ``open_details`` path) is the production code. Only the
     HTTP-backed loaders are replaced so the suite stays offline and fast.
 
+    *games* optionally restricts the enabled games (defaults to every game,
+    independent of the user's real settings file).
+
     Yields ``(window, card)``. *card* is the real populated ``CardWidget``
     (or ``None`` when ``with_card`` is False).
     """
+    import nanoka_viewer.ui.card as _card_module
     import nanoka_viewer.ui.loader as loader
     import nanoka_viewer.ui.main_window as main_window
-    import nanoka_viewer.ui.card as _card_module
     from nanoka_viewer.ui.card import CardWidget
 
     originals = (
         loader.get_all_characters_with_new_status,
         main_window.fetch_manifest,
+        main_window.get_enabled_games,
         _card_module.request_image,
         details.load_character_detail,
         details.load_character_art,
@@ -276,6 +281,7 @@ def real_viewer(with_card=True):
         game: {"live": "1.0", "latest": "1.0", "new": {}}
         for game in _HSR_TEST_CHARS
     }
+    main_window.get_enabled_games = lambda: list(GAMES if games is None else games)
     _card_module.request_image = lambda *a, **k: None
     details.load_character_detail = lambda game, char_id: CharacterDetail(
         game=game,
@@ -315,6 +321,7 @@ def real_viewer(with_card=True):
         (
             loader.get_all_characters_with_new_status,
             main_window.fetch_manifest,
+            main_window.get_enabled_games,
             _card_module.request_image,
             details.load_character_detail,
             details.load_character_art,

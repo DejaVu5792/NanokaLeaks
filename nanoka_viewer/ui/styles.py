@@ -166,6 +166,62 @@ QPushButton#cacheBtn {
     font-size: 11px;
 }
 
+QTabWidget#settingsTabs::pane {
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    top: -1px;
+    background: palette(base);
+}
+
+QTabWidget#settingsTabs QTabBar::tab {
+    background: transparent;
+    color: palette(placeholder-text);
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 7px 16px;
+    font-weight: 600;
+}
+
+QTabWidget#settingsTabs QTabBar::tab:hover {
+    color: palette(text);
+}
+
+QTabWidget#settingsTabs QTabBar::tab:selected {
+    color: palette(text);
+    border-bottom: 2px solid palette(highlight);
+}
+
+QScrollArea#settingsScroll, QWidget#settingsPage {
+    background: transparent;
+    border: none;
+}
+
+QListWidget#gameOrderList {
+    background: palette(base);
+    border: 1px solid palette(mid);
+    border-radius: 6px;
+    padding: 3px;
+}
+
+QListWidget#gameOrderList::item {
+    padding: 7px 8px;
+    border-radius: 4px;
+    color: palette(text);
+}
+
+QListWidget#gameOrderList::item:hover {
+    background: palette(alternate-base);
+}
+
+QListWidget#gameOrderList::item:selected {
+    background: palette(highlight);
+    color: palette(highlighted-text);
+}
+
+QListWidget#gameOrderList::item:drag {
+    background: palette(mid);
+}
+
 
 QFrame#detailsHeader {
     background: palette(alternate-base);

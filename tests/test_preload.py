@@ -83,6 +83,30 @@ class PreloadDetailsTests(unittest.TestCase):
             {"Alpha", "Beta", "Gamma"},
         )
 
+    def test_disabled_games_are_not_preloaded(self):
+        requested = []
+
+        def fake_fetch(game):
+            requested.append(game)
+            return {"1": {}}
+
+        with (
+            patch.object(preload, "GAMES", {"hsr": {}, "ww": {}}),
+            patch.object(preload, "get_enabled_games", return_value=["ww"]),
+            patch.object(preload, "fetch_characters", side_effect=fake_fetch),
+            patch.object(
+                preload,
+                "load_character_detail",
+                side_effect=lambda game, char_id, *, remember=True: make_detail(
+                    game, char_id
+                ),
+            ),
+        ):
+            summary = preload_characters(PRELOAD_DETAILS)
+
+        self.assertEqual(requested, ["ww"])
+        self.assertEqual(summary.total, 1)
+
     def test_unavailable_details_are_skipped(self):
         def fake_detail(game, char_id, *, remember=True):
             raise DetailUnavailable("not ready")
@@ -191,6 +215,31 @@ class PreloadConcurrencyTests(unittest.TestCase):
 
 
 class PreloadBuildsTests(unittest.TestCase):
+    def test_disabled_games_are_not_refreshed(self):
+        versions = []
+        with (
+            patch.object(
+                preload,
+                "GAMES",
+                {"hsr": {"name": "HSR"}, "ww": {"name": "WW"}},
+            ),
+            patch.object(preload, "get_enabled_games", return_value=["hsr"]),
+            patch.object(
+                preload,
+                "get_latest_version",
+                side_effect=lambda game: versions.append(game) or "1.0",
+            ),
+            patch.object(
+                preload, "prefetch_build_metadata", return_value=(1, 1)
+            ),
+            patch.object(preload, "reset_build_cache"),
+        ):
+            summary = preload_characters(PRELOAD_BUILDS)
+
+        self.assertEqual(versions, ["hsr"])
+        self.assertEqual(summary.total, 1)
+        self.assertEqual(summary.completed, 1)
+
     def _run(self, fetched_by_game, *, should_stop=None, version_lookup=None):
         writes = []
         progress = []
