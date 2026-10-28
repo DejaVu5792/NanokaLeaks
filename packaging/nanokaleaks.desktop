@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=NanokaLeaks
+GenericName=Character Viewer
+Comment=View the newest characters from Nanoka
+Exec=NanokaLeaks
+Icon=nanokaleaks
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=nanoka;anime;game;characters;
+StartupWMClass=NanokaLeaks
