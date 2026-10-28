@@ -91,6 +91,25 @@ class GameViewSettingsTests(QtTestCase):
             self.assertNotIn("gi", window.game_sections)
             self.assertEqual(list(window.game_sections), ["hsr"])
 
+    def test_single_remaining_section_keeps_its_natural_height(self):
+        with real_viewer(with_card=False) as (window, _):
+            self._wait_for_idle(window)
+
+            with patch.object(
+                main_window, "get_enabled_games", return_value=["zzz"]
+            ):
+                window.apply_game_settings()
+            self._wait_for_idle(window)
+            support.flush()
+
+            section = window.game_sections["zzz"]
+            self.assertEqual(list(window.game_sections), ["zzz"])
+            self.assertEqual(
+                section.height(),
+                section.sizeHint().height(),
+                "a lone section must not stretch to fill the scroll area",
+            )
+
     def test_no_enabled_games_shows_a_hint(self):
         with real_viewer(with_card=False, games=[]) as (window, _):
             self.assertEqual(list(window.game_sections), [])

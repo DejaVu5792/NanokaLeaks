@@ -338,6 +338,10 @@ class NanokaViewer(QMainWindow):
             self.content_layout.addWidget(self.game_sections[game])
             if index < len(visible) - 1:
                 self.content_layout.addWidget(self._make_separator())
+        # Keep sections at their natural height when they do not fill the
+        # scroll area; otherwise a single remaining section stretches its
+        # header over the whole window.
+        self.content_layout.addStretch(1)
 
     def _sync_sections(self, order: list[str]) -> bool:
         """Create/remove sections to match *order*; report whether the set changed."""
