@@ -72,7 +72,7 @@ class SettingsGamesTabTests(QtTestCase):
     def test_cache_tab_is_the_default(self):
         self.assertEqual(self.popup.tabs.currentIndex(), 0)
         self.assertEqual(self.popup.tabs.tabText(0), "Cache")
-        self.assertEqual(self.popup.tabs.tabText(1), "Games")
+        self.assertEqual(self.popup.tabs.tabText(1), "View")
 
     def test_settings_use_form_cards_and_row_separators(self):
         cards = self.popup.findChildren(QFrame, "settingsCard")

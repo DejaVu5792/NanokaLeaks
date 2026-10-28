@@ -198,7 +198,7 @@ class SettingsPopup(OverlayPopup):
         self.tabs.setObjectName("settingsTabs")
         self.tabs.setDocumentMode(True)
         self.tabs.addTab(self._build_cache_tab(), "Cache")
-        self.tabs.addTab(self._build_games_tab(), "Games")
+        self.tabs.addTab(self._build_games_tab(), "View")
         self.tabs.setCurrentIndex(0)
         panel_layout.addWidget(self.tabs, 1)
 
