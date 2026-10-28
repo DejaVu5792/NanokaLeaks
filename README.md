@@ -8,7 +8,7 @@ bin install https://github.com/DejaVu5792/NanokaLeaks
 ```
 ### Using [AppMan](https://github.com/ivan-hc/AppMan)
 ```bash
-appman -e DejaVu5792/NanokaLeaks NanokaLeaks
+appman -e DejaVu5792/NanokaLeaks nanokaleaks
 ```
 
 ## Building
