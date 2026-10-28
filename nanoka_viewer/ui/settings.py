@@ -69,9 +69,9 @@ class SettingsPopup(OverlayPopup):
     min_width = 360
     max_width = 520
     hard_min_width = 300
-    height_ratio = 0.68
-    min_height = 400
-    max_height = 600
+    height_ratio = 0.74
+    min_height = 420
+    max_height = 640
     hard_min_height = 280
     margin = 32
 
@@ -91,6 +91,7 @@ class SettingsPopup(OverlayPopup):
         header_layout.addStretch(1)
 
         close_btn = QPushButton("Close")
+        close_btn.setObjectName("settingsCloseBtn")
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         close_btn.clicked.connect(self.close_popup)
         header_layout.addWidget(close_btn)
@@ -102,6 +103,7 @@ class SettingsPopup(OverlayPopup):
 
         self.tabs = QTabWidget()
         self.tabs.setObjectName("settingsTabs")
+        self.tabs.setDocumentMode(True)
         self.tabs.addTab(self._build_cache_tab(), "Cache")
         self.tabs.addTab(self._build_games_tab(), "Games")
         self.tabs.setCurrentIndex(0)
@@ -122,24 +124,42 @@ class SettingsPopup(OverlayPopup):
         scroll.setWidget(page)
         return scroll
 
+    @staticmethod
+    def _make_form_card() -> tuple[QFrame, QVBoxLayout]:
+        """Create a Kirigami FormCard-like container for grouped settings."""
+        card = QFrame()
+        card.setObjectName("settingsCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 4, 14, 4)
+        card_layout.setSpacing(0)
+        return card, card_layout
+
+    @staticmethod
+    def _make_row_separator() -> QFrame:
+        separator = QFrame()
+        separator.setObjectName("settingsRowSeparator")
+        separator.setFixedHeight(1)
+        return separator
+
     def _build_cache_tab(self) -> QWidget:
         body = QWidget()
         body.setObjectName("settingsPage")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(20, 20, 20, 20)
-        body_layout.setSpacing(14)
+        body_layout.setContentsMargins(20, 18, 20, 20)
+        body_layout.setSpacing(8)
 
         cache_label = QLabel("Caching")
         cache_label.setObjectName("settingsSectionTitle")
         body_layout.addWidget(cache_label)
 
+        card, card_layout = self._make_form_card()
         (
             self.cache_details,
             self.cache_details_btn,
             self.details_size,
             _,
         ) = self._add_cache_row(
-            body_layout,
+            card_layout,
             "Cache character details",
             "Caches the detail text: overview, stats, skills, and extras.",
             PRELOAD_DETAILS,
@@ -150,7 +170,7 @@ class SettingsPopup(OverlayPopup):
             self.builds_size,
             self.builds_last,
         ) = self._add_cache_row(
-            body_layout,
+            card_layout,
             "Cache character builds",
             "Always refreshes the per-version build tables used by recommended "
             "builds; unchanged tables are revalidated with ETags.",
@@ -163,12 +183,13 @@ class SettingsPopup(OverlayPopup):
             self.artwork_size,
             _,
         ) = self._add_cache_row(
-            body_layout,
+            card_layout,
             "Cache character details artwork",
             "Details artwork is a large download and uses much more disk "
             "space than the text caches.",
             PRELOAD_ARTWORK,
         )
+        body_layout.addWidget(card)
 
         self.cache_status = QLabel("")
         self.cache_status.setObjectName("settingsHint")
@@ -191,15 +212,19 @@ class SettingsPopup(OverlayPopup):
         body = QWidget()
         body.setObjectName("settingsPage")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(20, 20, 20, 20)
-        body_layout.setSpacing(10)
+        body_layout.setContentsMargins(20, 18, 20, 20)
+        body_layout.setSpacing(8)
 
         toggle_label = QLabel("Toggle View")
         toggle_label.setObjectName("settingsSectionTitle")
         body_layout.addWidget(toggle_label)
 
-        for game, info in GAMES.items():
+        toggle_card, toggle_layout = self._make_form_card()
+        for index, (game, info) in enumerate(GAMES.items()):
+            if index:
+                toggle_layout.addWidget(self._make_row_separator())
             checkbox = QCheckBox(info["name"])
+            checkbox.setObjectName("settingsCheckBox")
             checkbox.setToolTip(
                 "Unchecking hides this game and stops the viewer from loading "
                 "its characters, details, builds, and artwork."
@@ -207,8 +232,9 @@ class SettingsPopup(OverlayPopup):
             checkbox.toggled.connect(
                 lambda checked, game=game: self._on_game_toggled(game, checked)
             )
-            body_layout.addWidget(checkbox)
+            toggle_layout.addWidget(checkbox)
             self.game_checkboxes[game] = checkbox
+        body_layout.addWidget(toggle_card)
 
         body_layout.addSpacing(8)
 
@@ -221,8 +247,11 @@ class SettingsPopup(OverlayPopup):
         order_hint.setWordWrap(True)
         body_layout.addWidget(order_hint)
 
+        order_card, order_layout = self._make_form_card()
+        order_layout.setContentsMargins(4, 4, 4, 4)
         self.game_order_list = _GameOrderList()
         self.game_order_list.setObjectName("gameOrderList")
+        self.game_order_list.setFrameShape(QFrame.Shape.NoFrame)
         self.game_order_list.setDragDropMode(
             QAbstractItemView.DragDropMode.InternalMove
         )
@@ -233,7 +262,8 @@ class SettingsPopup(OverlayPopup):
         self.game_order_list.setDropIndicatorShown(True)
         self.game_order_list.setMinimumHeight(140)
         self.game_order_list.order_changed.connect(self._on_game_order_changed)
-        body_layout.addWidget(self.game_order_list, 1)
+        order_layout.addWidget(self.game_order_list, 1)
+        body_layout.addWidget(order_card, 1)
         return self._scroll_page(body)
 
     def _add_cache_row(
@@ -278,10 +308,12 @@ class SettingsPopup(OverlayPopup):
 
         row = QWidget()
         row_layout = QVBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setContentsMargins(0, 4, 0, 4)
         row_layout.setSpacing(2)
         row_layout.addWidget(top)
         row_layout.addWidget(meta)
+        if body_layout.count():
+            body_layout.addWidget(self._make_row_separator())
         body_layout.addWidget(row)
 
         return checkbox, button, size_label, last_label

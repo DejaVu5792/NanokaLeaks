@@ -132,33 +132,54 @@ QFrame#detailsPanel {
 }
 
 QFrame#settingsPanel {
-    background: palette(base);
+    background: palette(window);
     border: 1px solid palette(mid);
-    border-radius: 10px;
+    border-radius: 8px;
 }
 
 QFrame#settingsHeader {
-    background: palette(alternate-base);
+    background: palette(window);
     border: none;
-    border-top-left-radius: 10px;
-    border-top-right-radius: 10px;
+    border-bottom: 1px solid palette(midlight);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
 }
 
 QLabel#settingsTitle {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 16px;
+    font-weight: 600;
     color: palette(text);
 }
 
 QLabel#settingsSectionTitle {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
     color: palette(text);
+    padding: 2px 2px 0px 2px;
 }
 
 QLabel#settingsHint {
     color: palette(placeholder-text);
     font-size: 11px;
+    padding: 0px 2px;
+}
+
+QPushButton#settingsCloseBtn {
+    padding: 4px 10px;
+    font-size: 11px;
+    background: transparent;
+    color: palette(placeholder-text);
+    border: 1px solid transparent;
+}
+
+QPushButton#settingsCloseBtn:hover {
+    background: palette(alternate-base);
+    color: palette(text);
+}
+
+QPushButton#settingsCloseBtn:pressed {
+    background: palette(midlight);
+    color: palette(text);
 }
 
 QPushButton#cacheBtn {
@@ -166,11 +187,32 @@ QPushButton#cacheBtn {
     font-size: 11px;
 }
 
-QTabWidget#settingsTabs::pane {
-    border: 1px solid palette(mid);
-    border-radius: 6px;
-    top: -1px;
+QFrame#settingsCard {
     background: palette(base);
+    border: 1px solid palette(midlight);
+    border-radius: 6px;
+}
+
+QFrame#settingsRowSeparator {
+    background: palette(midlight);
+    border: none;
+    max-height: 1px;
+}
+
+QWidget#settingsPage QCheckBox {
+    spacing: 8px;
+    padding: 6px 0px;
+    color: palette(text);
+}
+
+QTabWidget#settingsTabs::pane {
+    border: none;
+    background: transparent;
+    top: 0px;
+}
+
+QTabWidget#settingsTabs QTabBar {
+    background: transparent;
 }
 
 QTabWidget#settingsTabs QTabBar::tab {
@@ -178,7 +220,7 @@ QTabWidget#settingsTabs QTabBar::tab {
     color: palette(placeholder-text);
     border: none;
     border-bottom: 2px solid transparent;
-    padding: 7px 16px;
+    padding: 8px 16px;
     font-weight: 600;
 }
 
@@ -198,15 +240,15 @@ QScrollArea#settingsScroll, QWidget#settingsPage {
 
 QListWidget#gameOrderList {
     background: palette(base);
-    border: 1px solid palette(mid);
-    border-radius: 6px;
-    padding: 3px;
+    border: none;
+    padding: 0px;
 }
 
 QListWidget#gameOrderList::item {
-    padding: 7px 8px;
-    border-radius: 4px;
+    background: palette(base);
+    padding: 9px 10px;
     color: palette(text);
+    border-bottom: 1px solid palette(midlight);
 }
 
 QListWidget#gameOrderList::item:hover {
@@ -216,10 +258,6 @@ QListWidget#gameOrderList::item:hover {
 QListWidget#gameOrderList::item:selected {
     background: palette(highlight);
     color: palette(highlighted-text);
-}
-
-QListWidget#gameOrderList::item:drag {
-    background: palette(mid);
 }
 
 

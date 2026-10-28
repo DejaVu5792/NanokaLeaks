@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtWidgets import QMainWindow, QWidget
+from PySide6.QtWidgets import QFrame, QMainWindow, QWidget
 from support import QtTestCase, flush
 
 import nanoka_viewer.ui.settings as settings_ui
@@ -65,6 +65,13 @@ class SettingsGamesTabTests(QtTestCase):
         self.assertEqual(self.popup.tabs.currentIndex(), 0)
         self.assertEqual(self.popup.tabs.tabText(0), "Cache")
         self.assertEqual(self.popup.tabs.tabText(1), "Games")
+
+    def test_settings_use_form_cards_and_row_separators(self):
+        cards = self.popup.findChildren(QFrame, "settingsCard")
+        separators = self.popup.findChildren(QFrame, "settingsRowSeparator")
+
+        self.assertGreaterEqual(len(cards), 2)
+        self.assertGreaterEqual(len(separators), 2)
 
     def test_all_games_are_checked_by_default(self):
         for game in GAMES:
