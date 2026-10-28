@@ -143,6 +143,10 @@ build/appimage/NanokaLeaks.AppDir/
 Using the standalone dist means the AppImage mounts its squashfs and starts the
 binary directly instead of unpacking a temporary onefile copy.
 
+CI builds the AppImage on Ubuntu 24.04, so the binary inherits that image's
+glibc symbol versions. Hosts older than 24.04 need a glibc at least as new as
+24.04's; local builds inherit the glibc of the machine that built them.
+
 ### appimagetool
 
 The script pins appimagetool **1.9.1**, verifies its SHA-256, and downloads it to:
@@ -234,10 +238,11 @@ The release workflow lives in
 | Push to `main` touching `uv.lock`, `pyproject.toml`, `.python-version`, or the workflow | Cache warm-up only |
 | `workflow_dispatch` | Builds binaries/AppImage; publishes a release only when run on a tag |
 
-Pull requests do not run this workflow. The `build` job runs on `ubuntu-latest`
-and `windows-latest`; the `appimage` job runs on `ubuntu-latest` and only for
-tags or manual dispatches. The release job requires both `build` and `appimage`
-to succeed.
+Pull requests do not run this workflow. The `build` job runs on `ubuntu-24.04`
+and `windows-latest`; the `appimage` job runs on `ubuntu-24.04` and only for
+tags or manual dispatches. Ubuntu is pinned to 24.04 so release builds use an
+explicit toolchain instead of following the `ubuntu-latest` alias. The release
+job requires both `build` and `appimage` to succeed.
 
 ### CI cache
 
