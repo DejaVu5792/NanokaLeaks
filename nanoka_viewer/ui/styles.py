@@ -322,9 +322,10 @@ QLabel#detailArtPlaceholder {
 QFrame#detailArtOverlay {
     background: qlineargradient(
         x1: 0, y1: 0, x2: 0, y2: 1,
-        stop: 0 rgba(0, 0, 0, 220),
-        stop: 0.5 rgba(0, 0, 0, 120),
-        stop: 1 rgba(0, 0, 0, 0)
+        stop: 0 rgba(0, 0, 0, 0),
+        stop: 0.6 rgba(0, 0, 0, 0),
+        stop: 0.78 rgba(0, 0, 0, 60),
+        stop: 1 rgba(0, 0, 0, 150)
     );
     border: none;
 }

@@ -12,9 +12,8 @@ import unittest
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor, QPainter, QPixmap
-from PySide6.QtWidgets import QWidget
-
-from support import QtTestCase, flush, wait
+from PySide6.QtWidgets import QFrame, QLabel, QWidget
+from support import SAMPLE_DETAIL, QtTestCase, flush, wait
 
 from nanoka_viewer.ui.details import CharacterDetailsPopup, _ArtLabel
 
@@ -71,6 +70,19 @@ class ArtLabelTests(QtTestCase):
         pixmap = label.pixmap()
         self.assertIsNotNone(pixmap)
         self.assertEqual(pixmap.size(), QSize(140, 90))
+
+    def test_art_text_is_anchored_to_the_bottom(self):
+        host = QWidget()
+        self.addCleanup(host.deleteLater)
+        popup = CharacterDetailsPopup(host)
+        self.addCleanup(popup.deleteLater)
+
+        frame = popup._build_art_panel(SAMPLE_DETAIL)
+        overlay = frame.findChild(QFrame, "detailArtOverlay")
+        self.assertIsNotNone(overlay)
+        layout = overlay.layout()
+        self.assertIsNotNone(layout.itemAt(0).spacerItem())
+        self.assertIsNotNone(overlay.findChild(QLabel, "detailArtName"))
 
     def test_art_message_drops_the_cached_source(self):
         host = QWidget()

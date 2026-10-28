@@ -782,6 +782,9 @@ class CharacterDetailsPopup(OverlayPopup):
         overlay_layout.setContentsMargins(14, 14, 14, 14)
         overlay_layout.setSpacing(5)
 
+        # Keep the artwork clear and pin the labels to its bottom edge.
+        overlay_layout.addStretch(1)
+
         name = QLabel(detail.name)
         name.setObjectName("detailArtName")
         name.setTextFormat(Qt.TextFormat.PlainText)
@@ -795,7 +798,6 @@ class CharacterDetailsPopup(OverlayPopup):
             meta_label.setTextFormat(Qt.TextFormat.PlainText)
             meta_label.setWordWrap(True)
             overlay_layout.addWidget(meta_label)
-        overlay_layout.addStretch(1)
         grid.addWidget(overlay, 0, 0)
         return frame
 

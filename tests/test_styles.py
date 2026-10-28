@@ -221,8 +221,6 @@ class DetailsSurfaceTests(QtTestCase):
             "details header must use palette(alternate-base)",
         )
 
-        # Bottom-right corners are outside the rounded panel edges and outside
-        # the art frame's dark bottom gradient overlay.
         body_image = popup.body.grab().toImage()
         self.assertEqual(
             body_image.pixelColor(
@@ -231,10 +229,10 @@ class DetailsSurfaceTests(QtTestCase):
             base.name(),
             "details body must use palette(base)",
         )
+        # The gradient overlay now darkens the bottom edge, so probe near the
+        # top where the overlay is fully transparent.
         art_image = popup.art_column.grab().toImage()
-        art_pixel = art_image.pixelColor(
-            art_image.width() - 10, art_image.height() - 10
-        )
+        art_pixel = art_image.pixelColor(art_image.width() - 10, 10)
         self.assertLessEqual(
             max(
                 abs(actual - expected)
