@@ -8,6 +8,7 @@ from .characters import (
     is_released,
     parse_release,
 )
+from .cache_info import read_build_cache_info
 from .constants import BASE_URL, CACHE_DIR, GAMES
 from .details import (
     BuildSection,
@@ -16,12 +17,21 @@ from .details import (
     DetailUnavailable,
     ExtraSection,
     SkillDetail,
+    cache_sizes,
     clear_detail_cache,
     load_character_art,
     load_character_build,
     load_character_detail,
 )
 from .manifest import fetch_manifest, get_latest_version
+from .preload import (
+    PRELOAD_ARTWORK,
+    PRELOAD_BUILDS,
+    PRELOAD_DETAILS,
+    PreloadProgress,
+    PreloadSummary,
+    preload_characters,
+)
 from .models import (
     get_character_image,
     get_character_url,
@@ -42,7 +52,13 @@ __all__ = [
     "ContentEntry",
     "DetailUnavailable",
     "ExtraSection",
+    "PRELOAD_ARTWORK",
+    "PRELOAD_BUILDS",
+    "PRELOAD_DETAILS",
+    "PreloadProgress",
+    "PreloadSummary",
     "SkillDetail",
+    "cache_sizes",
     "clear_cache",
     "clear_detail_cache",
     "fetch_characters",
@@ -63,4 +79,6 @@ __all__ = [
     "load_character_build",
     "load_character_detail",
     "parse_release",
+    "preload_characters",
+    "read_build_cache_info",
 ]

@@ -156,6 +156,17 @@ QLabel#settingsSectionTitle {
     color: palette(text);
 }
 
+QLabel#settingsHint {
+    color: palette(placeholder-text);
+    font-size: 11px;
+}
+
+QPushButton#cacheBtn {
+    padding: 4px 12px;
+    font-size: 11px;
+}
+
+
 QFrame#detailsHeader {
     background: palette(alternate-base);
     border: none;

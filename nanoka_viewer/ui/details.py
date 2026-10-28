@@ -38,6 +38,9 @@ from ..api.details import (
     DetailUnavailable,
     ExtraSection,
     SkillDetail,
+    has_cached_art,
+    has_cached_build,
+    has_cached_detail,
     load_character_art,
     load_character_build,
     load_character_detail,
@@ -45,6 +48,12 @@ from ..api.details import (
 from .overlay import OverlayPopup, is_alive
 
 logger = logging.getLogger(__name__)
+
+# When the caches say a character is already warm, the loader thread usually
+# finishes in a few milliseconds, so the skeleton would only flash.  If it is
+# still pending after this delay the cache probe was wrong (for example the
+# manifest went stale) and we fall back to the normal loading screen.
+LOADING_FALLBACK_MS = 150
 
 
 class _DetailLoadThread(QThread):
@@ -210,7 +219,23 @@ class CharacterDetailsPopup(OverlayPopup):
         self._art_thread: _ArtLoadThread | None = None
         self._art_label: _ArtLabel | None = None
         self._build_skeleton: QWidget | None = None
+        self._build_insert_index: int | None = None
         self._skeleton_animation: QPropertyAnimation | None = None
+        self._deferred_request_id: int | None = None
+        self._deferred_build_request_id: int | None = None
+        self._deferred_art_request_id: int | None = None
+        self._loading_timer = QTimer(self)
+        self._loading_timer.setSingleShot(True)
+        self._loading_timer.setInterval(LOADING_FALLBACK_MS)
+        self._loading_timer.timeout.connect(self._show_deferred_loading)
+        self._build_loading_timer = QTimer(self)
+        self._build_loading_timer.setSingleShot(True)
+        self._build_loading_timer.setInterval(LOADING_FALLBACK_MS)
+        self._build_loading_timer.timeout.connect(self._show_deferred_build_skeleton)
+        self._art_loading_timer = QTimer(self)
+        self._art_loading_timer.setSingleShot(True)
+        self._art_loading_timer.setInterval(LOADING_FALLBACK_MS)
+        self._art_loading_timer.timeout.connect(self._show_deferred_art_placeholder)
         self._game = ""
         self._char_id = ""
         self._source: QWidget | None = None
@@ -293,8 +318,17 @@ class CharacterDetailsPopup(OverlayPopup):
         )
 
         self.clear_stale_input_state(source)
+        self._cancel_deferred_loading()
+        self._cancel_deferred_build_loading()
+        self._cancel_deferred_art_loading()
         self._clear_content()
-        self._show_loading()
+        if has_cached_detail(game, char_id):
+            # Cache hit: render as soon as the loader thread returns instead of
+            # showing a skeleton that would only flash for a frame or two.
+            self._deferred_request_id = request_id
+            self._loading_timer.start()
+        else:
+            self._show_loading()
         self.show_overlay()
         self.scroll.verticalScrollBar().setValue(0)
         logger.debug(
@@ -327,15 +361,24 @@ class CharacterDetailsPopup(OverlayPopup):
     def _on_loaded(self, request_id: int, detail: CharacterDetail):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_loading()
         self._clear_content()
         self._build_content(detail)
         self.scroll.verticalScrollBar().setValue(0)
         if detail.build_context is not None and not detail.build:
-            self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
-            self.content_layout.insertWidget(0, self._build_skeleton)
-            self._start_skeleton_pulse(self._build_skeleton)
+            if has_cached_build(detail):
+                self._build_insert_index = 0
+                self._deferred_build_request_id = request_id
+                self._build_loading_timer.start()
+            else:
+                self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
+                self.content_layout.insertWidget(0, self._build_skeleton)
+                self._start_skeleton_pulse(self._build_skeleton)
             self._start_build_load(request_id, detail)
         if detail.art_url:
+            if has_cached_art(detail.art_url):
+                self._deferred_art_request_id = request_id
+                self._art_loading_timer.start()
             self._start_art_load(request_id, detail.art_url)
         else:
             self._set_art_message("Art unavailable")
@@ -358,16 +401,19 @@ class CharacterDetailsPopup(OverlayPopup):
     def _on_build_loaded(self, request_id: int, sections: list[BuildSection]):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_build_loading()
         self._replace_build_skeleton(sections or [])
 
     def _on_build_failed(self, request_id: int):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_build_loading()
         self._replace_build_skeleton([])
 
     def _replace_build_skeleton(self, sections: list[BuildSection]):
         skeleton = self._build_skeleton
-        if skeleton is None:
+        insert_index = self._build_insert_index
+        if skeleton is None and insert_index is None:
             return
 
         scroll_bar = self.scroll.verticalScrollBar()
@@ -376,12 +422,17 @@ class CharacterDetailsPopup(OverlayPopup):
         at_bottom = old_value >= old_max - 2
         request_id = self._request_id
 
-        index = self.content_layout.indexOf(skeleton)
+        if skeleton is not None:
+            index = self.content_layout.indexOf(skeleton)
+        else:
+            index = insert_index
         self._stop_skeleton_pulse()
-        self.content_layout.removeWidget(skeleton)
-        skeleton.setParent(None)
-        skeleton.deleteLater()
+        if skeleton is not None:
+            self.content_layout.removeWidget(skeleton)
+            skeleton.setParent(None)
+            skeleton.deleteLater()
         self._build_skeleton = None
+        self._build_insert_index = None
 
         if sections:
             self.content_layout.insertWidget(
@@ -429,6 +480,7 @@ class CharacterDetailsPopup(OverlayPopup):
     def _on_art_loaded(self, request_id: int, data: bytes):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_art_loading()
         if self._art_label is None:
             return
         pixmap = QPixmap()
@@ -441,9 +493,11 @@ class CharacterDetailsPopup(OverlayPopup):
     def _on_art_failed(self, request_id: int):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_art_loading()
         self._set_art_message("Art unavailable")
 
     def _set_art_message(self, message: str):
+        self._cancel_deferred_art_loading()
         if self._art_label is not None:
             self._art_label.clear_source()
             self._art_label.setText(message)
@@ -451,6 +505,7 @@ class CharacterDetailsPopup(OverlayPopup):
     def _on_failed(self, request_id: int, message: str):
         if request_id != self._request_id or not self.isVisible():
             return
+        self._cancel_deferred_loading()
         self._clear_content()
         self.art_layout.addWidget(self._build_art_placeholder("Art unavailable"), 1)
 
@@ -468,9 +523,67 @@ class CharacterDetailsPopup(OverlayPopup):
     def _retry(self):
         self._request_id += 1
         request_id = self._request_id
+        self._cancel_deferred_loading()
         self._clear_content()
         self._show_loading()
         self._start_load(request_id)
+
+    def _show_deferred_loading(self):
+        """Show the skeleton if a cache-hit load is unexpectedly slow."""
+        request_id = self._deferred_request_id
+        self._deferred_request_id = None
+        if request_id is None or request_id != self._request_id:
+            return
+        if not self.isVisible():
+            return
+        if self._thread is None:
+            # The loader already finished; its content (or error card) is up.
+            return
+        self._clear_content()
+        self._show_loading()
+
+    def _show_deferred_build_skeleton(self):
+        """Show the build skeleton if cached build IO is unexpectedly slow."""
+        request_id = self._deferred_build_request_id
+        self._deferred_build_request_id = None
+        if request_id is None or request_id != self._request_id:
+            return
+        if not self.isVisible():
+            return
+        if (
+            self._build_thread is None
+            or self._build_skeleton is not None
+            or self._build_insert_index is None
+        ):
+            return
+        self._build_skeleton = self._build_skeleton_card((30, 92, 74, 86))
+        self.content_layout.insertWidget(0, self._build_skeleton)
+        self._start_skeleton_pulse(self._build_skeleton)
+
+    def _show_deferred_art_placeholder(self):
+        """Show the art placeholder if cached artwork IO is unexpectedly slow."""
+        request_id = self._deferred_art_request_id
+        self._deferred_art_request_id = None
+        if request_id is None or request_id != self._request_id:
+            return
+        if not self.isVisible() or self._art_thread is None:
+            return
+        label = self._art_label
+        if label is None or label._source is not None or label.text():
+            return
+        label.setText("Loading art...")
+
+    def _cancel_deferred_loading(self):
+        self._deferred_request_id = None
+        self._loading_timer.stop()
+
+    def _cancel_deferred_build_loading(self):
+        self._deferred_build_request_id = None
+        self._build_loading_timer.stop()
+
+    def _cancel_deferred_art_loading(self):
+        self._deferred_art_request_id = None
+        self._art_loading_timer.stop()
 
     def _show_loading(self):
         self.art_layout.addWidget(self._build_art_placeholder("Loading art..."), 1)
@@ -502,8 +615,12 @@ class CharacterDetailsPopup(OverlayPopup):
         self._start_skeleton_pulse(skeleton)
 
     def _clear_content(self):
+        self._cancel_deferred_loading()
+        self._cancel_deferred_build_loading()
+        self._cancel_deferred_art_loading()
         self._stop_skeleton_pulse()
         self._build_skeleton = None
+        self._build_insert_index = None
         self._art_label = None
         for layout in (self.art_layout, self.content_layout):
             while layout.count():
@@ -654,7 +771,8 @@ class CharacterDetailsPopup(OverlayPopup):
 
         art = _ArtLabel()
         art.setObjectName("detailArt")
-        art.setText("Loading art...")
+        if not has_cached_art(detail.art_url):
+            art.setText("Loading art...")
         self._art_label = art
         grid.addWidget(art, 0, 0)
 
