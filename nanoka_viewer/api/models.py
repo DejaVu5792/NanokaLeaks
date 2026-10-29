@@ -47,6 +47,7 @@ def get_element(game, char_data):
             203: "Electric",
             204: "Wind",
             205: "Ether",
+            300: "Lumiflux",
         }
         return elements.get(char_data.get("element", 200), "Physical")
     elif game == "hsr":
@@ -153,6 +154,7 @@ def get_element_image(game, char_data):
             "Electric": "Electric",
             "Wind": "Wind",
             "Ether": "Ether",
+            "Lumiflux": "Lumiflux",
         }
         return f"https://static.nanoka.cc/assets/zzz/Icon{element_map.get(element, 'Physical')}.webp"
     elif game == "hsr":
