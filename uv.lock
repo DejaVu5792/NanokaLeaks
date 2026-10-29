@@ -133,7 +133,7 @@ wheels = [
 
 [[package]]
 name = "nanokaleaks"
-version = "5.2.1"
+version = "5.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "customtkinter" },
