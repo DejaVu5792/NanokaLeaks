@@ -9,29 +9,22 @@ from typing import Any
 from PySide6.QtCore import (
     Property, QObject, QTimer, Signal, Slot,
 )
-from PySide6.QtCore import QUrl
 
 from ..api import (
     GAMES,
     fetch_manifest,
     get_character_image,
     get_character_url,
-    get_element,
     get_element_image,
     get_name,
     get_rarity,
-    get_specialty,
     get_specialty_image,
 )
 from ..api.details import (
     DetailUnavailable,
-    has_cached_detail,
     load_character_detail,
-    has_cached_art,
-    load_character_art,
 )
-from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
-from ..settings import DEFAULT_SETTINGS, get_enabled_games, load_settings, save_settings
+from ..settings import get_enabled_games, load_settings, save_settings
 from .loader import LoadThread
 from .preload import get_preload_manager
 
@@ -99,14 +92,22 @@ class NanokaBackend(QObject):
     cacheLabelChanged = Signal()
     gameSectionsChanged = Signal()
     detailLoadingChanged = Signal()
+    detailHeaderChanged = Signal()
     detailOverviewChanged = Signal()
     detailStatsChanged = Signal()
+    detailBuildChanged = Signal()
+    detailSkillsChanged = Signal()
+    detailExtrasChanged = Signal()
     detailArtUrlChanged = Signal()
     detailErrorChanged = Signal()
+    detailSourceUrlChanged = Signal()
     cacheDetailsChanged = Signal()
     cacheBuildsChanged = Signal()
     cacheArtworkChanged = Signal()
     allGamesChanged = Signal()
+    preloadRunningChanged = Signal()
+    preloadStatusChanged = Signal()
+    cacheSizesChanged = Signal()
 
     # Non-property signals
     openDetails = Signal(str, str, object)  # gameId, charId, charData
@@ -129,16 +130,32 @@ class NanokaBackend(QObject):
 
         # Details
         self._detail_loading = False
+        self._detail_name = ""
+        self._detail_subtitle = ""
+        self._detail_level_label = ""
+        self._detail_badges: list[str] = []
         self._detail_overview = ""
-        self._detail_stats = []
+        self._detail_stats: list[dict] = []
+        self._detail_build: list[dict] = []
+        self._detail_skills: list[dict] = []
+        self._detail_extras: list[dict] = []
         self._detail_art_url = ""
+        self._detail_source_url = ""
         self._detail_error = ""
+        self._current_detail_game = ""
+        self._current_detail_char = ""
 
         # Cache settings
         settings = dict(load_settings())
         self._cache_details = bool(settings.get("cache_character_details", True))
         self._cache_builds = bool(settings.get("cache_character_builds", True))
         self._cache_artwork = bool(settings.get("cache_character_artwork", True))
+
+        # Preload state
+        self._preload_status = ""
+
+        # Cache sizes
+        self._cache_sizes: dict = {}
 
         # Cache label timer
         self._cache_label_timer = QTimer(self)
@@ -149,6 +166,7 @@ class NanokaBackend(QObject):
         pm = get_preload_manager()
         pm.progress.connect(self._on_preload_progress)
         pm.finished.connect(self._on_preload_finished)
+        pm.failed.connect(self._on_preload_failed)
 
         self._sync_sections(self._desired_games())
 
@@ -169,14 +187,38 @@ class NanokaBackend(QObject):
     @Property(bool, notify=detailLoadingChanged)
     def detailLoading(self): return self._detail_loading
 
+    @Property(str, notify=detailHeaderChanged)
+    def detailName(self): return self._detail_name
+
+    @Property(str, notify=detailHeaderChanged)
+    def detailSubtitle(self): return self._detail_subtitle
+
+    @Property(str, notify=detailHeaderChanged)
+    def detailLevelLabel(self): return self._detail_level_label
+
+    @Property(list, notify=detailHeaderChanged)
+    def detailBadges(self): return self._detail_badges
+
     @Property(str, notify=detailOverviewChanged)
     def detailOverview(self): return self._detail_overview
 
     @Property(list, notify=detailStatsChanged)
     def detailStats(self): return self._detail_stats
 
+    @Property(list, notify=detailBuildChanged)
+    def detailBuild(self): return self._detail_build
+
+    @Property(list, notify=detailSkillsChanged)
+    def detailSkills(self): return self._detail_skills
+
+    @Property(list, notify=detailExtrasChanged)
+    def detailExtras(self): return self._detail_extras
+
     @Property(str, notify=detailArtUrlChanged)
     def detailArtUrl(self): return self._detail_art_url
+
+    @Property(str, notify=detailSourceUrlChanged)
+    def detailSourceUrl(self): return self._detail_source_url
 
     @Property(str, notify=detailErrorChanged)
     def detailError(self): return self._detail_error
@@ -216,6 +258,18 @@ class NanokaBackend(QObject):
             {"id": gid, "name": info["name"], "enabled": gid not in disabled}
             for gid, info in GAMES.items()
         ]
+
+    @Property(bool, notify=preloadRunningChanged)
+    def preloadRunning(self):
+        return get_preload_manager().running
+
+    @Property(str, notify=preloadStatusChanged)
+    def preloadStatus(self): return self._preload_status
+
+    @Property("QVariantMap", notify=cacheSizesChanged)
+    def cacheSizeInfo(self):
+        """Return {details, builds, artwork, buildsLastCached} string map."""
+        return self._cache_sizes
 
     # -- Slots (callable from QML) --
 
@@ -270,15 +324,31 @@ class NanokaBackend(QObject):
         """Load character detail data (called from QML)."""
         from PySide6.QtCore import QThread, Signal as Sig
 
+        self._current_detail_game = game_id
+        self._current_detail_char = char_id
+
         self._detail_loading = True
+        self._detail_name = ""
+        self._detail_subtitle = ""
+        self._detail_level_label = ""
+        self._detail_badges = []
         self._detail_overview = ""
         self._detail_stats = []
+        self._detail_build = []
+        self._detail_skills = []
+        self._detail_extras = []
         self._detail_art_url = ""
+        self._detail_source_url = ""
         self._detail_error = ""
         self.detailLoadingChanged.emit()
+        self.detailHeaderChanged.emit()
         self.detailOverviewChanged.emit()
         self.detailStatsChanged.emit()
+        self.detailBuildChanged.emit()
+        self.detailSkillsChanged.emit()
+        self.detailExtrasChanged.emit()
         self.detailArtUrlChanged.emit()
+        self.detailSourceUrlChanged.emit()
         self.detailErrorChanged.emit()
 
         class _Worker(QThread):
@@ -305,17 +375,63 @@ class NanokaBackend(QObject):
         worker.finished.connect(worker.deleteLater)
         worker.start()
 
+    @Slot()
+    def retryDetails(self):
+        """Retry loading the current character's details after a failure."""
+        if self._current_detail_game and self._current_detail_char:
+            self.loadDetails(self._current_detail_game, self._current_detail_char)
+
     def _on_details_loaded(self, detail):
         self._detail_loading = False
+        self._detail_name = detail.name or ""
+        self._detail_subtitle = detail.subtitle or ""
+        self._detail_level_label = detail.level_label or ""
+        self._detail_badges = list(detail.badges or [])
         self._detail_overview = detail.overview or ""
         self._detail_stats = [
-            {"name": k, "value": str(v)} for k, v in (detail.stats or {}).items()
+            {"name": k, "value": str(v)} for k, v in (detail.stats or [])
+        ]
+        # Build sections: list of {title, items: [...]}
+        self._detail_build = [
+            {"title": s.title, "items": list(s.items)}
+            for s in (detail.build or [])
+        ]
+        # Skills: list of {name, typeName, level, description, multipliers: [{label, value}]}
+        self._detail_skills = [
+            {
+                "name": s.name,
+                "typeName": s.type_name,
+                "level": s.level,
+                "description": s.description or "",
+                "multipliers": [
+                    {"label": lbl, "value": val}
+                    for lbl, val in (s.multipliers or [])
+                ],
+            }
+            for s in (detail.skills or [])
+        ]
+        # Extras: list of {title, entries: [{name, text}]}
+        self._detail_extras = [
+            {
+                "title": ex.title,
+                "entries": [
+                    {"name": e.name, "text": e.text or ""}
+                    for e in (ex.entries or [])
+                ],
+            }
+            for ex in (detail.extras or [])
         ]
         self._detail_art_url = detail.art_url or ""
+        self._detail_source_url = detail.source_url or ""
         self.detailLoadingChanged.emit()
+        self.detailHeaderChanged.emit()
         self.detailOverviewChanged.emit()
         self.detailStatsChanged.emit()
+        self.detailBuildChanged.emit()
+        self.detailSkillsChanged.emit()
+        self.detailExtrasChanged.emit()
         self.detailArtUrlChanged.emit()
+        self.detailSourceUrlChanged.emit()
 
     def _on_details_failed(self, msg: str):
         self._detail_loading = False
@@ -341,8 +457,35 @@ class NanokaBackend(QObject):
     def clearCache(self):
         from ..api import clear_cache
         from .image_loader import clear_image_cache
+        manager = get_preload_manager()
         clear_cache()
         clear_image_cache()
+        manager.last_summary = None
+        manager.last_progress = None
+        manager.last_error = ""
+        self._preload_status = "Cache cleared."
+        self.preloadStatusChanged.emit()
+        self._refresh_cache_sizes()
+
+    @Slot(str)
+    def startPreload(self, kind: str):
+        """Start a preload of the given kind (details/builds/artwork)."""
+        manager = get_preload_manager()
+        if not manager.start(kind):
+            return
+        self._preload_status = "Preparing preload..."
+        self.preloadStatusChanged.emit()
+        self.preloadRunningChanged.emit()
+
+    @Slot()
+    def stopPreload(self):
+        """Cancel the running preload."""
+        get_preload_manager().cancel()
+
+    @Slot()
+    def refreshCacheSizes(self):
+        """Update cache size info (callable from QML)."""
+        self._refresh_cache_sizes()
 
     # -- Internal --
 
@@ -456,8 +599,17 @@ class NanokaBackend(QObject):
         self._cache_label_timer.stop()
         if progress.total:
             self._set_cache_label(f"Preloading {progress.kind} {progress.completed}/{progress.total}")
+            name = getattr(progress, "name", "") or ""
+            if len(name) > 28:
+                name = name[:27].rstrip() + "…"
+            status = f"Preloading {progress.kind} {progress.completed}/{progress.total}"
+            if name:
+                status += f" — {name}"
+            self._preload_status = status
         else:
             self._set_cache_label("Preparing preload...")
+            self._preload_status = "Preparing preload..."
+        self.preloadStatusChanged.emit()
 
     def _on_preload_finished(self, summary):
         if summary.cancelled:
@@ -466,5 +618,48 @@ class NanokaBackend(QObject):
             text = f"Preloaded {summary.completed}/{summary.total} {summary.kind}"
             if summary.failed:
                 text += f", {summary.failed} failed"
+            failed_games = getattr(summary, "failed_games", 0)
+            if failed_games:
+                text += f", {failed_games} game(s) unavailable"
         self._set_cache_label(text)
+        self._preload_status = text
+        self.preloadStatusChanged.emit()
+        self.preloadRunningChanged.emit()
         self._cache_label_timer.start(6000)
+        self._refresh_cache_sizes()
+
+    def _on_preload_failed(self, message: str):
+        self._preload_status = f"Preload failed: {message}"
+        self.preloadStatusChanged.emit()
+        self.preloadRunningChanged.emit()
+
+    def _refresh_cache_sizes(self):
+        """Reload cache-size data and emit cacheSizesChanged."""
+        try:
+            from ..api import cache_sizes
+            from ..api.cache_info import read_build_cache_info
+            from datetime import datetime as dt
+
+            sizes = cache_sizes()
+
+            def _fmt(b: int) -> str:
+                b = max(0, int(b))
+                return "0 kB" if b == 0 else f"{(b + 1023) // 1024:,} kB"
+
+            info = read_build_cache_info()
+            last_ts = float(info.get("last_cached") or 0.0)
+            last_cached = (
+                dt.fromtimestamp(last_ts).strftime("%Y-%m-%d %H:%M")
+                if last_ts > 0
+                else "never"
+            )
+
+            self._cache_sizes = {
+                "details": _fmt(sizes.get("details", 0)),
+                "builds": _fmt(sizes.get("builds", 0)),
+                "artwork": _fmt(sizes.get("artwork", 0)),
+                "buildsLastCached": last_cached,
+            }
+            self.cacheSizesChanged.emit()
+        except Exception:
+            logger.exception("Failed to refresh cache sizes")

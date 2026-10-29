@@ -15,15 +15,15 @@ Kirigami.ApplicationWindow {
 
     Component {
         id: mainPage
-        Kirigami.Page {
+        Kirigami.ScrollablePage {
             title: qsTr("Nanoka Viewer")
-            // header area with status labels and buttons
             actions: [
                 Kirigami.Action {
                     icon.name: "view-refresh"
                     text: qsTr("Reload")
                     enabled: !backend.loadInProgress
                     onTriggered: backend.loadData()
+                    shortcut: "F5"
                 },
                 Kirigami.Action {
                     icon.name: "settings-configure"
@@ -32,19 +32,20 @@ Kirigami.ApplicationWindow {
                 }
             ]
 
-            // Status bar in the header
-            Kirigami.InlineMessage {
+            // Inline cache/preload progress message
+            header: Kirigami.InlineMessage {
                 id: cacheMsg
                 visible: backend.cacheLabel !== ""
                 text: backend.cacheLabel
                 type: Kirigami.MessageType.Information
+                Layout.fillWidth: true
             }
 
             ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
+                width: parent.width
+                spacing: Kirigami.Units.smallSpacing
 
-                // Cache/status labels
+                // Status label (right-aligned, e.g. "Loaded at 12:34")
                 Controls.Label {
                     Layout.fillWidth: true
                     text: backend.statusLabel
@@ -53,24 +54,17 @@ Kirigami.ApplicationWindow {
                     visible: text !== ""
                 }
 
-                // Scrollable list of game sections
-                Kirigami.ScrollablePage {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-
-                    ListView {
-                        id: gameList
-                        model: backend.gameSections
-                        spacing: Kirigami.Units.smallSpacing
-                        delegate: GameSection {
-                            width: gameList.width
-                            gameName: modelData.gameName
-                            gameId: modelData.gameId
-                            cards: modelData.cards
-                            liveVersion: modelData.liveVersion
-                            latestVersion: modelData.latestVersion
-                            statusText: modelData.statusText
-                        }
+                // Game sections list
+                Repeater {
+                    model: backend.gameSections
+                    delegate: GameSection {
+                        Layout.fillWidth: true
+                        gameName: modelData.gameName
+                        gameId: modelData.gameId
+                        cards: modelData.cards
+                        liveVersion: modelData.liveVersion
+                        latestVersion: modelData.latestVersion
+                        statusText: modelData.statusText
                     }
                 }
             }
