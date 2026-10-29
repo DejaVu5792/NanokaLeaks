@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.kirigami.formcard as FormCard
+import org.kde.kirigamiaddons.formcard 1.0 as FormCard
 
 Item {
     id: root
@@ -10,14 +10,12 @@ Item {
     implicitWidth: Kirigami.Units.gridUnit * 34
     implicitHeight: Kirigami.Units.gridUnit * 30
 
-    // Refresh cache sizes when the sheet becomes visible
     onVisibleChanged: if (visible && backend) backend.refreshCacheSizes()
 
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // ── Tab bar ────────────────────────────────────────────────────────
         Controls.TabBar {
             id: tabBar
             Layout.fillWidth: true
@@ -32,16 +30,12 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            // ════════════════════════════════════════════════════════════════
-            // Cache tab
-            // ════════════════════════════════════════════════════════════════
+            // Cache Tab
             Kirigami.ScrollablePage {
-
                 ColumnLayout {
                     width: parent.width
                     spacing: Kirigami.Units.largeSpacing
 
-                    // ── Caching options ─────────────────────────────────────
                     Kirigami.Heading {
                         text: qsTr("Caching")
                         level: 3
@@ -57,14 +51,14 @@ Item {
                             checked: backend ? backend.cacheDetails : true
                             onCheckedChanged: if (backend) backend.cacheDetails = checked
                         }
-                        FormCard.FormDelegateSeparator {}
+                        Kirigami.Separator { Layout.fillWidth: true }
                         FormCard.FormCheckDelegate {
                             text: qsTr("Cache character builds")
                             description: qsTr("Refreshes build tables each version; unchanged tables are revalidated with ETags.")
                             checked: backend ? backend.cacheBuilds : true
                             onCheckedChanged: if (backend) backend.cacheBuilds = checked
                         }
-                        FormCard.FormDelegateSeparator {}
+                        Kirigami.Separator { Layout.fillWidth: true }
                         FormCard.FormCheckDelegate {
                             text: qsTr("Cache character artwork")
                             description: qsTr("Artwork is a large download and uses much more disk space than text caches.")
@@ -73,7 +67,6 @@ Item {
                         }
                     }
 
-                    // ── Preload ─────────────────────────────────────────────
                     Kirigami.Heading {
                         text: qsTr("Preload")
                         level: 3
@@ -110,7 +103,6 @@ Item {
                         }
                     }
 
-                    // Preload progress / status
                     Controls.Label {
                         visible: backend && backend.preloadStatus !== ""
                         text: backend ? backend.preloadStatus : ""
@@ -119,7 +111,6 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    // ── Cache sizes ─────────────────────────────────────────
                     Kirigami.Heading {
                         text: qsTr("Cache Sizes")
                         level: 3
@@ -132,34 +123,32 @@ Item {
                         FormCard.FormTextDelegate {
                             text: qsTr("Details cache")
                             description: backend && backend.cacheSizeInfo["details"]
-                                         ? backend.cacheSizeInfo["details"] : "—"
+                            ? backend.cacheSizeInfo["details"] : "—"
                         }
-                        FormCard.FormDelegateSeparator {}
+                        Kirigami.Separator { Layout.fillWidth: true }
                         FormCard.FormTextDelegate {
                             text: qsTr("Builds cache")
                             description: {
                                 if (!backend) return "—"
-                                var sz = backend.cacheSizeInfo["builds"] || "—"
-                                var last = backend.cacheSizeInfo["buildsLastCached"] || ""
-                                return last ? sz + " · Last cached: " + last : sz
+                                    var sz = backend.cacheSizeInfo["builds"] || "—"
+                                    var last = backend.cacheSizeInfo["buildsLastCached"] || ""
+                                    return last ? sz + " · Last cached: " + last : sz
                             }
                         }
-                        FormCard.FormDelegateSeparator {}
+                        Kirigami.Separator { Layout.fillWidth: true }
                         FormCard.FormTextDelegate {
                             text: qsTr("Artwork cache")
                             description: backend && backend.cacheSizeInfo["artwork"]
-                                         ? backend.cacheSizeInfo["artwork"] : "—"
+                            ? backend.cacheSizeInfo["artwork"] : "—"
                         }
                     }
 
-                    // Clear cache button
                     Controls.Button {
                         text: qsTr("Clear cache")
                         icon.name: "edit-clear-all"
                         enabled: backend && !backend.preloadRunning
-                        toolTipText: backend && backend.preloadRunning
-                                     ? qsTr("Stop the running preload before clearing it.")
-                                     : ""
+                        Controls.ToolTip.text: qsTr("Stop the running preload before clearing it.")
+                        Controls.ToolTip.visible: hovered && backend && backend.preloadRunning
                         onClicked: if (backend) backend.clearCache()
                     }
 
@@ -167,11 +156,8 @@ Item {
                 }
             }
 
-            // ════════════════════════════════════════════════════════════════
-            // Games tab
-            // ════════════════════════════════════════════════════════════════
+            // Games Tab
             Kirigami.ScrollablePage {
-
                 ColumnLayout {
                     width: parent.width
                     spacing: Kirigami.Units.largeSpacing
@@ -201,13 +187,13 @@ Item {
                                 FormCard.FormCheckDelegate {
                                     text: modelData.name
                                     checked: modelData.enabled
-                                    // Avoid triggering on initial binding
                                     onCheckedChanged: {
                                         if (backend && modelData.enabled !== checked)
                                             backend.setGameEnabled(modelData.id, checked)
                                     }
                                 }
-                                FormCard.FormDelegateSeparator {
+                                Kirigami.Separator {
+                                    Layout.fillWidth: true
                                     visible: index < (backend ? backend.allGames.length - 1 : 0)
                                 }
                             }

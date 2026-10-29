@@ -86,11 +86,11 @@ Item {
         }
 
         // Horizontal card row
-        ScrollView {
+        Controls.ScrollView {
             Layout.fillWidth: true
             height: 240
-            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-            ScrollBar.vertical.policy: ScrollBar.AlwaysOff
+            Controls.ScrollBar.horizontal.policy: Controls.ScrollBar.AsNeeded
+            Controls.ScrollBar.vertical.policy: Controls.ScrollBar.AlwaysOff
             clip: true
 
             Row {

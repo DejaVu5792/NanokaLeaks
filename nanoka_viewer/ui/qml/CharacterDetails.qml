@@ -334,8 +334,8 @@ Item {
                                 ColumnLayout {
                                     visible: skillToggle.expanded
                                     Layout.fillWidth: true
+                                    Layout.leftMargin: Kirigami.Units.largeSpacing
                                     spacing: Kirigami.Units.smallSpacing
-                                    leftPadding: Kirigami.Units.largeSpacing
 
                                     Controls.Label {
                                         visible: modelData.description !== ""
@@ -448,9 +448,9 @@ Item {
                                 ColumnLayout {
                                     visible: extraToggle.expanded
                                     Layout.fillWidth: true
+                                    Layout.leftMargin: Kirigami.Units.largeSpacing
+                                    Layout.bottomMargin: Kirigami.Units.smallSpacing
                                     spacing: Kirigami.Units.smallSpacing
-                                    leftPadding: Kirigami.Units.largeSpacing
-                                    bottomPadding: Kirigami.Units.smallSpacing
 
                                     Repeater {
                                         model: modelData.entries
