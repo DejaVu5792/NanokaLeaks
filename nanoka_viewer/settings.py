@@ -13,6 +13,9 @@ DEFAULT_SETTINGS = {
     # often than detail text, so they remain a separate cache category.
     "cache_character_builds": True,
     "cache_character_artwork": True,
+    # Experimental: shift the details artwork toward the spectral-residual
+    # saliency centroid instead of the geometric centre.
+    "sr_centroid_centering": True,
 }
 
 _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")

@@ -8,6 +8,7 @@ dependencies = [
     "requests",
     "pillow",
     "pyside6>=6.11.0",
+    "numpy>=2.4.6",
 ]
 
 [build-system]

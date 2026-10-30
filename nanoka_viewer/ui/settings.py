@@ -407,6 +407,38 @@ class SettingsPopup(OverlayPopup):
         self.game_order_list.order_changed.connect(self._on_game_order_changed)
         order_layout.addWidget(self.game_order_list, 1)
         body_layout.addWidget(order_card, 1)
+
+        body_layout.addSpacing(8)
+
+        experimental_header = self._make_section_header(
+            "Experimental",
+            "Reset experimental options to their defaults",
+            self._reset_experimental_section,
+        )
+        body_layout.addWidget(experimental_header)
+
+        experimental_hint = QLabel(
+            "Experimental artwork options. Changes apply the next time a "
+            "character detail popup opens."
+        )
+        experimental_hint.setObjectName("settingsHint")
+        experimental_hint.setWordWrap(True)
+        body_layout.addWidget(experimental_hint)
+
+        experimental_card, experimental_layout = self._make_form_card()
+        self.sr_centroid = QCheckBox("Smart artwork centering")
+        self.sr_centroid.setObjectName("settingsCheckBox")
+        self.sr_centroid.setToolTip(
+            "Offsets the details artwork horizontally toward the "
+            "spectral-residual saliency centroid. On by default."
+        )
+        self.sr_centroid.setChecked(
+            bool(load_settings().get("sr_centroid_centering", True))
+        )
+        self.sr_centroid.toggled.connect(self._save_experimental)
+        experimental_layout.addWidget(self.sr_centroid)
+        body_layout.addWidget(experimental_card)
+
         return self._scroll_page(body)
 
     def _add_cache_row(
@@ -477,6 +509,7 @@ class SettingsPopup(OverlayPopup):
         self.cache_artwork.setChecked(
             bool(settings.get("cache_character_artwork", True))
         )
+        self._load_experimental(settings)
         self._load_game_settings(settings)
         self._refresh_game_counts()
         self.tabs.setCurrentIndex(0)
@@ -495,6 +528,20 @@ class SettingsPopup(OverlayPopup):
                 "cache_character_artwork": self.cache_artwork.isChecked(),
             }
         )
+        save_settings(settings)
+
+    def _load_experimental(self, settings: dict):
+        self.sr_centroid.blockSignals(True)
+        try:
+            self.sr_centroid.setChecked(
+                bool(settings.get("sr_centroid_centering", True))
+            )
+        finally:
+            self.sr_centroid.blockSignals(False)
+
+    def _save_experimental(self, _checked: bool = False):
+        settings = dict(load_settings())
+        settings["sr_centroid_centering"] = self.sr_centroid.isChecked()
         save_settings(settings)
 
     # -- Games tab ---------------------------------------------------------
@@ -635,6 +682,16 @@ class SettingsPopup(OverlayPopup):
             checkbox.blockSignals(False)
         self._save_and_apply()
         self._sync_preload_state()
+
+    def _reset_experimental_section(self):
+        self.sr_centroid.blockSignals(True)
+        try:
+            self.sr_centroid.setChecked(
+                bool(DEFAULT_SETTINGS["sr_centroid_centering"])
+            )
+        finally:
+            self.sr_centroid.blockSignals(False)
+        self._save_experimental()
 
     def _reset_toggle_section(self):
         settings = dict(load_settings())
