@@ -81,24 +81,23 @@ Item {
             source: details.artSource
             asynchronous: true
             smooth: true
+            mipmap: true          // proper downscale filtering
             cache: false
             fillMode: Image.Stretch
 
             readonly property real coverScale: Math.max(
                 artFrame.width / Math.max(1, implicitWidth),
-                artFrame.height / Math.max(1, implicitHeight))
+                                                        artFrame.height / Math.max(1, implicitHeight))
 
-            width: implicitWidth * coverScale
-            height: implicitHeight * coverScale
-            x: (artFrame.width - width) / 2
+            // whole pixels so the texture isn't resampled at a half-pixel offset
+            width: Math.round(implicitWidth * coverScale)
+            height: Math.round(implicitHeight * coverScale)
+            x: Math.round((artFrame.width - width) / 2)
             y: 0
             opacity: status === Image.Ready ? 1 : 0
 
             Behavior on opacity {
-                NumberAnimation {
-                    duration: 180
-                    easing.type: Easing.OutCubic
-                }
+                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
             }
         }
     }
