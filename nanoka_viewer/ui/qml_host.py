@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QUrl
+from PySide6.QtCore import QCoreApplication, Qt, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -83,12 +83,25 @@ def _configure_graphics_api() -> None:
     _GRAPHICS_API_CONFIGURED = True
 
 
-def create_qml_widget(parent=None, context_properties=None) -> QQuickWidget:
-    """Create a ``QQuickWidget`` hosting ``Main.qml``.
+def create_qml_widget(
+    parent=None,
+    context_properties=None,
+    *,
+    source: str = "Main.qml",
+    image_providers=None,
+    translucent: bool = False,
+) -> QQuickWidget:
+    """Create a ``QQuickWidget`` hosting one of the QML trees.
 
     The widget resizes its root item to its own size, so callers only have to
     place it in a layout.  *context_properties* maps names to Python objects
-    exposed to the QML tree (``viewer`` and ``sections`` for the real window).
+    exposed to the QML tree (``viewer`` and ``sections`` for the real window,
+    ``details`` for the details popup).
+
+    *source* is relative to the QML directory; *image_providers* adds
+    ``image://`` providers beside the shared ``image://nanoka`` one.
+    *translucent* lets the widget composite over what is behind it, which the
+    popups need so their rounded corners show the dimmed backdrop.
 
     Everything the tree needs is registered *before* ``setSource``: QML
     evaluates bindings while loading, so a context property added afterwards
@@ -106,13 +119,18 @@ def create_qml_widget(parent=None, context_properties=None) -> QQuickWidget:
 
     widget = QQuickWidget(parent)
     widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+    if translucent:
+        widget.setClearColor(Qt.GlobalColor.transparent)
+        widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
     widget.engine().addImageProvider(PROVIDER_ID, NanokaImageProvider())
+    for provider_id, provider in (image_providers or {}).items():
+        widget.engine().addImageProvider(provider_id, provider)
     for name, value in (context_properties or {}).items():
         widget.rootContext().setContextProperty(name, value)
-    widget.setSource(QUrl.fromLocalFile(str(qml_file())))
+    widget.setSource(QUrl.fromLocalFile(str(qml_file(source))))
 
     if widget.status() != QQuickWidget.Status.Ready:
         details = "\n".join(error.toString() for error in widget.errors())
-        logger.error("Failed to load the QML UI:\n%s", details)
-        raise RuntimeError(f"Could not load Main.qml:\n{details}")
+        logger.error("Failed to load %s:\n%s", source, details)
+        raise RuntimeError(f"Could not load {source}:\n{details}")
     return widget

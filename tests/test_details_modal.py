@@ -23,6 +23,7 @@ import nanoka_viewer.ui.details as details
 from support import (
     QtTestCase,
     button_center_in,
+    find_qml_item,
     flush,
     make_details_host,
     open_details_for,
@@ -203,12 +204,19 @@ class BackdropAndLifecycleTests(QtTestCase):
         self.track_window(window)
         popup = open_details_for(window, button)
 
-        close_button = next(
-            child
-            for child in popup.panel.findChildren(QPushButton)
-            if child.text() == "Close"
+        close_button = find_qml_item(
+            popup._qml.rootObject(), "detailsCloseButton"
         )
-        QTest.mouseClick(close_button, Qt.MouseButton.LeftButton)
+        self.assertIsNotNone(close_button, "the QML Close button was not created")
+        root = popup._qml.rootObject()
+        centre = close_button.mapToItem(
+            root, close_button.width() / 2, close_button.height() / 2
+        )
+        QTest.mouseClick(
+            popup._qml,
+            Qt.MouseButton.LeftButton,
+            pos=QPoint(round(centre.x()), round(centre.y())),
+        )
         flush()
 
         self.assertFalse(

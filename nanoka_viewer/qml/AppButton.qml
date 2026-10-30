@@ -13,6 +13,8 @@ AbstractButton {
     property bool primary: false
     property bool small: false
     property bool square: false
+    // Disclosure rows read as a list entry, not as a centred button.
+    property bool alignLeft: false
 
     implicitHeight: small ? 28 : 32
     implicitWidth: square
@@ -31,7 +33,7 @@ AbstractButton {
         color: control.primary
             ? palette.highlightedText
             : control.enabled ? palette.buttonText : palette.placeholderText
-        horizontalAlignment: Text.AlignHCenter
+        horizontalAlignment: control.alignLeft ? Text.AlignLeft : Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }

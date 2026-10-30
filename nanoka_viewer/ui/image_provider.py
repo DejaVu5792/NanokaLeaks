@@ -13,6 +13,7 @@ a second download path or a second copy of the cache.
 from __future__ import annotations
 
 import logging
+import threading
 
 from PySide6.QtCore import QSize, QUrl
 from PySide6.QtGui import QImage
@@ -24,6 +25,11 @@ from .image_loader import load_qt_image_sync
 logger = logging.getLogger(__name__)
 
 PROVIDER_ID = "nanoka"
+
+# Second provider, used by the details popup: artwork arrives as raw bytes from
+# its own cache/download path, so it is registered under a token instead of a
+# URL.
+ART_PROVIDER_ID = "nanokaart"
 
 # Used when a request omits (or corrupts) its size parameters.
 DEFAULT_SIZE = 100
@@ -87,6 +93,47 @@ class NanokaImageProvider(QQuickImageProvider):
             return QImage()
 
         # ``size`` is the out-parameter telling the engine the real image size.
+        if size is not None:
+            size.setWidth(image.width())
+            size.setHeight(image.height())
+        return image
+
+
+class NanokaArtProvider(QQuickImageProvider):
+    """Serve already-decoded artwork to QML under short-lived tokens.
+
+    The details popup loads artwork through its own cache/download path, which
+    yields raw bytes rather than a URL the QML image loader could fetch.  The
+    controller decodes each image once and registers it here; QML asks for
+    ``image://nanokaart/<token>``.  A fresh token per character busts QML's
+    per-URL image cache without evicting anything globally, and :meth:`clear`
+    releases the decoded image when the popup moves on.
+
+    ``requestImage`` can be called from the QML image thread, hence the lock.
+    """
+
+    def __init__(self):
+        super().__init__(QQuickImageProvider.ImageType.Image)
+        self._images: dict[str, QImage] = {}
+        self._lock = threading.Lock()
+
+    def add(self, token: str, image: QImage) -> str:
+        """Register *image* under *token* and return its ``image://`` URL."""
+        with self._lock:
+            self._images[str(token)] = image
+        return f"image://{ART_PROVIDER_ID}/{token}"
+
+    def clear(self) -> None:
+        """Forget every registered image."""
+        with self._lock:
+            self._images.clear()
+
+    def requestImage(self, image_id, size, requested_size):  # noqa: N802
+        with self._lock:
+            image = self._images.get(image_id)
+        if image is None or image.isNull():
+            return QImage()
+
         if size is not None:
             size.setWidth(image.width())
             size.setHeight(image.height())

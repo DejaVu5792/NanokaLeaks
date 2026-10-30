@@ -1,8 +1,9 @@
 """Reusable placeholder widgets for loading states.
 
 The main card grid is QML now (its placeholders live in
-``nanoka_viewer/qml/CharacterCard.qml``); these widgets are what the
-widget-based popups (details, settings) still use:
+``nanoka_viewer/qml/CharacterCard.qml``), and the details popup's skeletons
+live in ``nanoka_viewer/qml/details``; these widgets are what the settings
+popup still uses:
 
 * :class:`SkeletonBlock` paints a rounded block using the widget's palette, so
   it follows the system theme without a second stylesheet.
@@ -11,8 +12,8 @@ widget-based popups (details, settings) still use:
   whole widget subtree through a pixmap, which interacts badly with fractional
   display scaling and can make content look compressed or misaligned.
 
-Pulses are parented to the widget they animate, so deleting a skeleton (for
-example when the details popup is cleared) also stops its animation.
+Pulses are parented to the widget they animate, so deleting a skeleton also
+stops its animation.
 """
 
 from __future__ import annotations
@@ -31,9 +32,6 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 PULSE_DURATION_MS = 1800
 PULSE_LOW_OPACITY = 0.55
 PULSE_HIGH_OPACITY = 0.95
-
-# Used by the details popup's artwork cross-fade.
-REVEAL_DURATION_MS = 180
 
 
 def skeleton_color(palette: QPalette) -> QColor:
