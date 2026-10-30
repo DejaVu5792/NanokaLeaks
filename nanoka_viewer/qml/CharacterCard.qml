@@ -232,18 +232,18 @@ Item {
         visible: card.isNew
         anchors.left: parent.left
         anchors.top: parent.top
-        anchors.margins: 4
-        radius: 3
+        anchors.margins: 3
+        radius: 6
         color: palette.highlight
-        implicitWidth: newLabel.implicitWidth + 6
-        implicitHeight: newLabel.implicitHeight + 2
+        implicitWidth: newLabel.implicitWidth + 8
+        implicitHeight: newLabel.implicitHeight + 4
 
         Text {
             id: newLabel
             anchors.centerIn: parent
             text: "NEW"
             color: palette.highlightedText
-            font.pixelSize: 8
+            font.pixelSize: 9
             font.bold: true
         }
     }

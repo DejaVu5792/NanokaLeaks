@@ -14,8 +14,8 @@ Rectangle {
                                     + palette.window.g * 0.587
                                     + palette.window.b * 0.114 < 0.5
 
-    implicitWidth: label.implicitWidth + 12
-    implicitHeight: label.implicitHeight + 4
+    implicitWidth: label.implicitWidth + 14
+    implicitHeight: label.implicitHeight + 6
     radius: 4
     border.width: 1
 
@@ -35,7 +35,7 @@ Rectangle {
         id: label
         anchors.centerIn: parent
         text: badge.text
-        font.pixelSize: 10
+        font.pixelSize: 12
         font.bold: true
         color: badge.live
             ? (badge.darkTheme ? "#4CAF50" : "#2E7D32")
