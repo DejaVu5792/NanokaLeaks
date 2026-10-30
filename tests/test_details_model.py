@@ -136,6 +136,18 @@ class DetailsViewModelTests(QtTestCase):
         self.assertEqual(self.model.artState, "unavailable")
         self.assertEqual(self.model.artSource, "")
 
+    def test_art_focus_defaults_to_centre_and_accepts_a_centroid(self):
+        self.assertEqual(self.model.artFocusX, 0.5)
+
+        self.model.set_art("image://nanokaart/1", 0.72)
+        self.assertAlmostEqual(self.model.artFocusX, 0.72)
+
+        self.model.set_art("image://nanokaart/1", 1.4)
+        self.assertEqual(self.model.artFocusX, 1.0)
+
+        self.model.set_art_unavailable()
+        self.assertEqual(self.model.artFocusX, 0.5)
+
     def test_error_state_drops_the_content(self):
         self.model.set_detail(make_detail())
         self.model.set_error("nanoka has no page for this character yet")

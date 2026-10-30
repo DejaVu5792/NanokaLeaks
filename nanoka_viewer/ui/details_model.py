@@ -91,6 +91,9 @@ class DetailsViewModel(QObject):
 
     artState = Property(str, lambda self: self._art_state, notify=artChanged)
     artSource = Property(str, lambda self: self._art_source, notify=artChanged)
+    artFocusX = Property(
+        float, lambda self: self._art_focus_x, notify=artChanged
+    )
     artName = Property(str, lambda self: self._art_name, notify=artChanged)
     artMeta = Property(str, lambda self: self._art_meta, notify=artChanged)
     artMessage = Property(
@@ -120,6 +123,7 @@ class DetailsViewModel(QObject):
         self._build_rows: list[list[dict]] = []
         self._art_state = ART_HIDDEN
         self._art_source = ""
+        self._art_focus_x = 0.5
         self._art_name = ""
         self._art_meta = ""
         self._art_message = ""
@@ -246,9 +250,14 @@ class DetailsViewModel(QObject):
         self._art_state = ART_SKELETON
         self.artChanged.emit()
 
-    def set_art(self, source: str):
-        """Show the decoded artwork served by *source*."""
+    def set_art(self, source: str, focus_x: float = 0.5):
+        """Show the decoded artwork served by *source*.
+
+        ``focus_x`` is the saliency centroid used as the horizontal crop
+        centre (0.5 is the geometric centre).
+        """
         self._art_source = source
+        self._art_focus_x = min(1.0, max(0.0, float(focus_x)))
         self._art_state = ART_READY if source else ART_UNAVAILABLE
         self._art_message = "" if source else "Art unavailable"
         self.artChanged.emit()
@@ -256,6 +265,7 @@ class DetailsViewModel(QObject):
     def set_art_unavailable(self, message: str = "Art unavailable"):
         """Drop the artwork and explain why the column is empty."""
         self._art_source = ""
+        self._art_focus_x = 0.5
         self._art_state = ART_UNAVAILABLE
         self._art_message = message
         self.artChanged.emit()

@@ -35,6 +35,8 @@ from ..api.details import (
     load_character_build,
     load_character_detail,
 )
+from ..saliency import sr_centroid_x
+from ..settings import get_setting
 from .details_model import DetailsViewModel
 from .image_provider import ART_PROVIDER_ID, NanokaArtProvider
 from .overlay import OverlayPopup, is_alive
@@ -100,10 +102,17 @@ class _ArtLoadThread(QThread):
 
     def run(self):
         data = load_character_art(self._url)
-        if data:
-            self.loaded.emit(data)
-        else:
+        if not data:
             self.failed.emit()
+            return
+
+        focus_x = 0.5
+        if get_setting("sr_centroid_centering"):
+            try:
+                focus_x = sr_centroid_x(data)
+            except Exception:  # noqa: BLE001 - artwork must still render
+                logger.exception("Could not compute artwork focus")
+        self.loaded.emit((data, focus_x))
 
 
 class CharacterDetailsPopup(OverlayPopup):
@@ -304,17 +313,21 @@ class CharacterDetailsPopup(OverlayPopup):
             self._art_thread = None
         thread.deleteLater()
 
-    def _on_art_loaded(self, request_id: int, data: bytes):
+    def _on_art_loaded(self, request_id: int, payload: object):
         if request_id != self._request_id or not self.isVisible():
             return
         self._cancel_deferred_art_loading()
+        if isinstance(payload, tuple):
+            data, focus_x = payload
+        else:
+            data, focus_x = payload, 0.5
         image = QImage()
         if not image.loadFromData(data):
             self._set_art_message("Art unavailable")
             return
         self._art_token += 1
         source = self._art_provider.add(str(self._art_token), image)
-        self._model.set_art(source)
+        self._model.set_art(source, focus_x)
 
     def _on_art_failed(self, request_id: int):
         if request_id != self._request_id or not self.isVisible():

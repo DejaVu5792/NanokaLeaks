@@ -81,6 +81,24 @@ class SettingsGamesTabTests(QtTestCase):
         self.assertGreaterEqual(len(cards), 2)
         self.assertGreaterEqual(len(separators), 2)
 
+    def test_smart_centering_defaults_on_and_saves(self):
+        self.assertTrue(self.popup.sr_centroid.isChecked())
+
+        self.popup.sr_centroid.setChecked(False)
+        flush()
+
+        self.assertFalse(self.settings["sr_centroid_centering"])
+
+    def test_smart_centering_reset_restores_default(self):
+        self.popup.sr_centroid.setChecked(False)
+        flush()
+
+        self.popup.section_resets["Experimental"].click()
+        flush()
+
+        self.assertTrue(self.popup.sr_centroid.isChecked())
+        self.assertTrue(self.settings["sr_centroid_centering"])
+
     def test_all_games_are_checked_by_default(self):
         for game in GAMES:
             self.assertTrue(self.popup.game_checkboxes[game].isChecked(), game)

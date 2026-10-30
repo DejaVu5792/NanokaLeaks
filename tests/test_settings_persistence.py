@@ -17,6 +17,19 @@ class SettingsPersistenceTests(unittest.TestCase):
         self.assertTrue(normalized["cache_character_details"])
         self.assertFalse(normalized["cache_character_artwork"])
 
+    def test_sr_centroid_centering_defaults_on(self):
+        self.assertTrue(app_settings._normalize({})["sr_centroid_centering"])
+        self.assertTrue(
+            app_settings._normalize({"sr_centroid_centering": True})[
+                "sr_centroid_centering"
+            ]
+        )
+        self.assertFalse(
+            app_settings._normalize({"sr_centroid_centering": False})[
+                "sr_centroid_centering"
+            ]
+        )
+
     def test_games_are_enabled_by_default(self):
         normalized = app_settings._normalize({})
 

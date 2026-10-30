@@ -92,7 +92,11 @@ Item {
             // whole pixels so the texture isn't resampled at a half-pixel offset
             width: Math.round(implicitWidth * coverScale)
             height: Math.round(implicitHeight * coverScale)
-            x: Math.round((artFrame.width - width) / 2)
+            // details.artFocusX (0..1) is the saliency centroid; 0.5 is the
+            // old centre crop. Clamp so the artwork never reveals an edge.
+            x: Math.round(Math.min(0, Math.max(
+                artFrame.width - width,
+                artFrame.width / 2 - details.artFocusX * width)))
             y: 0
             opacity: status === Image.Ready ? 1 : 0
 
