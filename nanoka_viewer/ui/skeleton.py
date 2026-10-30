@@ -1,18 +1,15 @@
 """Reusable placeholder widgets for loading states.
 
-A loading placeholder must occupy exactly the footprint of the content it
-replaces, otherwise the real content visibly snaps into position when it
-arrives.  The helpers here keep that contract in one place:
+The main card grid is QML now (its placeholders live in
+``nanoka_viewer/qml/CharacterCard.qml``); these widgets are what the
+widget-based popups (details, settings) still use:
 
 * :class:`SkeletonBlock` paints a rounded block using the widget's palette, so
   it follows the system theme without a second stylesheet.
 * :class:`SkeletonPulse` animates the *alpha the skeletons paint with*.  It
   deliberately does not use ``QGraphicsOpacityEffect``: an effect rerenders a
   whole widget subtree through a pixmap, which interacts badly with fractional
-  display scaling and can make a card row look compressed or misaligned.
-* :class:`SkeletonThumbnail` owns the whole lifecycle of an image placeholder:
-  it pulses until the pixmap arrives, then cross-fades into the image while
-  clipping both to the same rounded shape.
+  display scaling and can make content look compressed or misaligned.
 
 Pulses are parented to the widget they animate, so deleting a skeleton (for
 example when the details popup is cleared) also stops its animation.
@@ -28,12 +25,14 @@ from PySide6.QtCore import (
     Qt,
     QVariantAnimation,
 )
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 PULSE_DURATION_MS = 1800
 PULSE_LOW_OPACITY = 0.55
 PULSE_HIGH_OPACITY = 0.95
+
+# Used by the details popup's artwork cross-fade.
 REVEAL_DURATION_MS = 180
 
 
@@ -122,10 +121,9 @@ class SkeletonPulse(QObject):
 def _skeleton_targets(widget: QWidget) -> list[QWidget]:
     """Return every skeleton inside *widget* (including the widget itself)."""
     targets = []
-    if isinstance(widget, (SkeletonBlock, SkeletonThumbnail)):
+    if isinstance(widget, SkeletonBlock):
         targets.append(widget)
-    for kind in (SkeletonBlock, SkeletonThumbnail):
-        targets.extend(widget.findChildren(kind))
+    targets.extend(widget.findChildren(SkeletonBlock))
     return targets
 
 
@@ -196,122 +194,3 @@ class SkeletonBlock(QWidget):
 
         rect = QRectF(self.rect())
         painter.drawRoundedRect(rect, self._radius, self._radius)
-
-
-class SkeletonThumbnail(QWidget):
-    """Image placeholder that keeps the final thumbnail's exact geometry.
-
-    The skeleton is painted in the same rectangle the image will occupy, and
-    the image is clipped to the same rounded shape.  Both states therefore
-    line up pixel-for-pixel; only the content changes.
-    """
-
-    def __init__(
-        self,
-        width: int,
-        height: int,
-        radius: float = 8.0,
-        *,
-        parent: QWidget | None = None,
-    ):
-        super().__init__(parent)
-        self._radius = float(radius)
-        self._pixmap: QPixmap | None = None
-        self._failed = False
-        self._pulse_alpha = 255
-        self._image_opacity = 1.0
-        self.setFixedSize(width, height)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-
-        self._fade = QVariantAnimation(self)
-        self._fade.setDuration(REVEAL_DURATION_MS)
-        self._fade.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._fade.setStartValue(0.0)
-        self._fade.setEndValue(1.0)
-        self._fade.valueChanged.connect(self._set_image_opacity)
-
-        start_pulse(self)
-
-    def _get_pulse_alpha(self) -> int:
-        return self._pulse_alpha
-
-    def _set_pulse_alpha(self, value: int):
-        self._pulse_alpha = max(0, min(255, int(value)))
-        self.update()
-
-    pulseAlpha = Property(int, _get_pulse_alpha, _set_pulse_alpha)
-
-    def _set_image_opacity(self, value: float):
-        self._image_opacity = float(value)
-        self.update()
-
-    @property
-    def has_image(self) -> bool:
-        """Whether a successfully decoded image is displayed."""
-        return self._pixmap is not None and not self._failed
-
-    def set_image(self, pixmap: QPixmap | None):
-        """Show *pixmap*, cross-fading from the skeleton when visible."""
-        if pixmap is None or pixmap.isNull():
-            self.set_failed()
-            return
-
-        stop_pulse(self)
-        self._pixmap = pixmap
-        self._failed = False
-        self._fade.stop()
-
-        if self.isVisible():
-            self._image_opacity = 0.0
-            self._fade.start()
-        else:
-            self._image_opacity = 1.0
-        self.update()
-
-    def set_failed(self):
-        """Stop loading and show a subdued unavailable-image placeholder."""
-        stop_pulse(self)
-        self._fade.stop()
-        self._pixmap = None
-        self._failed = True
-        self._image_opacity = 1.0
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        rect = QRectF(self.rect())
-        path = QPainterPath()
-        path.addRoundedRect(rect, self._radius, self._radius)
-        painter.setClipPath(path)
-
-        skeleton_alpha = 1.0
-        if self._pixmap is not None:
-            skeleton_alpha = 1.0 - self._image_opacity
-
-        if skeleton_alpha > 0.0:
-            color = skeleton_color(self.palette())
-            color.setAlpha(int(self._pulse_alpha * skeleton_alpha))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(color)
-            painter.drawRoundedRect(rect, self._radius, self._radius)
-
-        if self._pixmap is not None:
-            painter.setOpacity(self._image_opacity)
-            painter.drawPixmap(0, 0, self._pixmap)
-
-        if self._failed:
-            self._paint_unavailable(painter, rect)
-
-    def _paint_unavailable(self, painter: QPainter, rect: QRectF):
-        """Draw a quiet dash so a failed thumbnail is not mistaken for loading."""
-        color = QColor(self.palette().color(QPalette.ColorRole.PlaceholderText))
-        color.setAlphaF(0.7)
-        pen = QPen(color, 1.5)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        centre = rect.center()
-        painter.drawLine(
-            centre.x() - 6.0, centre.y(), centre.x() + 6.0, centre.y()
-        )

@@ -4,18 +4,12 @@ from __future__ import annotations
 
 import unittest
 
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QColor, QPalette, QPixmap
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 from support import QtTestCase, flush, wait
 
-from nanoka_viewer.ui.skeleton import (
-    SkeletonBlock,
-    SkeletonThumbnail,
-    start_pulse,
-    stop_pulse,
-)
+from nanoka_viewer.ui.skeleton import SkeletonBlock, start_pulse, stop_pulse
 
 
 class SkeletonBlockTests(QtTestCase):
@@ -74,58 +68,6 @@ class SkeletonBlockTests(QtTestCase):
         stop_pulse(container)
         self.assertEqual(first.pulseAlpha, 255)
         self.assertEqual(second.pulseAlpha, 255)
-
-
-class SkeletonThumbnailTests(QtTestCase):
-    def _pixmap(self, colour="#ff0000") -> QPixmap:
-        pixmap = QPixmap(80, 80)
-        pixmap.fill(QColor(colour))
-        return pixmap
-
-    def test_thumbnail_is_the_requested_size_in_both_states(self):
-        thumbnail = SkeletonThumbnail(80, 80, radius=8)
-        thumbnail.show()
-        self.addCleanup(thumbnail.deleteLater)
-        flush()
-
-        self.assertEqual(thumbnail.size(), QSize(80, 80))
-        self.assertFalse(thumbnail.has_image)
-        self.assertIsNone(thumbnail.graphicsEffect())
-
-        thumbnail.set_image(self._pixmap())
-        wait(260)  # let the short cross-fade finish
-
-        self.assertTrue(thumbnail.has_image)
-        self.assertEqual(thumbnail.size(), QSize(80, 80))
-        self.assertEqual(thumbnail.pulseAlpha, 255)
-        image = thumbnail.grab().toImage()
-        self.assertEqual(image.pixelColor(40, 40).name(), "#ff0000")
-        # The image is clipped to the same rounded shape as the skeleton.
-        self.assertNotEqual(image.pixelColor(1, 1).name(), "#ff0000")
-
-    def test_failed_thumbnail_keeps_the_footprint_and_stops_pulsing(self):
-        thumbnail = SkeletonThumbnail(80, 80)
-        thumbnail.show()
-        self.addCleanup(thumbnail.deleteLater)
-        flush()
-
-        thumbnail.set_failed()
-        flush()
-
-        self.assertFalse(thumbnail.has_image)
-        self.assertEqual(thumbnail.size(), QSize(80, 80))
-        self.assertEqual(thumbnail.pulseAlpha, 255)
-
-    def test_hidden_thumbnail_does_not_animate_a_fade(self):
-        thumbnail = SkeletonThumbnail(80, 80)
-        self.addCleanup(thumbnail.deleteLater)
-
-        thumbnail.set_image(self._pixmap())
-        flush()
-
-        self.assertTrue(thumbnail.has_image)
-        image = thumbnail.grab().toImage()
-        self.assertEqual(image.pixelColor(40, 40).name(), "#ff0000")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,12 @@
-"""Main application window for Nanoka Viewer."""
+"""Main application window for Nanoka Viewer.
+
+The window is still a ``QMainWindow`` (title, icon, minimum size, close-time
+thread handling), but its central widget is a ``QQuickWidget`` rendering the
+QML tree in ``nanoka_viewer/qml``.  Python keeps the state machine: it exposes
+the header's text/enabled flags as Qt properties, the game rows through
+:class:`~nanoka_viewer.ui.view_model.SectionsModel`, and the few user actions
+as slots the delegates invoke.
+"""
 
 import logging
 import sys
@@ -6,28 +14,30 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QTimer
-from PySide6.QtGui import QCursor, QIcon
-from PySide6.QtWidgets import (
-    QApplication,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QPushButton,
-    QScrollArea,
-    QVBoxLayout,
-    QWidget,
+from PySide6.QtCore import (
+    QCoreApplication,
+    QEvent,
+    QObject,
+    Property,
+    QTimer,
+    QUrl,
+    Signal,
+    Slot,
 )
+from PySide6.QtGui import QCursor, QIcon
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 from ..api import GAMES, fetch_manifest
 from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
 from ..settings import get_enabled_games
+from .details import open_details
+from .external import open_external_url
 from .loader import LoadThread
 from .preload import get_preload_manager
-from .section import GameSection
+from .qml_host import create_qml_widget
 from .settings import open_settings
 from .styles import STYLESHEET
+from .view_model import SectionsModel
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +118,26 @@ def _install_mouse_trace(app):
 class NanokaViewer(QMainWindow):
     """Main application window for viewing Nanoka character data."""
 
+    # Header state lives in Python so the load state machine stays testable
+    # without a QML engine; the QML labels/buttons bind to these properties.
+    statusTextChanged = Signal()
+    cacheTextChanged = Signal()
+    reloadTextChanged = Signal()
+    reloadEnabledChanged = Signal()
+
+    statusText = Property(
+        str, lambda self: self._status_text, notify=statusTextChanged
+    )
+    cacheText = Property(
+        str, lambda self: self._cache_text, notify=cacheTextChanged
+    )
+    reloadText = Property(
+        str, lambda self: self._reload_text, notify=reloadTextChanged
+    )
+    reloadEnabled = Property(
+        bool, lambda self: self._reload_enabled, notify=reloadEnabledChanged
+    )
+
     def __init__(self):
         """Initialize the main window."""
         super().__init__()
@@ -118,60 +148,27 @@ class NanokaViewer(QMainWindow):
         self.setMinimumSize(800, 600)
         self.resize(950, 750)
         self._updating_theme = False
+        # Kept for the widget-based popups (details/settings), which are
+        # children of the QQuickWidget and still styled by this sheet.
         self.setStyleSheet(STYLESHEET)
 
-        central = QWidget()
-        central.setObjectName("centralWidget")
-        self.setCentralWidget(central)
+        self._status_text = "Ready"
+        self._cache_text = ""
+        self._reload_text = "Reload"
+        self._reload_enabled = True
 
-        root_layout = QVBoxLayout(central)
-        root_layout.setContentsMargins(12, 12, 12, 12)
-        root_layout.setSpacing(8)
+        self.sections_model = SectionsModel(self)
 
-        header_widget = QWidget()
-        header_layout = QHBoxLayout(header_widget)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        self._qml = create_qml_widget(
+            self,
+            context_properties={
+                "viewer": self,
+                "sections": self.sections_model,
+            },
+        )
+        self._qml.setObjectName("qmlView")
+        self.setCentralWidget(self._qml)
 
-        title = QLabel("Nanoka Viewer")
-        title.setStyleSheet("font-weight: 600; font-size: 22px;")
-        header_layout.addWidget(title)
-
-        header_layout.addStretch()
-
-        self.cache_label = QLabel("")
-        self.cache_label.setStyleSheet("color: palette(placeholder-text);")
-        self.cache_label.setToolTip("Background cache progress")
-        header_layout.addWidget(self.cache_label)
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: palette(placeholder-text);")
-        header_layout.addWidget(self.status_label)
-
-        self.settings_btn = QPushButton("Settings")
-        self.settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.settings_btn.clicked.connect(self._open_settings)
-        header_layout.addWidget(self.settings_btn)
-
-        self.refresh_btn = QPushButton("Reload")
-        self.refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.refresh_btn.clicked.connect(self.load_data)
-        header_layout.addWidget(self.refresh_btn)
-
-        root_layout.addWidget(header_widget)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(0)
-        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        scroll_area.setWidget(self.content_widget)
-        root_layout.addWidget(scroll_area)
-
-        self.game_sections = {}
         self._loading_chars = {}
         self._loading_index = {}
         self._load_generation = 0
@@ -187,7 +184,7 @@ class NanokaViewer(QMainWindow):
 
         self._cache_label_timer = QTimer(self)
         self._cache_label_timer.setSingleShot(True)
-        self._cache_label_timer.timeout.connect(lambda: self.cache_label.setText(""))
+        self._cache_label_timer.timeout.connect(lambda: self._set_cache(""))
 
         self.preload_manager = get_preload_manager()
         self.preload_manager.progress.connect(self._on_preload_progress)
@@ -197,16 +194,67 @@ class NanokaViewer(QMainWindow):
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
         self.load_data()
 
+    # -- QML-facing state --------------------------------------------------
+
+    def qml_root(self):
+        """Return the root QML item, or ``None`` before the tree is loaded."""
+        return self._qml.rootObject()
+
+    def _set_status(self, text: str) -> None:
+        if text == self._status_text:
+            return
+        self._status_text = text
+        self.statusTextChanged.emit()
+
+    def _set_cache(self, text: str) -> None:
+        if text == self._cache_text:
+            return
+        self._cache_text = text
+        self.cacheTextChanged.emit()
+
+    def _set_reload(self, *, text: str | None = None, enabled: bool | None = None):
+        if text is not None and text != self._reload_text:
+            self._reload_text = text
+            self.reloadTextChanged.emit()
+        if enabled is not None and enabled != self._reload_enabled:
+            self._reload_enabled = enabled
+            self.reloadEnabledChanged.emit()
+
+    @Slot()
+    def reload(self):
+        """Header Reload button."""
+        self.load_data()
+
+    @Slot()
+    def openSettings(self):
+        """Header Settings button."""
+        self._open_settings()
+
+    @Slot(str, str)
+    def openDetails(self, game: str, char_id: str):
+        """A card's View button: open the details popup for that character."""
+        section = self.sections_model.section(game)
+        if section is None:
+            logger.debug("No live section for %s; ignoring details request", game)
+            return
+        char_data = section.characters.char_data(char_id)
+        open_details(game, char_id, char_data, self, source=None)
+
+    @Slot(str)
+    def openExternal(self, url: str):
+        """A card's external-link button."""
+        open_external_url(url)
+
+    # -- background cache --------------------------------------------------
+
     def _on_preload_progress(self, progress):
         """Show background cache progress in the header."""
         self._cache_label_timer.stop()
         if progress.total:
             label = _CACHE_LABELS.get(progress.kind, progress.kind)
-            self.cache_label.setText(
-                f"Preloading {label} {progress.completed}/{progress.total}"
-            )
+            self._set_cache(f"Preloading {label} {progress.completed}/{progress.total}")
         else:
-            self.cache_label.setText("Preparing preload...")
+            self._set_cache("Preparing preload...")
 
     def _on_preload_finished(self, summary):
         label = _CACHE_LABELS.get(summary.kind, summary.kind)
@@ -218,8 +266,10 @@ class NanokaViewer(QMainWindow):
                 text += f", {summary.failed} failed"
             if summary.failed_games:
                 text += f", {summary.failed_games} game(s) unavailable"
-        self.cache_label.setText(text)
+        self._set_cache(text)
         self._cache_label_timer.start(6000)
+
+    # -- loading -----------------------------------------------------------
 
     def load_data(self):
         """Start loading character data.
@@ -229,7 +279,7 @@ class NanokaViewer(QMainWindow):
         ignored instead of being appended to the freshly cleared sections.
         """
         if self._load_in_progress:
-            self.refresh_btn.setEnabled(False)
+            self._set_reload(enabled=False)
             logger.info("Reload ignored: a load is already in progress")
             return
         self._load_in_progress = True
@@ -240,21 +290,20 @@ class NanokaViewer(QMainWindow):
         games = self._desired_games()
         self._sync_sections(games)
 
-        self.refresh_btn.setEnabled(False)
-        self.refresh_btn.setText("Loading...")
-        self.status_label.setText("Loading...")
+        self._set_reload(text="Loading...", enabled=False)
+        self._set_status("Loading...")
         self._fetch_finished = False
         self._loading_chars.clear()
         self._loading_index.clear()
         self._pending_sections = set(games)
 
-        for section in self.game_sections.values():
-            section.clear_cards()
+        for section in self.sections_model.sections():
+            section.characters.clear()
             section.set_status("Loading...")
 
         if not games:
             self._fetch_finished = True
-            self.status_label.setText("No games enabled")
+            self._set_status("No games enabled")
             self._finish_loading_ui(no_games=True)
             return
 
@@ -298,63 +347,19 @@ class NanokaViewer(QMainWindow):
         """Return enabled game ids in the configured display order."""
         return [game for game in get_enabled_games() if game in GAMES]
 
-    def _make_separator(self) -> QFrame:
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFixedHeight(1)
-        separator.setStyleSheet("background: palette(mid); border: none;")
-        return separator
-
-    def _create_section(self, game: str) -> GameSection:
-        section = GameSection(GAMES[game]["name"])
-        self.game_sections[game] = section
-        return section
-
-    def _remove_section(self, game: str):
-        """Drop a section and stop any pending work aimed at it."""
-        self._loading_chars.pop(game, None)
-        self._loading_index.pop(game, None)
-        self._pending_sections.discard(game)
-        section = self.game_sections.pop(game, None)
-        if section is None:
-            return
-        section.clear_cards()
-        self.content_layout.removeWidget(section)
-        section.setParent(None)
-        section.deleteLater()
-
-    def _arrange_sections(self, order: list[str]):
-        """Lay out existing sections in *order*, replacing separators."""
-        sections = set(self.game_sections.values())
-        while self.content_layout.count():
-            item = self.content_layout.takeAt(0)
-            widget = item.widget()
-            if widget is None:
-                continue
-            if widget not in sections:
-                widget.deleteLater()
-
-        visible = [game for game in order if game in self.game_sections]
-        for index, game in enumerate(visible):
-            self.content_layout.addWidget(self.game_sections[game])
-            if index < len(visible) - 1:
-                self.content_layout.addWidget(self._make_separator())
-        # Keep sections at their natural height when they do not fill the
-        # scroll area; otherwise a single remaining section stretches its
-        # header over the whole window.
-        self.content_layout.addStretch(1)
-
     def _sync_sections(self, order: list[str]) -> bool:
-        """Create/remove sections to match *order*; report whether the set changed."""
-        previous = set(self.game_sections)
-        for game in list(self.game_sections):
+        """Match the visible sections to *order*; report set changes.
+
+        Order-only changes keep the existing sections (and their cards), so a
+        Games-tab reorder never reloads anything.
+        """
+        changed = self.sections_model.sync(order)
+        for game in list(self._loading_chars):
             if game not in order:
-                self._remove_section(game)
-        for game in order:
-            if game not in self.game_sections:
-                self._create_section(game)
-        self._arrange_sections(order)
-        return set(self.game_sections) != previous
+                self._loading_chars.pop(game, None)
+                self._loading_index.pop(game, None)
+        self._pending_sections.intersection_update(order)
+        return changed
 
     def apply_game_settings(self):
         """Apply Games-tab changes to the live view immediately."""
@@ -369,13 +374,12 @@ class NanokaViewer(QMainWindow):
             if self._fetch_finished and not self._pending_sections:
                 self._finish_loading_ui(no_games=not order)
             elif not order:
-                self.status_label.setText("No games enabled")
+                self._set_status("No games enabled")
             return
 
         if not order:
-            self.status_label.setText("No games enabled")
-            self.refresh_btn.setEnabled(True)
-            self.refresh_btn.setText("Reload")
+            self._set_status("No games enabled")
+            self._set_reload(text="Reload", enabled=True)
             return
 
         if changed:
@@ -389,8 +393,8 @@ class NanokaViewer(QMainWindow):
             logger.debug("Ignoring stale load for %s (generation %s)", game, generation)
             return
 
-        section = self.game_sections.get(game)
-        if not section:
+        section = self.sections_model.section(game)
+        if section is None:
             return
 
         if not chars:
@@ -434,14 +438,11 @@ class NanokaViewer(QMainWindow):
 
     def _finish_loading_ui(self, no_games: bool = False):
         self._load_in_progress = False
-        self.refresh_btn.setText("Reload")
-        self.refresh_btn.setEnabled(True)
+        self._set_reload(text="Reload", enabled=True)
         if no_games or not self._desired_games():
-            self.status_label.setText("No games enabled")
+            self._set_status("No games enabled")
         else:
-            self.status_label.setText(
-                f"Loaded at {datetime.now().strftime('%H:%M:%S')}"
-            )
+            self._set_status(f"Loaded at {datetime.now().strftime('%H:%M:%S')}")
         logger.info("Load finished")
 
         if self._reload_pending:
@@ -463,9 +464,13 @@ class NanokaViewer(QMainWindow):
 
         # Add cards for this batch
         batch_chars = chars[start_idx:end_idx]
-        section = self.game_sections[game]
-        for char_id, char_data, is_new in batch_chars:
-            section.add_card(game, char_id, char_data, is_new)
+        section = self.sections_model.section(game)
+        if section is None:
+            # The game was disabled while its cards were streaming in.
+            self._loading_chars.pop(game, None)
+            self._loading_index.pop(game, None)
+            return
+        section.characters.append_many(batch_chars)
 
         # Update progress
         self._loading_index[game] = end_idx
@@ -509,6 +514,10 @@ class NanokaViewer(QMainWindow):
                     )
             except RuntimeError:
                 pass
+        # Release the QML tree while the Python context objects are still
+        # alive.  Otherwise item teardown re-evaluates bindings against a
+        # half-destroyed window and logs "Cannot read property ... of null".
+        self._qml.setSource(QUrl())
         super().closeEvent(event)
 
     def changeEvent(self, event):
@@ -524,13 +533,11 @@ class NanokaViewer(QMainWindow):
         super().changeEvent(event)
 
 
-
 def main(argv=None):
     """Main entry point for the application."""
     import argparse
     import cProfile
     import pstats
-    from datetime import datetime
 
     parser = argparse.ArgumentParser(prog="NanokaLeaks", description="Nanoka Viewer")
     parser.add_argument(

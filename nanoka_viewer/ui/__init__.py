@@ -2,16 +2,16 @@
 
 from .styles import STYLESHEET
 from .image_loader import load_qt_image
-from .card import CardWidget
-from .section import GameSection
 from .loader import LoadThread
 from .main_window import NanokaViewer, main
+from .view_model import CharacterModel, Section, SectionsModel
 
 __all__ = [
     "STYLESHEET",
     "load_qt_image",
-    "CardWidget",
-    "GameSection",
+    "CharacterModel",
+    "Section",
+    "SectionsModel",
     "LoadThread",
     "NanokaViewer",
     "main",

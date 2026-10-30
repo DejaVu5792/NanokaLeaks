@@ -2,13 +2,16 @@
 
 The window shell stays a ``QMainWindow`` (title, icon, minimum size,
 close-time thread handling), but its central widget is a ``QQuickWidget``
-rendering ``nanoka_viewer/qml/Main.qml``.  This module owns the three
+rendering ``nanoka_viewer/qml/Main.qml``.  This module owns the
 environment-sensitive details of that arrangement:
 
 * locating the ``.qml`` files, which sit next to the package in a source
   checkout and are extracted beside the executable in a Nuitka bundle;
 * choosing a graphics API that also works on the headless ``offscreen``
   platform the test suite runs on (CI has no GPU either);
+* registering the ``image://nanoka`` provider and the Python context objects
+  (``viewer``, ``sections``) *before* the tree is parsed, because the
+  bindings are evaluated during loading;
 * turning QML load failures into loud Python errors instead of a silently
   blank window.
 """
@@ -21,7 +24,10 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQuick import QQuickWindow, QSGRendererInterface
+from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtQuickWidgets import QQuickWidget
+
+from .image_provider import PROVIDER_ID, NanokaImageProvider
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +83,32 @@ def _configure_graphics_api() -> None:
     _GRAPHICS_API_CONFIGURED = True
 
 
-def create_qml_widget(parent=None) -> QQuickWidget:
+def create_qml_widget(parent=None, context_properties=None) -> QQuickWidget:
     """Create a ``QQuickWidget`` hosting ``Main.qml``.
 
     The widget resizes its root item to its own size, so callers only have to
-    place it in a layout.  A failed load raises after logging every QML
-    error, because a blank window is much harder to debug than a traceback.
+    place it in a layout.  *context_properties* maps names to Python objects
+    exposed to the QML tree (``viewer`` and ``sections`` for the real window).
+
+    Everything the tree needs is registered *before* ``setSource``: QML
+    evaluates bindings while loading, so a context property added afterwards
+    would already have produced "undefined" warnings.
+
+    A failed load raises after logging every QML error, because a blank
+    window is much harder to debug than a traceback.
     """
     _configure_graphics_api()
 
+    # Fusion matches the QWidget chrome and the popups; only set it before
+    # the first engine resolves a style, otherwise Qt warns on every window.
+    if not QQuickStyle.name():
+        QQuickStyle.setStyle("Fusion")
+
     widget = QQuickWidget(parent)
     widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
+    widget.engine().addImageProvider(PROVIDER_ID, NanokaImageProvider())
+    for name, value in (context_properties or {}).items():
+        widget.rootContext().setContextProperty(name, value)
     widget.setSource(QUrl.fromLocalFile(str(qml_file())))
 
     if widget.status() != QQuickWidget.Status.Ready:
