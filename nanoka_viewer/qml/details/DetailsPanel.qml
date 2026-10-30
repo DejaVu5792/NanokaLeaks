@@ -319,10 +319,14 @@ Rectangle {
                                         required property var modelData
 
                                         Layout.fillWidth: true
+                                        Layout.preferredWidth: 1      // equal halves in every row
+                                        Layout.alignment: Qt.AlignTop
                                         spacing: 8
 
                                         Label {
                                             Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                            Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             text: stat.modelData.label
                                             color: palette.placeholderText
                                             font.pixelSize: 11
@@ -330,14 +334,21 @@ Rectangle {
                                         }
 
                                         Label {
-                                            Layout.alignment: Qt.AlignRight
-                                                         | Qt.AlignTop
+                                            Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                                            horizontalAlignment: Text.AlignRight
                                             text: stat.modelData.value
                                             color: palette.text
                                             font.pixelSize: 11
                                             font.bold: true
                                         }
                                     }
+                                }
+
+                                // keeps a lone stat at half width instead of stretching across
+                                Item {
+                                    visible: statRow.modelData.length < 2
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
                                 }
                             }
                         }
