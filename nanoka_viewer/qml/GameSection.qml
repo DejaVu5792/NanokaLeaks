@@ -108,6 +108,24 @@ Item {
                 background: Rectangle { color: "transparent" }
             }
 
+            MouseArea {
+                anchors.fill: parent
+                // Propagate clicks through to delegate items (e.g., character cards)
+                propagateComposedEvents: true
+                onPressed: (mouse) => mouse.accepted = false
+
+                onWheel: (wheel) => {
+                    if (wheel.modifiers & Qt.ShiftModifier) {
+                        // Determine scroll distance from wheel delta
+                        let delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+                        cardList.flick(delta * 5, 0) // Or directly adjust cardList.contentX
+                        wheel.accepted = true
+                    } else {
+                        wheel.accepted = false // Allow standard vertical scroll to bubble up to parent page
+                    }
+                }
+            }
+
             delegate: Item {
                 id: slot
 
