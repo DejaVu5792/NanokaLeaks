@@ -84,11 +84,12 @@ Item {
             id: cardList
             objectName: "cardList"
             width: parent.width
-            height: sectionRoot.rowHeight
+            height: sectionRoot.rowHeight + 12
             orientation: ListView.Horizontal
             spacing: sectionRoot.cardSpacing
             leftMargin: 4
             rightMargin: 4
+            bottomMargin: 12
             // One viewport of look-ahead: cards just off screen load their
             // artwork before the user scrolls to them, while a cold start
             // still only touches a handful of delegates.
@@ -100,6 +101,9 @@ Item {
 
             ScrollBar.horizontal: ScrollBar {
                 policy: ScrollBar.AsNeeded
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
                 contentItem: Rectangle {
                     implicitHeight: 6
                     radius: 3
