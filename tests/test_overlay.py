@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import unittest
 
-from PySide6.QtCore import QEvent, QPoint, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
 import nanoka_viewer.ui.settings as settings_ui
-from support import QtTestCase, flush, make_details_host, open_details_for
+from support import (
+    QtTestCase,
+    find_qml_item,
+    flush,
+    make_details_host,
+    open_details_for,
+    wait,
+    wait_for,
+)
 
 from nanoka_viewer.ui.settings import open_settings
 from nanoka_viewer.ui.styles import STYLESHEET
@@ -35,6 +44,28 @@ def destroy_widget(widget):
     flush(2)
 
 
+class _WheelSpy(QObject):
+    """Records the wheel events that reach a widget."""
+
+    def __init__(self):
+        super().__init__()
+        self.events = []
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Wheel:
+            # Keep plain values: Qt destroys the event after delivery, so a
+            # stored QWheelEvent would crash the failure message.
+            self.events.append(
+                (
+                    event.position().x(),
+                    event.position().y(),
+                    event.angleDelta().x(),
+                    event.angleDelta().y(),
+                )
+            )
+        return False
+
+
 class SettingsOverlayTests(QtTestCase):
     def tearDown(self):
         reset_settings_popup()
@@ -56,14 +87,101 @@ class SettingsOverlayTests(QtTestCase):
 
         self.assertTrue(popup.isVisible())
         self.assertEqual(popup.geometry(), host.rect())
-        self.assertLessEqual(popup.panel.width(), host.width())
-        self.assertLessEqual(popup.panel.height(), host.height())
+        self.assertLessEqual(popup.panel_rect().width(), host.width())
+        self.assertLessEqual(popup.panel_rect().height(), host.height())
+
+    def test_backdrop_view_is_stacked_above_the_window_content(self):
+        host = self.make_host()
+        popup = open_settings(host)
+
+        # Qt draws translucent QQuickWidgets before the other widgets of the
+        # window, which turns the dimmed backdrop black; the documented fix
+        # is WA_AlwaysStackOnTop.
+        self.assertTrue(
+            popup._qml.testAttribute(
+                Qt.WidgetAttribute.WA_AlwaysStackOnTop
+            ),
+            "the translucent popup view must be stacked on top, or its "
+            "backdrop is composited against uninitialised pixels",
+        )
+        self.assertFalse(
+            popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground),
+            "the popup host itself must not paint a translucent surface",
+        )
+
+    def test_wheel_over_the_popup_does_not_reach_the_window(self):
+        host = self.make_host()
+        popup = open_settings(host)
+        flush()
+        wait(120)
+
+        local = popup._qml.mapTo(host, popup.panel_rect().center())
+        self.assertIs(
+            host.childAt(local),
+            popup._qml,
+            "the wheel must be aimed at the popup view for this test",
+        )
+
+        spy = _WheelSpy()
+        host.installEventFilter(spy)
+        self.addCleanup(host.removeEventFilter, spy)
+
+        # QTest sends a spontaneous event, and Qt only propagates those up
+        # the parent widget chain when the scene ignores them; a synthetic
+        # QApplication.sendEvent() stops at the view and would prove nothing.
+        QTest.wheelEvent(host.windowHandle(), QPointF(local), QPoint(0, -120))
+        flush()
+
+        self.assertEqual(
+            spy.events,
+            [],
+            "a wheel event the page does not use must stop at the popup, "
+            "not scroll the window content underneath",
+        )
+
+    def test_wheel_still_scrolls_an_overflowing_settings_page(self):
+        host = self.make_host()
+        popup = open_settings(host)
+        popup._model.setTab(1)
+        flush()
+        wait(120)
+
+        page = find_qml_item(popup._qml.rootObject(), "settingsViewPage")
+        self.assertGreater(page.property("contentHeight"), page.property("height"))
+
+        # Aim above the reorder list: an inner ListView that can scroll would
+        # take the wheel for itself, and this test is about the page.
+        point = page.mapToItem(
+            popup._qml.rootObject(), QPointF(page.width() / 2, 20)
+        ).toPoint()
+        event = self._wheel_event(popup._qml, point)
+        QApplication.sendEvent(popup._qml, event)
+        flush()
+
+        # Wheel scrolling is eased, so the offset settles a moment later.
+        wait_for(
+            lambda: page.property("contentY") > 0,
+            message="the page never scrolled under the wheel",
+        )
+
+    @staticmethod
+    def _wheel_event(widget, point):
+        return QWheelEvent(
+            QPointF(point),
+            QPointF(widget.mapToGlobal(point)),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
 
     def test_escape_closes_settings(self):
         host = self.make_host()
         popup = open_settings(host)
 
-        QTest.keyClick(popup, Qt.Key.Key_Escape)
+        QTest.keyClick(popup._qml, Qt.Key.Key_Escape)
         flush()
 
         self.assertFalse(popup.isVisible())
@@ -73,12 +191,16 @@ class SettingsOverlayTests(QtTestCase):
         popup = open_settings(host)
 
         QTest.mouseClick(
-            popup, Qt.MouseButton.LeftButton, pos=popup.panel.geometry().center()
+            popup._qml,
+            Qt.MouseButton.LeftButton,
+            pos=popup.panel_rect().center(),
         )
         flush()
         self.assertTrue(popup.isVisible())
 
-        QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        QTest.mouseClick(
+            popup._qml, Qt.MouseButton.LeftButton, pos=QPoint(2, 2)
+        )
         flush()
         self.assertFalse(popup.isVisible())
 

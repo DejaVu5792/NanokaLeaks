@@ -5,8 +5,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtTest import QTest
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 import nanoka_viewer.ui.settings as settings_ui
@@ -17,7 +16,13 @@ from nanoka_viewer.api.preload import (
     PreloadProgress,
     PreloadSummary,
 )
-from support import QtTestCase, flush
+from support import (
+    QtTestCase,
+    click_qml,
+    find_qml_item,
+    flush,
+    wait,
+)
 
 
 class FakePreloadManager(QObject):
@@ -45,18 +50,18 @@ class FakePreloadManager(QObject):
         self.cancelled = True
 
 
-class SettingsCacheTests(QtTestCase):
+class SettingsCacheTabTests(QtTestCase):
     def setUp(self):
         super().setUp()
         self.manager = FakePreloadManager()
         self.saved = []
+        self.clear_calls = []
         self.cache_sizes_value = {
             "details": 2048,
             "builds": 3072,
             "artwork": 5 * 1024 * 1024,
         }
-        self.build_info = {"last_cached": 1_700_000_000.0}
-        self.clear_calls = []
+        self.build_info = {"last_cached": 1700000000.0}
 
         self.window = QMainWindow()
         self.central = QWidget()
@@ -77,6 +82,7 @@ class SettingsCacheTests(QtTestCase):
                     "cache_character_details": True,
                     "cache_character_builds": True,
                     "cache_character_artwork": True,
+                    "sr_centroid_centering": True,
                 },
             ),
             patch.object(settings_ui, "save_settings", side_effect=self._save),
@@ -97,6 +103,7 @@ class SettingsCacheTests(QtTestCase):
         self.addCleanup(self._destroy_popup)
         self.popup.open_popup()
         flush()
+        wait(120)
 
     def _save(self, settings):
         self.saved.append(dict(settings))
@@ -115,77 +122,117 @@ class SettingsCacheTests(QtTestCase):
         self.cache_sizes_value = {"details": 0, "builds": 0, "artwork": 0}
         self.build_info = {"last_cached": 0.0}
 
-    def test_cache_buttons_are_aligned_right(self):
-        for checkbox, button in (
-            (self.popup.cache_details, self.popup.cache_details_btn),
-            (self.popup.cache_builds, self.popup.cache_builds_btn),
-            (self.popup.cache_artwork, self.popup.cache_artwork_btn),
-        ):
-            top = button.parentWidget()
-            layout = top.layout()
-            self.assertEqual(layout.indexOf(checkbox), 0)
-            self.assertEqual(layout.indexOf(button), 1)
-            self.assertTrue(
-                layout.itemAt(1).alignment() & Qt.AlignmentFlag.AlignRight,
-                "the Cache button must be right-aligned in its row",
+    @staticmethod
+    def _cache_flags(saved):
+        """Return just the three cache flags from a saved settings dict."""
+        return {
+            key: saved[key]
+            for key in (
+                "cache_character_details",
+                "cache_character_builds",
+                "cache_character_artwork",
             )
-            self.assertEqual(button.text(), "Preload")
+        }
+
+    def _qml(self, name):
+        item = find_qml_item(self.popup._qml.rootObject(), name)
+        self.assertIsNotNone(item, f"{name} was not created")
+        return item
+
+    def test_cache_buttons_are_aligned_right(self):
+        for row_name, button_name in (
+            ("cacheRow-details", "preloadDetails"),
+            ("cacheRow-builds", "preloadBuilds"),
+            ("cacheRow-artwork", "preloadArtwork"),
+        ):
+            row = self._qml(row_name)
+            button = self._qml(button_name)
+            root = self.popup._qml.rootObject()
+            row_right = row.mapToItem(root, row.width(), 0).x()
+            button_right = button.mapToItem(root, button.width(), 0).x()
+            self.assertAlmostEqual(
+                button_right,
+                row_right,
+                delta=2,
+                msg=f"the {button_name} button must sit at the row's right edge",
+            )
+            self.assertEqual(button.property("text"), "Preload")
 
     def test_sizes_are_shown_in_kb(self):
-        self.assertEqual(self.popup.details_size.text(), "2 kB")
-        self.assertEqual(self.popup.builds_size.text(), "3 kB")
-        self.assertEqual(self.popup.artwork_size.text(), "5,120 kB")
+        model = self.popup._model
+        self.assertEqual(model.detailsSize, "2 kB")
+        self.assertEqual(model.buildsSize, "3 kB")
+        self.assertEqual(model.artworkSize, "5,120 kB")
+
+        row = self._qml("cacheRow-details")
+        size = find_qml_item(row, "cacheSize")
+        self.assertEqual(size.property("text"), "2 kB")
 
     def test_builds_row_shows_last_cached(self):
-        text = self.popup.builds_last.text()
+        text = self.popup._model.buildsLast
         self.assertIn("Last cached:", text)
         self.assertNotIn("never", text)
+
+        row = self._qml("cacheRow-builds")
+        last = find_qml_item(row, "cacheLastCached")
+        self.assertEqual(last.property("text"), text)
 
     def test_builds_row_shows_never_without_metadata(self):
         self.build_info = {"last_cached": 0.0}
         self.popup._update_cache_meta()
 
-        self.assertEqual(self.popup.builds_last.text(), "Last cached: never")
+        self.assertEqual(
+            self.popup._model.buildsLast, "Last cached: never"
+        )
+
+    def test_checkboxes_are_disabled_while_preloading(self):
+        self.manager.running = True
+        self.manager.kind = PRELOAD_DETAILS
+        self.popup._sync_preload_state()
+
+        self.assertFalse(self.popup._model.cacheEnabled)
+        row = self._qml("cacheRow-details")
+        box = find_qml_item(row, "cacheCheck")
+        self.assertFalse(box.property("enabled"))
 
     def test_artwork_warning_cancel_does_not_start(self):
         self.popup._confirm_artwork_download = lambda: False
 
-        QTest.mouseClick(self.popup.cache_artwork_btn, Qt.MouseButton.LeftButton)
-        flush()
+        click_qml(self.popup._qml, self._qml("preloadArtwork"))
 
         self.assertEqual(self.manager.started, [])
         self.assertFalse(self.manager.cancelled)
 
     def test_artwork_warning_accept_starts_and_enables_the_setting(self):
-        self.popup.cache_artwork.setChecked(False)
+        self.popup._model.setCache("artwork", False)
         self.saved.clear()
         self.popup._confirm_artwork_download = lambda: True
 
-        QTest.mouseClick(self.popup.cache_artwork_btn, Qt.MouseButton.LeftButton)
-        flush()
+        click_qml(self.popup._qml, self._qml("preloadArtwork"))
 
+        model = self.popup._model
         self.assertEqual(self.manager.started, [PRELOAD_ARTWORK])
         self.assertTrue(
-            self.popup.cache_artwork.isChecked(),
+            model.cacheArtwork,
             "an explicit Cache click should enable the matching setting",
         )
         self.assertEqual(self.saved[-1]["cache_character_artwork"], True)
-        self.assertEqual(self.popup.cache_artwork_btn.text(), "Cancel")
-        self.assertFalse(self.popup.cache_details_btn.isEnabled())
-        self.assertFalse(self.popup.cache_builds_btn.isEnabled())
-        self.assertFalse(self.popup.clear_cache_btn.isEnabled())
+        self.assertEqual(model.artworkButtonText, "Cancel")
+        self.assertFalse(model.detailsButtonEnabled)
+        self.assertFalse(model.buildsButtonEnabled)
+        self.assertFalse(model.clearCacheEnabled)
 
     def test_details_button_starts_the_details_cache_only(self):
-        self.popup.cache_details.setChecked(False)
+        self.popup._model.setCache("details", False)
         self.saved.clear()
 
-        QTest.mouseClick(self.popup.cache_details_btn, Qt.MouseButton.LeftButton)
-        flush()
+        click_qml(self.popup._qml, self._qml("preloadDetails"))
 
+        model = self.popup._model
         self.assertEqual(self.manager.started, [PRELOAD_DETAILS])
-        self.assertTrue(self.popup.cache_details.isChecked())
+        self.assertTrue(model.cacheDetails)
         self.assertEqual(
-            self.saved[-1],
+            self._cache_flags(self.saved[-1]),
             {
                 "cache_character_details": True,
                 "cache_character_builds": True,
@@ -194,20 +241,20 @@ class SettingsCacheTests(QtTestCase):
         )
 
     def test_builds_button_starts_the_builds_cache_only(self):
-        self.popup.cache_details.setChecked(False)
-        self.popup.cache_builds.setChecked(False)
-        self.popup.cache_artwork.setChecked(False)
+        model = self.popup._model
+        model.setCache("details", False)
+        model.setCache("builds", False)
+        model.setCache("artwork", False)
         self.saved.clear()
 
-        QTest.mouseClick(self.popup.cache_builds_btn, Qt.MouseButton.LeftButton)
-        flush()
+        click_qml(self.popup._qml, self._qml("preloadBuilds"))
 
         self.assertEqual(self.manager.started, [PRELOAD_BUILDS])
-        self.assertTrue(self.popup.cache_builds.isChecked())
-        self.assertFalse(self.popup.cache_details.isChecked())
-        self.assertFalse(self.popup.cache_artwork.isChecked())
+        self.assertTrue(model.cacheBuilds)
+        self.assertFalse(model.cacheDetails)
+        self.assertFalse(model.cacheArtwork)
         self.assertEqual(
-            self.saved[-1],
+            self._cache_flags(self.saved[-1]),
             {
                 "cache_character_details": False,
                 "cache_character_builds": True,
@@ -223,14 +270,14 @@ class SettingsCacheTests(QtTestCase):
         )
         self.popup._sync_preload_state()
 
-        self.assertEqual(self.popup.cache_builds_btn.text(), "Cancel")
-        self.assertIn("2/10", self.popup.cache_status.text())
+        model = self.popup._model
+        self.assertEqual(model.buildsButtonText, "Cancel")
+        self.assertIn("2/10", model.cacheStatus)
 
-        QTest.mouseClick(self.popup.cache_builds_btn, Qt.MouseButton.LeftButton)
-        flush()
+        click_qml(self.popup._qml, self._qml("preloadBuilds"))
 
         self.assertTrue(self.manager.cancelled)
-        self.assertEqual(self.popup.cache_builds_btn.text(), "Stopping...")
+        self.assertEqual(model.buildsButtonText, "Stopping...")
 
     def test_clear_cache_is_blocked_while_preloading(self):
         self.manager.running = True
@@ -245,7 +292,7 @@ class SettingsCacheTests(QtTestCase):
             clear_api.assert_not_called()
             clear_images.assert_not_called()
 
-        self.assertIn("before clearing", self.popup.cache_status.text())
+        self.assertIn("before clearing", self.popup._model.cacheStatus)
 
     def test_clear_cache_requires_confirmation(self):
         self.popup._confirm_clear_cache = lambda: False
@@ -269,14 +316,28 @@ class SettingsCacheTests(QtTestCase):
         ):
             self.popup._clear_cache()
 
+        model = self.popup._model
         clear_api.assert_called_once()
         clear_images.assert_called_once()
         self.assertEqual(self.clear_calls, ["api"])
-        self.assertEqual(self.popup.details_size.text(), "0 kB")
-        self.assertEqual(self.popup.builds_size.text(), "0 kB")
-        self.assertEqual(self.popup.artwork_size.text(), "0 kB")
-        self.assertEqual(self.popup.builds_last.text(), "Last cached: never")
-        self.assertEqual(self.popup.cache_status.text(), "Cache cleared.")
+        self.assertEqual(model.detailsSize, "0 kB")
+        self.assertEqual(model.buildsSize, "0 kB")
+        self.assertEqual(model.artworkSize, "0 kB")
+        self.assertEqual(model.buildsLast, "Last cached: never")
+        self.assertEqual(model.cacheStatus, "Cache cleared.")
+        self.assertEqual(model.clearCacheText, "Cleared")
+        self.assertFalse(model.clearCacheEnabled)
+
+    def test_clear_cache_button_reports_completion(self):
+        self.popup._confirm_clear_cache = lambda: True
+
+        with (
+            patch.object(settings_ui, "clear_cache"),
+            patch.object(settings_ui, "clear_image_cache"),
+        ):
+            click_qml(self.popup._qml, self._qml("clearCacheButton"))
+
+        self.assertEqual(self.popup._model.cacheStatus, "Cache cleared.")
 
     def test_summary_reports_builds_without_builds(self):
         summary = PreloadSummary(
@@ -290,7 +351,7 @@ class SettingsCacheTests(QtTestCase):
 
         self.popup._on_preload_finished(summary)
 
-        text = self.popup.cache_status.text()
+        text = self.popup._model.cacheStatus
         self.assertIn("Preloaded 7 build tables.", text)
         self.assertIn("1 failed", text)
         self.assertIn("2 without build tables", text)
@@ -307,7 +368,7 @@ class SettingsCacheTests(QtTestCase):
 
         self.popup._on_preload_finished(summary)
 
-        text = self.popup.cache_status.text()
+        text = self.popup._model.cacheStatus
         self.assertIn("Preloaded 7 detail pages.", text)
         self.assertIn("2 unavailable", text)
 
