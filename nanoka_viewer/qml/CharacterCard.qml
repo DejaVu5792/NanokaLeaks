@@ -217,7 +217,10 @@ Item {
                 objectName: "browserButton"
                 small: true
                 square: true
-                text: "\u2197"
+                text: "\u2197"                          // fallback glyph
+                icon.name: viewer.externalIconName
+                icon.width: 16
+                icon.height: 16
                 onClicked: viewer.openExternal(card.url)
 
                 ToolTip.visible: hovered

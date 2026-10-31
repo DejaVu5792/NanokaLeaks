@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.impl   // IconImage
 
 // The app's button look, drawn from the palette instead of a Controls style.
 //
@@ -7,6 +8,9 @@ import QtQuick.Controls
 // in-card buttons), palette(button) fill, palette(mid) border, hover
 // palette(mid), pressed palette(midlight).  The primary variant uses
 // palette(highlight), like the card's View button.
+//
+// Set icon.name to draw a theme icon (tinted to the text colour); text is the
+// fallback when the theme has no such icon.
 AbstractButton {
     id: control
 
@@ -27,15 +31,33 @@ AbstractButton {
     bottomPadding: 6
     font.pixelSize: small ? 11 : 13
 
-    contentItem: Text {
-        text: control.text
-        font: control.font
-        color: control.primary
+    contentItem: Item {
+        implicitWidth: label.implicitWidth
+        implicitHeight: label.implicitHeight
+
+        IconImage {
+            id: glyph
+            anchors.centerIn: parent
+            name: control.icon.name
+            color: label.color            // symbolic icons follow the palette
+            sourceSize.width: control.icon.width > 0 ? control.icon.width : 16
+            sourceSize.height: control.icon.height > 0 ? control.icon.height : 16
+            visible: control.icon.name.length > 0 && status === Image.Ready
+        }
+
+        Text {
+            id: label
+            anchors.fill: parent
+            visible: !glyph.visible       // "↗" shows if the theme has no icon
+            text: control.text
+            font: control.font
+            color: control.primary
             ? palette.highlightedText
             : control.enabled ? palette.buttonText : palette.placeholderText
-        horizontalAlignment: control.alignLeft ? Text.AlignLeft : Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+            horizontalAlignment: control.alignLeft ? Text.AlignLeft : Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
     }
 
     background: Rectangle {

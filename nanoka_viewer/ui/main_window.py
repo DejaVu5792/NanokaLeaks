@@ -245,6 +245,18 @@ class NanokaViewer(QMainWindow):
         """A card's external-link button."""
         open_external_url(url)
 
+    @Property(str, constant=True)
+    def externalIconName(self) -> str:
+        """First installed theme icon for the external-link button, or ""."""
+        for name in (
+            "external-link-symbolic",
+            "external-link",
+            "document-open-remote",
+        ):
+            if QIcon.hasThemeIcon(name):
+                return name
+        return ""
+
     # -- background cache --------------------------------------------------
 
     def _on_preload_progress(self, progress):
