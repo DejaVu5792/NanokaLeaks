@@ -59,6 +59,25 @@ class SettingsOverlayTests(QtTestCase):
         self.assertLessEqual(popup.panel_rect().width(), host.width())
         self.assertLessEqual(popup.panel_rect().height(), host.height())
 
+    def test_backdrop_view_is_stacked_above_the_window_content(self):
+        host = self.make_host()
+        popup = open_settings(host)
+
+        # Qt draws translucent QQuickWidgets before the other widgets of the
+        # window, which turns the dimmed backdrop black; the documented fix
+        # is WA_AlwaysStackOnTop.
+        self.assertTrue(
+            popup._qml.testAttribute(
+                Qt.WidgetAttribute.WA_AlwaysStackOnTop
+            ),
+            "the translucent popup view must be stacked on top, or its "
+            "backdrop is composited against uninitialised pixels",
+        )
+        self.assertFalse(
+            popup.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground),
+            "the popup host itself must not paint a translucent surface",
+        )
+
     def test_escape_closes_settings(self):
         host = self.make_host()
         popup = open_settings(host)

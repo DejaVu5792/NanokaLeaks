@@ -122,6 +122,14 @@ def create_qml_widget(
     if translucent:
         widget.setClearColor(Qt.GlobalColor.transparent)
         widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # A translucent QQuickWidget is drawn before the regular widgets of
+        # its window, so without this Qt composites its transparent areas
+        # against uninitialised pixels -- the popup backdrop then shows up
+        # black instead of dimming the window content underneath.  Qt
+        # documents WA_AlwaysStackOnTop as the fix for exactly this case
+        # (QQuickWidget "Limitations"); the popup is the topmost widget in
+        # the window anyway, so the broken stacking order costs nothing.
+        widget.setAttribute(Qt.WidgetAttribute.WA_AlwaysStackOnTop, True)
     widget.engine().addImageProvider(PROVIDER_ID, NanokaImageProvider())
     for provider_id, provider in (image_providers or {}).items():
         widget.engine().addImageProvider(provider_id, provider)

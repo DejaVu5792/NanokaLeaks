@@ -82,9 +82,11 @@ class PopupHost(QWidget):
         self._input_guard_installed = False
 
         self.setObjectName(self.overlay_object_name)
-        # The QML tree paints the backdrop and the panel; the widget and the
-        # view must both stay transparent so the window shows through.
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # The QML tree paints the backdrop and the panel.  The widget itself
+        # must not paint anything: Qt propagates the parent's content to a
+        # child that leaves its area untouched, so the window shows through
+        # around the QQuickWidget (which is stacked on top, see qml_host).
+        self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.hide()
