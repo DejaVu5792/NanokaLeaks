@@ -15,8 +15,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import unittest
 
-from PySide6.QtCore import QEvent, QEventLoop, QPoint, Qt, QTimer
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QPointF, Qt, QTimer
+from PySide6.QtGui import QColor, QMouseEvent, QPalette
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -131,6 +132,90 @@ def find_qml_item(root, object_name: str):
         if isinstance(item, QQuickItem):
             queue.extend(item.childItems())
     return None
+
+
+def find_qml_items(root, object_name: str) -> list:
+    """Return every QML item with *object_name*, in visual-tree order."""
+    from PySide6.QtQuick import QQuickItem
+
+    found = []
+    queue = [root]
+    while queue:
+        item = queue.pop(0)
+        if item is None:
+            continue
+        if item.objectName() == object_name:
+            found.append(item)
+        if isinstance(item, QQuickItem):
+            queue.extend(item.childItems())
+    return found
+
+
+def qml_centre(item, root) -> QPoint:
+    """Return the centre of a QML *item* mapped into *root*'s coordinates."""
+    point = item.mapToItem(root, item.width() / 2, item.height() / 2)
+    return QPoint(round(point.x()), round(point.y()))
+
+
+def click_qml(widget, item) -> None:
+    """Click the centre of a QML *item* through its ``QQuickWidget``."""
+    QTest.mouseClick(
+        widget,
+        Qt.MouseButton.LeftButton,
+        pos=qml_centre(item, widget.rootObject()),
+    )
+    flush()
+
+
+def _send_qml_mouse(widget, kind, pos: QPoint, buttons) -> None:
+    """Send one mouse event carrying *buttons* (``QTest.mouseMove`` cannot)."""
+    event = QMouseEvent(
+        kind,
+        QPointF(pos),
+        QPointF(widget.mapToGlobal(pos)),
+        Qt.MouseButton.LeftButton,
+        buttons,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(widget, event)
+    flush(2)
+
+
+def press_qml(widget, item) -> QPoint:
+    """Press the left button on the centre of a QML *item*; return the point."""
+    point = qml_centre(item, widget.rootObject())
+    _send_qml_mouse(
+        widget, QEvent.Type.MouseButtonPress, point, Qt.MouseButton.LeftButton
+    )
+    return point
+
+
+def move_qml(widget, point: QPoint) -> None:
+    """Move the pointer with the left button still held."""
+    _send_qml_mouse(
+        widget, QEvent.Type.MouseMove, point, Qt.MouseButton.LeftButton
+    )
+    wait(10)
+
+
+def release_qml(widget, point: QPoint) -> None:
+    """Release the left button at *point* and let the UI settle."""
+    _send_qml_mouse(
+        widget,
+        QEvent.Type.MouseButtonRelease,
+        point,
+        Qt.MouseButton.NoButton,
+    )
+    flush()
+    wait(60)
+
+
+def drag_qml(widget, item, dy: int, steps: int = 6) -> None:
+    """Press on a QML *item*, drag it *dy* pixels and release."""
+    start = press_qml(widget, item)
+    for step in range(1, steps + 1):
+        move_qml(widget, QPoint(start.x(), round(start.y() + dy * step / steps)))
+    release_qml(widget, QPoint(start.x(), round(start.y() + dy)))
 
 
 def reset_popup():

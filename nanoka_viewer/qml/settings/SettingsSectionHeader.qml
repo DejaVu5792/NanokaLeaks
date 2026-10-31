@@ -8,6 +8,7 @@ RowLayout {
 
     property string title: ""
     property string tooltip: ""
+    property string resetObjectName: ""
 
     signal resetClicked()
 
@@ -29,6 +30,7 @@ RowLayout {
     ToolButton {
         id: resetButton
 
+        objectName: header.resetObjectName
         implicitWidth: 24
         implicitHeight: 24
         onClicked: header.resetClicked()

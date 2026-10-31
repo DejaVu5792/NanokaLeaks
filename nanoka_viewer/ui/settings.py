@@ -38,6 +38,7 @@ from .qml_host import create_qml_widget
 from .settings_model import (
     CACHE_KINDS,
     SECTION_CACHING,
+    SECTION_EXPERIMENTAL,
     SECTION_ORDER,
     SECTION_TOGGLE,
     TAB_CACHE,
@@ -100,6 +101,9 @@ class SettingsPopup(OverlayPopup):
         self._model.cacheSettingChanged.connect(
             self._on_cache_setting_changed
         )
+        self._model.experimentalSettingChanged.connect(
+            self._on_experimental_setting_changed
+        )
         self._model.preloadRequested.connect(self._on_cache_clicked)
         self._model.clearCacheRequested.connect(self._clear_cache)
         self._model.resetRequested.connect(self._on_reset_requested)
@@ -120,6 +124,7 @@ class SettingsPopup(OverlayPopup):
         )
         self._load_game_settings(settings)
         self._refresh_game_counts()
+        self._load_experimental(settings)
         self._model.setTab(TAB_CACHE)
         self._model.set_status("")
         self._reset_clear_button()
@@ -143,6 +148,21 @@ class SettingsPopup(OverlayPopup):
 
     def _on_cache_setting_changed(self, _kind: str, _checked: bool):
         self._save_and_apply()
+
+    # -- Experimental tab --------------------------------------------------
+
+    def _load_experimental(self, settings: dict):
+        self._model.set_experimental(
+            bool(settings.get("sr_centroid_centering", True))
+        )
+
+    def _on_experimental_setting_changed(self, _checked: bool):
+        self._save_experimental()
+
+    def _save_experimental(self):
+        settings = dict(load_settings())
+        settings["sr_centroid_centering"] = self._model.srCentroid
+        save_settings(settings)
 
     # -- Games tab ---------------------------------------------------------
 
@@ -263,6 +283,8 @@ class SettingsPopup(OverlayPopup):
             self._reset_toggle_section()
         elif section == SECTION_ORDER:
             self._reset_order_section()
+        elif section == SECTION_EXPERIMENTAL:
+            self._reset_experimental_section()
 
     def _reset_cache_section(self):
         self._model.set_cache_flags(
@@ -300,6 +322,12 @@ class SettingsPopup(OverlayPopup):
         settings["disabled_games"] = [game for game in order if game in disabled]
         save_settings(settings)
         self.games_changed.emit()
+
+    def _reset_experimental_section(self):
+        self._model.set_experimental(
+            bool(DEFAULT_SETTINGS["sr_centroid_centering"])
+        )
+        self._save_experimental()
 
     # -- Preload -----------------------------------------------------------
 

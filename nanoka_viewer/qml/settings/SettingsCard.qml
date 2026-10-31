@@ -5,6 +5,8 @@ import QtQuick.Layouts
 Rectangle {
     id: card
 
+    objectName: "settingsCard"
+
     // The cache and games cards inset their rows by 14px; the order card only
     // needs a 4px frame around its list.
     property int horizontalPadding: 14

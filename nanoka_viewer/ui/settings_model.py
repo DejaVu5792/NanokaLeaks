@@ -38,6 +38,7 @@ CACHE_KINDS = ("details", "builds", "artwork")
 SECTION_CACHING = "caching"
 SECTION_TOGGLE = "toggle"
 SECTION_ORDER = "order"
+SECTION_EXPERIMENTAL = "experimental"
 
 
 class GameToggleModel(QAbstractListModel):
@@ -52,7 +53,7 @@ class GameToggleModel(QAbstractListModel):
     _ROLE_NAMES = {
         GameIdRole: QByteArray(b"gameId"),
         NameRole: QByteArray(b"name"),
-        EnabledRole: QByteArray(b"enabled"),
+        EnabledRole: QByteArray(b"gameEnabled"),
         CountRole: QByteArray(b"countText"),
         CountTooltipRole: QByteArray(b"countTooltip"),
     }
@@ -239,9 +240,11 @@ class SettingsViewModel(QObject):
     statusChanged = Signal()
     clearButtonChanged = Signal()
     buttonsChanged = Signal()
+    experimentalChanged = Signal()
 
     # Actions the popup performs; the model never saves or loads anything.
     cacheSettingChanged = Signal(str, bool)
+    experimentalSettingChanged = Signal(bool)
     preloadRequested = Signal(str)
     clearCacheRequested = Signal()
     resetRequested = Signal(str)
@@ -254,6 +257,7 @@ class SettingsViewModel(QObject):
         self._tab = TAB_CACHE
         self._cache = {kind: True for kind in CACHE_KINDS}
         self._cache_enabled = True
+        self._sr_centroid = True
         self._sizes = {kind: "" for kind in CACHE_KINDS}
         self._last_cached = ""
         self._status = ""
@@ -343,6 +347,31 @@ class SettingsViewModel(QObject):
 
     cacheEnabled = Property(
         bool, _get_cache_enabled, notify=cacheChanged
+    )
+
+    # -- experimental ------------------------------------------------------
+
+    def _get_sr_centroid(self) -> bool:
+        return self._sr_centroid
+
+    def set_experimental(self, sr_centroid: bool) -> None:
+        """Apply the stored experimental flags without emitting an action."""
+        if self._sr_centroid == bool(sr_centroid):
+            return
+        self._sr_centroid = bool(sr_centroid)
+        self.experimentalChanged.emit()
+
+    @Slot(bool)
+    def setSrCentroid(self, checked: bool):
+        """Called by the Smart artwork centering checkbox."""
+        if self._sr_centroid == bool(checked):
+            return
+        self._sr_centroid = bool(checked)
+        self.experimentalChanged.emit()
+        self.experimentalSettingChanged.emit(bool(checked))
+
+    srCentroid = Property(
+        bool, _get_sr_centroid, notify=experimentalChanged
     )
 
     # -- cache metadata ----------------------------------------------------
