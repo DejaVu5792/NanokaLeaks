@@ -1,7 +1,8 @@
 """Regression tests for the artwork fixes in the details view.
 
-* ``_ArtLabel`` centre-crops horizontally and keeps the top of the artwork
-  (where the character's face is) instead of relying on QLabel clipping.
+* ``_ArtLabel`` focus-crops horizontally (centre by default, saliency centroid
+  when available) and keeps the top of the artwork (where the character's face
+  is) instead of relying on QLabel clipping.
 * ``_set_art_message`` drops the cached source pixmap, otherwise the next
   resize resurrected the previous character's artwork over "Art unavailable".
 """
@@ -45,6 +46,20 @@ def make_banded_pixmap(width: int = 100, height: int = 200) -> QPixmap:
     return pixmap
 
 
+def make_horizontal_bands(width: int = 300, height: int = 100) -> QPixmap:
+    """Red left third, green middle third, blue right third."""
+    pixmap = QPixmap(width, height)
+    third = width // 3
+    painter = QPainter(pixmap)
+    try:
+        painter.fillRect(0, 0, third, height, QColor(RED))
+        painter.fillRect(third, 0, third, height, QColor(GREEN))
+        painter.fillRect(third * 2, 0, width - third * 2, height, QColor(BLUE))
+    finally:
+        painter.end()
+    return pixmap
+
+
 class ArtLabelTests(QtTestCase):
     def test_scaled_art_is_top_cropped(self):
         label = _ArtLabel()
@@ -80,6 +95,37 @@ class ArtLabelTests(QtTestCase):
         pixmap = label.pixmap()
         self.assertIsNotNone(pixmap)
         self.assertEqual(pixmap.size(), QSize(140, 90))
+
+    def test_focus_x_crops_to_the_requested_side(self):
+        source = make_horizontal_bands()
+        for focus_x, expected in ((0.0, RED), (0.5, GREEN), (1.0, BLUE)):
+            with self.subTest(focus_x=focus_x):
+                label = _ArtLabel()
+                self.addCleanup(label.deleteLater)
+                label.resize(100, 100)
+                label.show()
+                flush()
+
+                label.set_source(source, focus_x)
+                flush()
+
+                image = label.pixmap().toImage()
+                self.assertEqual(image.pixelColor(50, 50).name(), expected)
+
+    def test_focus_x_survives_a_resize(self):
+        label = _ArtLabel()
+        self.addCleanup(label.deleteLater)
+        label.resize(100, 100)
+        label.show()
+        flush()
+        label.set_source(make_horizontal_bands(), 1.0)
+        flush()
+
+        label.resize(120, 100)
+        wait(80)
+
+        image = label.pixmap().toImage()
+        self.assertEqual(image.pixelColor(60, 50).name(), BLUE)
 
     def test_art_text_is_anchored_to_the_bottom(self):
         host = QWidget()

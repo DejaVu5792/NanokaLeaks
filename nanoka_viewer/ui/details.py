@@ -45,6 +45,8 @@ from ..api.details import (
     load_character_build,
     load_character_detail,
 )
+from ..saliency import sr_centroid_x
+from ..settings import get_setting
 from .overlay import OverlayPopup, is_alive
 from .skeleton import (
     REVEAL_DURATION_MS,
@@ -113,10 +115,17 @@ class _ArtLoadThread(QThread):
 
     def run(self):
         data = load_character_art(self._url)
-        if data:
-            self.loaded.emit(data)
-        else:
+        if not data:
             self.failed.emit()
+            return
+
+        focus_x = 0.5
+        if get_setting("sr_centroid_centering"):
+            try:
+                focus_x = sr_centroid_x(data)
+            except Exception:  # noqa: BLE001 - artwork must still render
+                logger.exception("Could not compute artwork focus")
+        self.loaded.emit((data, focus_x))
 
 
 class _ArtLabel(QLabel):
@@ -125,6 +134,7 @@ class _ArtLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._source: QPixmap | None = None
+        self._focus_x = 0.5
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.setMinimumSize(1, 1)
@@ -136,9 +146,10 @@ class _ArtLabel(QLabel):
         self._rescale_timer.setInterval(40)
         self._rescale_timer.timeout.connect(self._rescale)
 
-    def set_source(self, pixmap: QPixmap | None):
-        """Set the source artwork and fit it to the current label size."""
+    def set_source(self, pixmap: QPixmap | None, focus_x: float = 0.5):
+        """Set the artwork and the horizontal focus (1.0 = right edge)."""
         self._source = pixmap
+        self._focus_x = min(1.0, max(0.0, float(focus_x)))
         self._rescale_timer.stop()
         if pixmap is None or pixmap.isNull():
             self.clear()
@@ -149,6 +160,7 @@ class _ArtLabel(QLabel):
         """Drop the cached source artwork so rescale doesn't resurrect it."""
         self._rescale_timer.stop()
         self._source = None
+        self._focus_x = 0.5
         self.clear()
 
     def _rescale(self):
@@ -162,9 +174,16 @@ class _ArtLabel(QLabel):
             Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Centre horizontally, but keep the top: character faces live there.
+        # Focus horizontally, but keep the top: character faces live there.
+        # With the setting off, focus_x is 0.5 and this is the old centre crop.
         if scaled.width() > target.width() or scaled.height() > target.height():
-            x = max(0, (scaled.width() - target.width()) // 2)
+            if scaled.width() > target.width():
+                desired = round(
+                    self._focus_x * scaled.width() - target.width() / 2
+                )
+                x = max(0, min(scaled.width() - target.width(), desired))
+            else:
+                x = 0
             scaled = scaled.copy(x, 0, target.width(), target.height())
         self.setPixmap(scaled)
 
@@ -484,18 +503,22 @@ class CharacterDetailsPopup(OverlayPopup):
             self._art_thread = None
         thread.deleteLater()
 
-    def _on_art_loaded(self, request_id: int, data: bytes):
+    def _on_art_loaded(self, request_id: int, payload: object):
         if request_id != self._request_id or not self.isVisible():
             return
         self._cancel_deferred_art_loading()
         if self._art_label is None:
             return
+        if isinstance(payload, tuple):
+            data, focus_x = payload
+        else:
+            data, focus_x = payload, 0.5
         pixmap = QPixmap()
         if not pixmap.loadFromData(data):
             self._set_art_message("Art unavailable")
             return
         self._art_label.setText("")
-        self._art_label.set_source(pixmap)
+        self._art_label.set_source(pixmap, focus_x)
         self._reveal_art()
 
     def _on_art_failed(self, request_id: int):
