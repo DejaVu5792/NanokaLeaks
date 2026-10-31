@@ -96,7 +96,7 @@ def create_qml_widget(
     The widget resizes its root item to its own size, so callers only have to
     place it in a layout.  *context_properties* maps names to Python objects
     exposed to the QML tree (``viewer`` and ``sections`` for the real window,
-    ``details`` for the details popup).
+    ``details`` or ``settings`` for a popup).
 
     *source* is relative to the QML directory; *image_providers* adds
     ``image://`` providers beside the shared ``image://nanoka`` one.
