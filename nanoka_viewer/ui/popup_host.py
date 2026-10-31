@@ -88,6 +88,13 @@ class PopupHost(QWidget):
         # around the QQuickWidget (which is stacked on top, see qml_host).
         self.setAutoFillBackground(False)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        # Qt propagates input the QML scene ignores up the parent chain: a
+        # wheel event the page cannot use would scroll the main list behind
+        # the overlay, and an ignored press would hit the widget under the
+        # backdrop.  The view is the child under the cursor, so the event
+        # reaches this widget next; the attribute stops it there (see the
+        # QWheelEvent and QMouseEvent documentation).
+        self.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.hide()
 
