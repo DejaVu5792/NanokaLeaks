@@ -346,6 +346,15 @@ Item {
                     Layout.fillWidth: true
                     implicitHeight: orderList.contentHeight
 
+                    // Label of the row being dragged, for the ghost below.
+                    // ``itemAtIndex`` returns a plain Item, so the delegate's
+                    // own property is read dynamically.
+                    function draggedRowLabel() {
+                        const row = orderDrag.from >= 0
+                            ? orderList.itemAtIndex(orderDrag.from) : null
+                        return row ? row["label"] : "" // qmllint disable missing-property
+                    }
+
                     // The drag handler sits *below* the list: presses on a row
                     // fall through the delegate (which has no press handler)
                     // while the per-row move buttons above it keep their own
@@ -437,6 +446,25 @@ Item {
                                 orderDrag.targetIndex * 34
                             )
                         )
+                    }
+
+                    // Faded copy of the dragged row under the pointer, like
+                    // the 40%-opacity drag pixmap the widget list showed.  The
+                    // row itself stays in place and the drop indicator shows
+                    // where it will land.
+                    GameOrderRow {
+                        objectName: "orderDragGhost"
+                        visible: orderDrag.active
+                        opacity: 0.4
+                        z: 2
+                        width: orderList.width
+                        x: orderDrag.mouseX - width / 2
+                        y: orderDrag.mouseY - height / 2
+                        dragging: true
+                        ghost: true
+                        label: orderArea.draggedRowLabel()
+                        canMoveUp: orderDrag.from > 0
+                        canMoveDown: orderDrag.from < orderList.count - 1
                     }
                 }
 

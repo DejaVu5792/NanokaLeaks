@@ -349,6 +349,43 @@ class SettingsGamesTabTests(QtTestCase):
         release_qml(self.popup._qml, QPoint(start.x(), start.y() + 34))
         self.assertFalse(indicator.property("visible"))
 
+    def test_dragging_shows_a_faded_ghost_of_the_row(self):
+        self._view_tab()
+        ghost = self._qml("orderDragGhost")
+        self.assertFalse(ghost.property("visible"))
+
+        row = self._qml("gameOrderRow-zzz")
+        start = press_qml(self.popup._qml, row)
+        move_qml(self.popup._qml, QPoint(start.x(), start.y() + 34))
+        flush()
+
+        self.assertTrue(ghost.property("visible"))
+        self.assertAlmostEqual(ghost.property("opacity"), 0.4)
+        self.assertIn(
+            GAMES["zzz"]["name"],
+            find_qml_item(ghost, "orderRowLabel").property("text"),
+        )
+
+        release_qml(self.popup._qml, QPoint(start.x(), start.y() + 34))
+        self.assertFalse(ghost.property("visible"))
+
+    def test_drag_ghost_follows_the_pointer(self):
+        self._view_tab()
+        ghost = self._qml("orderDragGhost")
+        row = self._qml("gameOrderRow-zzz")
+
+        start = press_qml(self.popup._qml, row)
+        move_qml(self.popup._qml, QPoint(start.x(), start.y() + 34))
+        flush()
+        first = ghost.property("y")
+
+        move_qml(self.popup._qml, QPoint(start.x(), start.y() + 68))
+        flush()
+        second = ghost.property("y")
+
+        release_qml(self.popup._qml, QPoint(start.x(), start.y() + 68))
+        self.assertAlmostEqual(second - first, 34)
+
     # -- other options -----------------------------------------------------
 
     def test_cache_save_keeps_game_settings(self):

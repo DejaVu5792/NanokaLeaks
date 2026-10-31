@@ -11,6 +11,9 @@ Item {
 
     property string label: ""
     property bool dragging: false
+    // A non-interactive copy shown under the pointer while this row is
+    // dragged (see the ghost in SettingsPanel.qml).
+    property bool ghost: false
     property bool canMoveUp: false
     property bool canMoveDown: false
 
@@ -57,7 +60,7 @@ Item {
         onClicked: row.moveUp()
 
         ToolTip.text: "Move up"
-        ToolTip.visible: hovered && enabled
+        ToolTip.visible: !row.ghost && hovered && enabled
         ToolTip.delay: 600
 
         background: Rectangle {
@@ -90,7 +93,7 @@ Item {
         onClicked: row.moveDown()
 
         ToolTip.text: "Move down"
-        ToolTip.visible: hovered && enabled
+        ToolTip.visible: !row.ghost && hovered && enabled
         ToolTip.delay: 600
 
         background: Rectangle {
@@ -112,6 +115,7 @@ Item {
 
     HoverHandler {
         id: hover
+        enabled: !row.ghost
         cursorShape: Qt.OpenHandCursor
     }
 }
