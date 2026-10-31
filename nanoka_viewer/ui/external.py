@@ -1,20 +1,16 @@
-"""Open character pages in the user's default browser.
-
-The in-app browser (QtWebEngine) was removed from the app, so a card's
-external-link button hands the URL to the desktop instead.  On Linux this
-prefers the configured default web browser through ``gtk-launch`` (which
-also works for Flatpak/snap browsers that ``webbrowser`` cannot find);
-everywhere else it falls back to :mod:`webbrowser`.
-"""
+"""Open character pages in the user's default browser."""
 
 from __future__ import annotations
 
 import logging
-import subprocess
-import sys
 import webbrowser
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+
 logger = logging.getLogger(__name__)
+
+_ALLOWED_SCHEMES = {"http", "https"}
 
 
 def open_external_url(url: str) -> None:
@@ -22,22 +18,16 @@ def open_external_url(url: str) -> None:
     if not url:
         return
 
-    if sys.platform.startswith("linux"):
-        try:
-            desktop = subprocess.check_output(
-                ["xdg-settings", "get", "default-web-browser"],
-                text=True,
-                stderr=subprocess.DEVNULL,
-            ).strip()
-            if desktop:
-                subprocess.Popen(
-                    ["gtk-launch", desktop, url],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    start_new_session=True,
-                )
-                return
-        except Exception:
-            logger.debug("gtk-launch unavailable; falling back to webbrowser")
+    qurl = QUrl(url)
+    if not qurl.isValid() or qurl.scheme().lower() not in _ALLOWED_SCHEMES:
+        logger.warning("Refusing to open non-web URL: %s", url)
+        return
 
-    webbrowser.open(url, new=2)
+    # Windows: ShellExecute, macOS: NSWorkspace, Linux: xdg-desktop-portal
+    # (or xdg-open when no portal is running).
+    if QDesktopServices.openUrl(qurl):
+        return
+
+    logger.debug("QDesktopServices failed; falling back to webbrowser")
+    if not webbrowser.open(url, new=2):
+        logger.warning("Could not open %s in a browser", url)
