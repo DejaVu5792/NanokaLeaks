@@ -329,7 +329,7 @@ Item {
             Label {
                 objectName: "settingsHint"
                 width: parent.width
-                text: "Drag the enabled games to reorder their sections."
+                text: "Drag the enabled games, or use the arrows, to reorder their sections."
                 color: palette.placeholderText
                 font.pixelSize: 11
                 wrapMode: Text.WordWrap
@@ -345,51 +345,19 @@ Item {
                     Layout.fillWidth: true
                     implicitHeight: orderList.contentHeight
 
-                    ListView {
-                        id: orderList
-                        objectName: "gameOrderList"
-                        anchors.fill: parent
-                        interactive: false
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        model: settings.order
-
-                        delegate: GameOrderRow {
-                            required property int index
-                            required property string gameId
-                            required property string gameName
-
-                            objectName: "gameOrderRow-" + gameId
-                            width: orderList.width
-                            label: gameName
-                            dragging: orderDrag.active
-                                && orderDrag.from === index
-                        }
-                    }
-
-                    // Insertion line, like the widget list's drop indicator.
-                    Rectangle {
-                        objectName: "orderDropIndicator"
-                        visible: orderDrag.active
-                            && orderDrag.targetIndex !== orderDrag.from
-                        x: 0
-                        width: parent.width
-                        height: 4
-                        color: palette.highlight
-                        y: Math.max(
-                            0,
-                            Math.min(
-                                orderArea.height - height,
-                                orderDrag.targetIndex * 34
-                            )
-                        )
-                    }
-
+                    // The drag handler sits *below* the list: presses on a row
+                    // fall through the delegate (which has no press handler)
+                    // while the per-row move buttons above it keep their own
+                    // clicks.  ``preventStealing`` stops the page Flickable
+                    // from turning a vertical drag into a scroll.
                     MouseArea {
                         id: orderDrag
                         objectName: "gameOrderDragArea"
                         anchors.fill: parent
-                        hoverEnabled: true
+                        preventStealing: true
+                        cursorShape: active
+                            ? Qt.ClosedHandCursor
+                            : Qt.OpenHandCursor
 
                         property int from: -1
                         property int targetIndex: -1
@@ -424,6 +392,50 @@ Item {
                             from = -1
                             targetIndex = -1
                         }
+                    }
+
+                    ListView {
+                        id: orderList
+                        objectName: "gameOrderList"
+                        anchors.fill: parent
+                        interactive: false
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        model: settings.order
+
+                        delegate: GameOrderRow {
+                            required property int index
+                            required property string gameId
+                            required property string gameName
+
+                            objectName: "gameOrderRow-" + gameId
+                            width: orderList.width
+                            label: gameName
+                            dragging: orderDrag.active
+                                && orderDrag.from === index
+                            canMoveUp: index > 0
+                            canMoveDown: index < orderList.count - 1
+                            onMoveUp: settings.moveGame(index, index - 1)
+                            onMoveDown: settings.moveGame(index, index + 1)
+                        }
+                    }
+
+                    // Insertion line, like the widget list's drop indicator.
+                    Rectangle {
+                        objectName: "orderDropIndicator"
+                        visible: orderDrag.active
+                            && orderDrag.targetIndex !== orderDrag.from
+                        x: 0
+                        width: parent.width
+                        height: 4
+                        color: palette.highlight
+                        y: Math.max(
+                            0,
+                            Math.min(
+                                orderArea.height - height,
+                                orderDrag.targetIndex * 34
+                            )
+                        )
                     }
                 }
 

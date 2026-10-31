@@ -241,6 +241,68 @@ class SettingsGamesTabTests(QtTestCase):
 
         self.assertEqual(self.popup.visible_game_order(), list(GAMES))
 
+    def test_dragging_a_row_does_not_scroll_the_page(self):
+        self._view_tab()
+        page = self._qml("settingsViewPage")
+
+        drag_qml(self.popup._qml, self._qml("gameOrderRow-zzz"), 2 * 34)
+
+        self.assertEqual(page.property("contentY"), 0)
+        self.assertEqual(
+            self.popup.visible_game_order(), ["hsr", "gi", "zzz", "ww", "nte"]
+        )
+
+    def test_order_rows_have_move_buttons_with_edge_rows_disabled(self):
+        self._view_tab()
+        order = list(GAMES)
+
+        first = self._qml("gameOrderRow-" + order[0])
+        self.assertIsNotNone(find_qml_item(first, "orderRowUp"))
+        self.assertIsNotNone(find_qml_item(first, "orderRowDown"))
+        self.assertFalse(find_qml_item(first, "orderRowUp").property("enabled"))
+        self.assertTrue(find_qml_item(first, "orderRowDown").property("enabled"))
+
+        last = self._qml("gameOrderRow-" + order[-1])
+        self.assertTrue(find_qml_item(last, "orderRowUp").property("enabled"))
+        self.assertFalse(find_qml_item(last, "orderRowDown").property("enabled"))
+
+    def test_move_down_button_moves_the_row_one_slot(self):
+        self._view_tab()
+        row = self._qml("gameOrderRow-zzz")
+
+        click_qml(self.popup._qml, find_qml_item(row, "orderRowDown"))
+
+        expected = ["hsr", "zzz", "gi", "ww", "nte"]
+        self.assertEqual(self.popup.visible_game_order(), expected)
+        self.assertEqual(self.settings["game_order"], expected)
+
+    def test_move_up_button_moves_the_row_one_slot(self):
+        self._view_tab()
+        row = self._qml("gameOrderRow-gi")
+
+        click_qml(self.popup._qml, find_qml_item(row, "orderRowUp"))
+
+        expected = ["zzz", "gi", "hsr", "ww", "nte"]
+        self.assertEqual(self.popup.visible_game_order(), expected)
+        self.assertEqual(self.settings["game_order"], expected)
+
+    def test_move_buttons_keep_disabled_games_in_their_slots(self):
+        self.settings = {
+            "game_order": ["zzz", "hsr", "gi", "ww", "nte"],
+            "disabled_games": ["hsr"],
+        }
+        self.popup.open_popup()
+        flush()
+        self._view_tab()
+
+        row = self._qml("gameOrderRow-gi")
+        click_qml(self.popup._qml, find_qml_item(row, "orderRowUp"))
+
+        self.assertEqual(
+            self.settings["game_order"], ["gi", "hsr", "zzz", "ww", "nte"]
+        )
+        self.assertEqual(self.settings["disabled_games"], ["hsr"])
+
     def test_order_reset_restores_the_default_order(self):
         self.model.moveGame(4, 0)
         self.assertEqual(self.popup.visible_game_order()[0], "nte")
