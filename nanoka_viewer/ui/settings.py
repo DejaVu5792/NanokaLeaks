@@ -1,11 +1,11 @@
 """In-window settings popup.
 
-The popup keeps the shared overlay shell (backdrop, panel geometry, modal
-input guard, Escape) and renders its content from
-``qml/settings/SettingsPanel.qml``.  All behaviour that outlives a repaint --
-persisting the settings, the preload manager, cache metadata and the
-confirmation dialogs -- stays here; the QML tree only binds to
-:class:`~nanoka_viewer.ui.settings_model.SettingsViewModel`.
+The popup keeps the thin widget shell Qt needs to cover the central widget
+(:class:`~nanoka_viewer.ui.popup_host.PopupHost`) and renders the backdrop,
+panel and content from ``qml/settings/SettingsOverlay.qml``.  All behaviour
+that outlives a repaint -- persisting the settings, the preload manager, cache
+metadata and the confirmation dialogs -- stays here; the QML tree only binds
+to :class:`~nanoka_viewer.ui.settings_model.SettingsViewModel`.
 """
 
 from __future__ import annotations
@@ -32,9 +32,8 @@ from ..api.preload import (
 )
 from ..settings import DEFAULT_SETTINGS, load_settings, save_settings
 from .image_loader import clear_image_cache
-from .overlay import OverlayPopup, is_alive
+from .popup_host import PopupHost, is_alive
 from .preload import get_preload_manager
-from .qml_host import create_qml_widget
 from .settings_model import (
     CACHE_KINDS,
     SECTION_CACHING,
@@ -54,11 +53,11 @@ _PRELOAD_LABELS = {
 }
 
 
-class SettingsPopup(OverlayPopup):
+class SettingsPopup(PopupHost):
     """Lightbox-style settings overlay."""
 
     overlay_object_name = "settingsOverlay"
-    panel_object_name = "settingsPanel"
+    source = "settings/SettingsOverlay.qml"
     log_name = "settings popup"
     logger = logging.getLogger(__name__)
 
@@ -80,22 +79,11 @@ class SettingsPopup(OverlayPopup):
 
         self._model = SettingsViewModel(self)
 
-        # The QML root paints the panel itself (rounded corners, border, theme
-        # colours); the frame behind it must stay invisible, otherwise its
-        # square background covers the backdrop the corners should show.
-        self.panel.setStyleSheet("background: transparent; border: none;")
-
-        self._qml = create_qml_widget(
-            self.panel,
-            {"settings": self._model},
-            source="settings/SettingsPanel.qml",
-            translucent=True,
-        )
+        self._qml = self._create_view({"settings": self._model})
         # The model must not outlive the engine that binds to it: as a child of
         # the view it is destroyed right after the engine, so no binding is
         # ever evaluated against a dangling context property.
         self._model.setParent(self._qml)
-        self.panel_layout.addWidget(self._qml, 1)
 
         self._model.closeRequested.connect(self._request_close)
         self._model.cacheSettingChanged.connect(

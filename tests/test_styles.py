@@ -224,7 +224,7 @@ class DetailsSurfaceTests(QtTestCase):
         base = QColor(DISTINCT_ROLES["Base"])
 
         image = popup.grab().toImage()
-        panel = popup.panel.geometry()
+        panel = popup.panel_rect()
         art_width = round(panel.width() * 0.25)
 
         header = image.pixelColor(
@@ -273,7 +273,7 @@ class DetailsSurfaceTests(QtTestCase):
 
         base = QColor(DISTINCT_ROLES["Base"])
         image = popup.grab().toImage()
-        panel = popup.panel.geometry()
+        panel = popup.panel_rect()
         # The gap between the art column and the first card is plain panel
         # background; a transparent QML root would show the dimmed backdrop.
         centre = image.pixelColor(

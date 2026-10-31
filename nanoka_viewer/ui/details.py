@@ -1,9 +1,9 @@
 """In-window character details view, rendered by QML.
 
-The popup keeps the shared :class:`OverlayPopup` shell (backdrop, panel
-geometry, modal input guard, Escape handling and focus restore) and hosts
-``qml/details/DetailsPanel.qml`` in the panel instead of building widgets.
-Python still owns everything that is not presentation:
+The popup keeps the thin widget shell Qt needs to cover the central widget
+(:class:`~nanoka_viewer.ui.popup_host.PopupHost`) and renders the backdrop,
+panel and content from ``qml/details/DetailsOverlay.qml``.  Python still owns
+everything that is not presentation:
 
 * the three worker threads (detail, recommended build, artwork);
 * the request-id scheme that drops stale results;
@@ -39,8 +39,7 @@ from ..saliency import sr_centroid_x
 from ..settings import get_setting
 from .details_model import DetailsViewModel
 from .image_provider import ART_PROVIDER_ID, NanokaArtProvider
-from .overlay import OverlayPopup, is_alive
-from .qml_host import create_qml_widget
+from .popup_host import PopupHost, is_alive
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +114,11 @@ class _ArtLoadThread(QThread):
         self.loaded.emit((data, focus_x))
 
 
-class CharacterDetailsPopup(OverlayPopup):
+class CharacterDetailsPopup(PopupHost):
     """Lightbox-style character details overlay."""
 
     overlay_object_name = "detailsOverlay"
-    panel_object_name = "detailsPanel"
+    source = "details/DetailsOverlay.qml"
     blocks_host_input = True
     log_name = "details popup"
     logger = logging.getLogger(__name__)
@@ -157,23 +156,14 @@ class CharacterDetailsPopup(OverlayPopup):
         self._art_provider = NanokaArtProvider()
         self._art_token = 0
 
-        # The QML root paints the panel itself (rounded corners, border, theme
-        # colours); the frame behind it must stay invisible, otherwise its
-        # square background covers the backdrop the corners should show.
-        self.panel.setStyleSheet("background: transparent; border: none;")
-
-        self._qml = create_qml_widget(
-            self.panel,
+        self._qml = self._create_view(
             {"details": self._model},
-            source="details/DetailsPanel.qml",
             image_providers={ART_PROVIDER_ID: self._art_provider},
-            translucent=True,
         )
         # The model must not outlive the engine that binds to it: as a child of
         # the view it is destroyed right after the engine, so no binding is
         # ever evaluated against a dangling context property.
         self._model.setParent(self._qml)
-        self.panel_layout.addWidget(self._qml, 1)
 
         self._model.closeRequested.connect(self._request_close)
         self._model.retryRequested.connect(self._retry)
@@ -223,7 +213,7 @@ class CharacterDetailsPopup(OverlayPopup):
             "focus=%r guard=%s",
             self._host.size(),
             self.size(),
-            self.panel.geometry(),
+            self.panel_rect(),
             self.isVisible(),
             QApplication.focusWidget(),
             self._input_guard_installed,

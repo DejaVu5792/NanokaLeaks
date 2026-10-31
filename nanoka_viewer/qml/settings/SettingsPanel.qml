@@ -9,18 +9,12 @@ import ".."
 // Content of the settings popup.
 //
 // ``settings`` is the SettingsViewModel context property installed by
-// nanoka_viewer/ui/settings.py before this tree is parsed.  The widget
-// overlay around it still owns the backdrop, the panel geometry, Escape
-// handling and the modal input guard; this tree owns everything inside the
-// panel.
-Rectangle {
+// nanoka_viewer/ui/settings.py before this tree is parsed.  The overlay shell
+// around it (backdrop, panel, Escape, click-outside) is Overlay.qml; this tree
+// only owns everything inside the panel and paints nothing itself.
+Item {
     id: panel
     objectName: "settingsPanelQml"
-
-    radius: 8
-    color: palette.window
-    border.width: 1
-    border.color: palette.mid
 
     // -- header -----------------------------------------------------------
     Item {
@@ -31,16 +25,6 @@ Rectangle {
         anchors.right: parent.right
         height: 48
         clip: true
-
-        // Square off the top corners the way the panel radius does.
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: headerArea.height + panel.radius
-            radius: panel.radius
-            color: palette.window
-        }
 
         Rectangle {
             anchors.left: parent.left

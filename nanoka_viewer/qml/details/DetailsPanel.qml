@@ -9,17 +9,16 @@ import ".."
 // Content of the character-details popup.
 //
 // ``details`` is the DetailsViewModel context property installed by
-// nanoka_viewer/ui/details.py before this tree is parsed.  The widget overlay
-// around it still owns the backdrop, the panel geometry, Escape handling and
-// the modal input guard; this tree owns everything inside the panel.
-Rectangle {
+// nanoka_viewer/ui/details.py before this tree is parsed.  The overlay shell
+// around it (backdrop, panel, Escape, click-outside) is Overlay.qml; this tree
+// only owns everything inside the panel.
+Item {
     id: panel
     objectName: "detailsPanelQml"
 
-    radius: 10
-    color: palette.base
-    border.width: 1
-    border.color: palette.mid
+    // Matches the shell's panel radius so the header strip follows the top
+    // corners.
+    property int cornerRadius: 10
 
     // -- header -----------------------------------------------------------
     Item {
@@ -35,8 +34,8 @@ Rectangle {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            height: headerArea.height + panel.radius
-            radius: panel.radius
+            height: headerArea.height + panel.cornerRadius
+            radius: panel.cornerRadius
             color: palette.alternateBase
         }
 

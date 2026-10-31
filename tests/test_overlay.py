@@ -56,14 +56,14 @@ class SettingsOverlayTests(QtTestCase):
 
         self.assertTrue(popup.isVisible())
         self.assertEqual(popup.geometry(), host.rect())
-        self.assertLessEqual(popup.panel.width(), host.width())
-        self.assertLessEqual(popup.panel.height(), host.height())
+        self.assertLessEqual(popup.panel_rect().width(), host.width())
+        self.assertLessEqual(popup.panel_rect().height(), host.height())
 
     def test_escape_closes_settings(self):
         host = self.make_host()
         popup = open_settings(host)
 
-        QTest.keyClick(popup, Qt.Key.Key_Escape)
+        QTest.keyClick(popup._qml, Qt.Key.Key_Escape)
         flush()
 
         self.assertFalse(popup.isVisible())
@@ -73,12 +73,16 @@ class SettingsOverlayTests(QtTestCase):
         popup = open_settings(host)
 
         QTest.mouseClick(
-            popup, Qt.MouseButton.LeftButton, pos=popup.panel.geometry().center()
+            popup._qml,
+            Qt.MouseButton.LeftButton,
+            pos=popup.panel_rect().center(),
         )
         flush()
         self.assertTrue(popup.isVisible())
 
-        QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=QPoint(2, 2))
+        QTest.mouseClick(
+            popup._qml, Qt.MouseButton.LeftButton, pos=QPoint(2, 2)
+        )
         flush()
         self.assertFalse(popup.isVisible())
 

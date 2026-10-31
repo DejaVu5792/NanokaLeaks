@@ -1,28 +1,28 @@
-"""Shared behaviour for in-window lightbox overlays.
+"""Full-size widget that hosts one popup's QML overlay.
 
-Both the character-details and settings popups are plain child widgets that
-cover the central widget.  Their geometry, backdrop painting, host tracking,
-Escape handling and (for modal overlays) input guarding were duplicated nearly
-verbatim.  This base class keeps that logic in one place so the two popups only
-own their content.
+Qt places and raises child widgets itself, so each popup keeps a thin
+``QWidget`` that covers the central widget.  Everything the user sees and
+interacts with -- the dimmed backdrop, the centred rounded panel, Escape,
+click-outside-to-close and blocking input to the window underneath -- lives in
+``qml/Overlay.qml``.  This module only keeps the widget plumbing Qt requires:
+sizing against the host, raising, focus and dropping stale hover state.
 """
 
 from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
-from PySide6.QtWidgets import (
-    QApplication,
-    QFrame,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+
+from .qml_host import create_qml_widget
 
 logger = logging.getLogger(__name__)
 
 # Events that must never reach the host content while a modal overlay is open.
+# The QML backdrop already swallows pointer input over the covered area; this
+# guard is the safety net for the native-subsurface stacking case, where a
+# host surface can end up painted above the popup and receive events directly.
 _BLOCKED_INPUT_EVENTS = frozenset(
     {
         QEvent.Type.MouseButtonPress,
@@ -47,19 +47,23 @@ def is_alive(widget: QWidget | None) -> bool:
     return True
 
 
-class OverlayPopup(QWidget):
-    """Base class for the in-window popups.
+class PopupHost(QWidget):
+    """Child widget that shows one ``qml/Overlay.qml`` tree over the host.
 
-    Subclasses set the object names / sizing attributes and build their content
-    inside ``self.panel_layout``.  They may override :meth:`_on_geometry_changed`
-    and :meth:`_on_close` for popup-specific work.
+    Subclasses set :attr:`source` and the panel sizing attributes, build their
+    view model, then call :meth:`_create_view` with the context properties the
+    QML tree needs.
     """
 
     overlay_object_name = "overlay"
-    panel_object_name = "overlayPanel"
-    blocks_host_input = False
     log_name = "overlay"
-    logger = logging.getLogger(__name__)
+    logger = logger
+
+    #: Whether input aimed at the host content is dropped while open.
+    blocks_host_input = False
+
+    #: QML source, relative to the QML directory.
+    source = ""
 
     width_ratio = 0.92
     min_width = 560
@@ -74,19 +78,20 @@ class OverlayPopup(QWidget):
     def __init__(self, host: QWidget, parent: QWidget | None = None):
         super().__init__(host if parent is None else parent)
         self._host = host
+        self._qml = None
         self._input_guard_installed = False
-        self._backdrop_pressed = False
 
         self.setObjectName(self.overlay_object_name)
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # The QML tree paints the backdrop and the panel; the widget and the
+        # view must both stay transparent so the window shows through.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.hide()
 
-        self.panel = QFrame(self)
-        self.panel.setObjectName(self.panel_object_name)
-        self.panel_layout = QVBoxLayout(self.panel)
-        self.panel_layout.setContentsMargins(0, 0, 0, 0)
-        self.panel_layout.setSpacing(0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Coalesce the burst of resize/state events a maximise produces.
         self._refresh_timer = QTimer(self)
@@ -96,19 +101,58 @@ class OverlayPopup(QWidget):
         self._settle_timer.setSingleShot(True)
         self._settle_timer.timeout.connect(self._refresh)
 
-        self._esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        self._esc_shortcut.activated.connect(self._request_close)
-
         self._host.installEventFilter(self)
+
+    # -- content -----------------------------------------------------------
+
+    def _create_view(self, context_properties, image_providers=None):
+        """Load :attr:`source` and wire the shell's sizing and close signal."""
+        self._qml = create_qml_widget(
+            self,
+            dict(context_properties or {}),
+            source=self.source,
+            image_providers=image_providers,
+            translucent=True,
+        )
+        self.layout().addWidget(self._qml, 1)
+
+        root = self._qml.rootObject()
+        root.setProperty("panelWidthRatio", float(self.width_ratio))
+        root.setProperty("minPanelWidth", int(self.min_width))
+        root.setProperty("maxPanelWidth", int(self.max_width))
+        root.setProperty("hardMinPanelWidth", int(self.hard_min_width))
+        root.setProperty("panelHeightRatio", float(self.height_ratio))
+        root.setProperty("minPanelHeight", int(self.min_height))
+        root.setProperty("maxPanelHeight", int(self.max_height))
+        root.setProperty("hardMinPanelHeight", int(self.hard_min_height))
+        root.setProperty("edgeMargin", int(self.margin))
+        root.closeRequested.connect(self._request_close)
+        return self._qml
+
+    def panel_rect(self) -> QRect:
+        """Return the QML panel's geometry in this widget's coordinates."""
+        if self._qml is None:
+            return QRect()
+        rect = self._qml.rootObject().property("panelGeometry")
+        if rect is None:
+            return QRect()
+        return QRect(
+            round(rect.x()),
+            round(rect.y()),
+            round(rect.width()),
+            round(rect.height()),
+        )
 
     # -- lifecycle ---------------------------------------------------------
 
     def show_overlay(self):
-        """Show, size, focus and (optionally) guard the overlay."""
+        """Show, size and focus the overlay."""
         self.show()  # showEvent sizes it against the host
         if self.blocks_host_input:
             self._install_input_guard()
         self.setFocus()
+        if self._qml is not None:
+            self._qml.setFocus()
         self.bring_to_front()
         return self
 
@@ -121,11 +165,8 @@ class OverlayPopup(QWidget):
         try:
             self._remove_input_guard()
             self._on_close()
-            self._backdrop_pressed = False
             self.clearFocus()
             self.hide()
-            self.repaint()
-            self._host.repaint()
             self._host.setFocus()
             self._host.activateWindow()
         finally:
@@ -135,6 +176,7 @@ class OverlayPopup(QWidget):
 
     def _request_close(self):
         """Defer closing so it never happens inside the event being handled."""
+        self.logger.debug("close requested for %s", self.log_name)
         QTimer.singleShot(0, self.close_popup)
 
     def _on_close(self):
@@ -162,29 +204,6 @@ class OverlayPopup(QWidget):
         if old_geometry != rect:
             self.logger.debug("overlay geometry: %s -> %s", old_geometry, rect)
 
-        width = min(
-            self.max_width,
-            max(self.min_width, int(rect.width() * self.width_ratio)),
-            max(self.hard_min_width, rect.width() - self.margin),
-        )
-        height = min(
-            self.max_height,
-            max(self.min_height, int(rect.height() * self.height_ratio)),
-            max(self.hard_min_height, rect.height() - self.margin),
-        )
-        self.panel.setGeometry(
-            (rect.width() - width) // 2,
-            (rect.height() - height) // 2,
-            width,
-            height,
-        )
-        self._on_geometry_changed(width, height)
-        self.update()
-        self.panel.update()
-
-    def _on_geometry_changed(self, width: int, height: int):
-        """Hook: adapt popup columns to the panel size."""
-
     def _refresh(self):
         if not self.isVisible():
             return
@@ -200,9 +219,8 @@ class OverlayPopup(QWidget):
         if not self.isVisible():
             return
         self.raise_()
-        self.panel.raise_()
 
-    # -- host tracking / input guard --------------------------------------
+    # -- host tracking -----------------------------------------------------
 
     def eventFilter(self, obj, event):
         if obj is self._host and event.type() in (
@@ -258,6 +276,8 @@ class OverlayPopup(QWidget):
         self._input_guard_installed = False
         self.logger.debug("removed modal input guard")
 
+    # -- stale input -------------------------------------------------------
+
     def clear_stale_input_state(self, widget: QWidget | None):
         """Drop hover/pressed state a Wayland click may have left behind."""
         if widget is None:
@@ -277,37 +297,3 @@ class OverlayPopup(QWidget):
             was_hovered,
             was_down,
         )
-
-    # -- painting / backdrop ----------------------------------------------
-
-    def paintEvent(self, event):
-        """Paint the dimmed backdrop without relying on Wayland QSS support."""
-        painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 160))
-        super().paintEvent(event)
-
-    def _is_backdrop(self, event) -> bool:
-        global_pos = event.globalPosition().toPoint()
-        return not self.panel.rect().contains(self.panel.mapFromGlobal(global_pos))
-
-    def mousePressEvent(self, event):
-        self._backdrop_pressed = self._is_backdrop(event)
-        self.logger.debug(
-            "overlay press backdrop=%s at %s",
-            self._backdrop_pressed,
-            event.position().toPoint(),
-        )
-        event.accept()
-
-    def mouseReleaseEvent(self, event):
-        backdrop = self._is_backdrop(event)
-        self.logger.debug(
-            "overlay release backdrop=%s pressed_on_backdrop=%s at %s",
-            backdrop,
-            self._backdrop_pressed,
-            event.position().toPoint(),
-        )
-        if backdrop and self._backdrop_pressed:
-            self._request_close()
-        self._backdrop_pressed = False
-        event.accept()

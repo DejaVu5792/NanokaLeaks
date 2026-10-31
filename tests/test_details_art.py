@@ -101,7 +101,7 @@ class ArtworkTests(QtTestCase):
     def test_art_is_cover_cropped_and_keeps_the_top(self):
         popup = self._open_with_art()
         art = self._find(popup, "detailArt")
-        frame_height = popup.panel.height() - HEADER_HEIGHT
+        frame_height = popup.panel_rect().height() - HEADER_HEIGHT
 
         self.assertEqual(art.y(), 0, "the crop must keep the top of the artwork")
         self.assertGreater(
@@ -111,13 +111,13 @@ class ArtworkTests(QtTestCase):
         )
         self.assertAlmostEqual(
             art.x(),
-            (round(popup.panel.width() * 0.25) - art.width()) / 2,
+            (round(popup.panel_rect().width() * 0.25) - art.width()) / 2,
             delta=1,
             msg="the horizontal crop must be centred",
         )
 
         image = popup.grab().toImage()
-        panel = popup.panel.geometry()
+        panel = popup.panel_rect()
         x = panel.left() + round(panel.width() * 0.25) // 2
         top = panel.top() + HEADER_HEIGHT
 
@@ -154,7 +154,7 @@ class ArtworkTests(QtTestCase):
             "the artwork must cover the taller column after a resize",
         )
         self.assertGreaterEqual(
-            art.width(), round(popup.panel.width() * 0.25) - 1
+            art.width(), round(popup.panel_rect().width() * 0.25) - 1
         )
 
     def test_art_text_is_anchored_to_the_bottom(self):

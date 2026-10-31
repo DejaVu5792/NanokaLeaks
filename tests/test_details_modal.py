@@ -37,14 +37,18 @@ class ViewButtonInteractionTests(QtTestCase):
         popup = open_details_for(window, button)
 
         self.assertTrue(popup.isVisible())
-        self.assertIs(
-            central.childAt(button_center_in(button, central)),
-            popup,
+        hit = central.childAt(button_center_in(button, central))
+        self.assertIsNotNone(hit, "something must cover the card View button")
+        self.assertTrue(
+            hit is popup or popup.isAncestorOf(hit),
             "the overlay must hit-test above the card View button",
         )
-        self.assertIs(
-            QApplication.widgetAt(button.mapToGlobal(button.rect().center())),
-            popup,
+        at_cursor = QApplication.widgetAt(
+            button.mapToGlobal(button.rect().center())
+        )
+        self.assertTrue(
+            at_cursor is popup or popup.isAncestorOf(at_cursor),
+            "the overlay must be the widget under the pointer",
         )
 
     def test_open_clears_stale_hover_and_pressed_state(self):
@@ -172,7 +176,7 @@ class BackdropAndLifecycleTests(QtTestCase):
         popup = open_details_for(window, button)
 
         QTest.mousePress(
-            popup, Qt.MouseButton.LeftButton, pos=QPoint(4, 4)
+            popup._qml, Qt.MouseButton.LeftButton, pos=QPoint(4, 4)
         )
         flush()
         self.assertTrue(
@@ -182,7 +186,7 @@ class BackdropAndLifecycleTests(QtTestCase):
         )
 
         QTest.mouseRelease(
-            popup, Qt.MouseButton.LeftButton, pos=QPoint(4, 4)
+            popup._qml, Qt.MouseButton.LeftButton, pos=QPoint(4, 4)
         )
         flush()
         self.assertFalse(popup.isVisible())
@@ -193,8 +197,8 @@ class BackdropAndLifecycleTests(QtTestCase):
         self.track_window(window)
         popup = open_details_for(window, button)
 
-        point = popup.panel.geometry().center()
-        QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=point)
+        point = popup.panel_rect().center()
+        QTest.mouseClick(popup._qml, Qt.MouseButton.LeftButton, pos=point)
         flush()
 
         self.assertTrue(popup.isVisible())
@@ -229,7 +233,7 @@ class BackdropAndLifecycleTests(QtTestCase):
         self.track_window(window)
         popup = open_details_for(window, button)
 
-        QTest.keyClick(popup, Qt.Key.Key_Escape)
+        QTest.keyClick(popup._qml, Qt.Key.Key_Escape)
         flush()
 
         self.assertFalse(popup.isVisible())
@@ -257,14 +261,22 @@ class BackdropAndLifecycleTests(QtTestCase):
         popup = open_details_for(window, button)
 
         self.assertTrue(popup._input_guard_installed)
-        self.assertIs(QApplication.focusWidget(), popup)
+        focused = QApplication.focusWidget()
+        self.assertTrue(
+            focused is popup or popup.isAncestorOf(focused),
+            "focus must start inside the overlay",
+        )
 
         popup.close_popup()
         flush()
 
         self.assertFalse(popup.isVisible())
         self.assertFalse(popup._input_guard_installed)
-        self.assertIsNot(QApplication.focusWidget(), popup)
+        focused = QApplication.focusWidget()
+        self.assertFalse(
+            focused is not None and (focused is popup or popup.isAncestorOf(focused)),
+            "focus must leave the overlay when it closes",
+        )
 
     def test_opening_clears_hover_of_previously_hovered_button(self):
         window, central, _scroll, button, _anchor = make_details_host()
