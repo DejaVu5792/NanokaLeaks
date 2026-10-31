@@ -45,6 +45,7 @@ ColumnLayout {
 
             ToolTip.text: row.tooltip
             ToolTip.visible: hovered && row.tooltip.length > 0
+            ToolTip.delay: 600
         }
 
         AppButton {
@@ -60,6 +61,7 @@ ColumnLayout {
 
             ToolTip.text: row.buttonTooltip
             ToolTip.visible: hovered && row.buttonTooltip.length > 0
+            ToolTip.delay: 600
         }
     }
 

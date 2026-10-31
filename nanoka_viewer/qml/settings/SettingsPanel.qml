@@ -219,6 +219,7 @@ Item {
 
                 ToolTip.text: settings.clearCacheTooltip
                 ToolTip.visible: hovered && settings.clearCacheTooltip.length > 0
+                ToolTip.delay: 600
             }
 
             Item {

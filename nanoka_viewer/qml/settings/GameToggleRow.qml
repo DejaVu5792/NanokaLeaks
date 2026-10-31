@@ -73,6 +73,7 @@ Item {
 
             ToolTip.text: row.countTooltip
             ToolTip.visible: countHover.hovered && row.countTooltip.length > 0
+            ToolTip.delay: 600
         }
     }
 

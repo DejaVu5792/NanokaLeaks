@@ -37,6 +37,7 @@ RowLayout {
 
         ToolTip.text: header.tooltip
         ToolTip.visible: hovered && header.tooltip.length > 0
+        ToolTip.delay: 600
 
         contentItem: Text {
             text: "\u21ba"
