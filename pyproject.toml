@@ -2,7 +2,7 @@
 name = "nanokaleaks"
 version = "5.2.2"
 description = "View newest characters from nanoka.cc"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "customtkinter",
     "requests",
