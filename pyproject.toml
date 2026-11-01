@@ -1,6 +1,6 @@
 [project]
 name = "nanokaleaks"
-version = "6.0.2"
+version = "6.0.3"
 description = "View newest characters from nanoka.cc"
 requires-python = ">=3.13"
 dependencies = [
