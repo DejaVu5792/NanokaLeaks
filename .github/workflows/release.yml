@@ -32,7 +32,26 @@ jobs:
         include:
           - os: ubuntu-24.04
             binary_name: NanokaLeaks
-            setup_command: sudo apt-get update && sudo apt-get install -y gcc patchelf ccache
+            # A Linux onefile bundles Qt but links against the distribution's
+            # platform libraries. The runner image ships neither libEGL nor the
+            # X11/xcb set, so the smoke test could not even import Qt; install
+            # the runtime closure before building.
+            setup_command: >
+              sudo apt-get update && sudo apt-get install -y
+              gcc patchelf ccache
+              libegl1 libgl1 libglvnd0 libgbm1 libdrm2
+              libxkbcommon0 libxkbcommon-x11-0 libxkbfile1
+              libx11-xcb1 libxext6 libxfixes3 libxrandr2 libxtst6
+              libxcomposite1 libxdamage1
+              libxcb1 libxcb-render0 libxcb-shm0 libxcb-util1 libxcb-cursor0
+              libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0
+              libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0
+              libxcb-xkb1
+              libwayland-client0 libwayland-cursor0 libwayland-server0
+              libpulse0 libasound2t64
+              libfontconfig1 libfreetype6 libharfbuzz0b libpng16-16
+              libdbus-1-3 libglib2.0-0t64 libbrotli1 libkrb5-3 libexpat1
+              libnss3 libnspr4 libudev1 zlib1g
             extra_flags: ""
           - os: windows-latest
             binary_name: NanokaLeaks.exe
