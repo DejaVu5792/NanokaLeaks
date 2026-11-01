@@ -105,6 +105,11 @@ because the workflow had its own copy of the command and missed
   of the Qt SDK: QtWebEngineCore alone is ~195 MB, and Qt 3D, Charts, Multimedia
   and Pdf add another ~60 MB. Measured on Linux, both lists together take the
   distribution from 540 MB to 258 MB and the onefile from 158 MB to 71 MB.
+- Two smaller lists finish the job: `qt_orphan_libs` drops libraries nothing
+  links any more (the OpenSSL 3 pair, when Python links OpenSSL 4, and `libavif`)
+  and `qt_plugins_excluded` drops plugin families the viewer never loads (Qt
+  TLS, print support, and the tiff/wbmp/tga/icns/pdf image formats). PNG, JPEG,
+  WebP, GIF and SVG stay; they are what the artwork and theme icons use.
 - Only exclude a module or library that no shipped QML file imports.
   `QtQuick.Shapes` must stay, for example, because the Controls `Basic` style
   imports it; the QtQuick/QtQml/Controls stack, QtSvg (theme icons) and the
