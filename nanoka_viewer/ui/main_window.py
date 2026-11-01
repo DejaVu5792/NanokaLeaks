@@ -682,13 +682,13 @@ def _run_app(argv, *, smoke_test=False):
         # build would otherwise pop a blocking dialog.
         try:
             window = NanokaViewer(load_data=False)
-            details = CharacterDetailsPopup(window)
-            settings = SettingsPopup(window)
+            # Constructing the popups loads their QML trees.  They stay
+            # parented to the window, so the process exit tears them down.
+            CharacterDetailsPopup(window)
+            SettingsPopup(window)
         except Exception:
             logger.exception("Smoke test failed: could not build the QML trees")
             return 1
-        details.deleteLater()
-        settings.deleteLater()
         window.close()
         logger.info(
             "Smoke test passed (window, details overlay, settings overlay)"
