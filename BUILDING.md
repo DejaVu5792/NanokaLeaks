@@ -96,13 +96,19 @@ because the workflow had its own copy of the command and missed
 - `--include-qt-plugins=qml` ships Qt's QML module tree (`PySide6/qml`) so
   imports like `QtQuick.Controls` resolve in the bundle; Nuitka sets
   `QML2_IMPORT_PATH` accordingly in standalone builds.
-- The `--noinclude-data-files`/`--noinclude-dlls` pairs drop the Qt QML modules
-  the viewer never imports. Each module's plugin DLL would otherwise be bundled
-  along with its shared-library dependency chain — without the exclusions the
-  onefile grows from ~41 MB to ~136 MB, dragged up mainly by QtWebEngine
-  (~200 MB on disk) pulled in through `qml/QtWebEngine`'s plugin. Only exclude
-  a module that no shipped QML file imports: `QtQuick.Shapes`, for example, must
-  stay because the Controls `Basic` style imports it.
+- Two lists in `packaging/nuitka_flags.sh` drop what the viewer never imports:
+  `qml_excluded` removes Qt QML modules (sources and their plugin binaries) and
+  `qt_libs_excluded` removes the Qt shared libraries that only exist for them.
+  The second list matters more than it looks. `--include-qt-plugins=qml` makes
+  Nuitka follow every QML plugin's dependency chain into the Qt libraries
+  *before* the QML exclusions are applied, so without it the bundle carries most
+  of the Qt SDK: QtWebEngineCore alone is ~195 MB, and Qt 3D, Charts, Multimedia
+  and Pdf add another ~60 MB. Measured on Linux, both lists together take the
+  distribution from 540 MB to 258 MB and the onefile from 158 MB to 71 MB.
+- Only exclude a module or library that no shipped QML file imports.
+  `QtQuick.Shapes` must stay, for example, because the Controls `Basic` style
+  imports it; the QtQuick/QtQml/Controls stack, QtSvg (theme icons) and the
+  platform integration (XcbQpa, Wayland) are always kept.
 - The exclusions also decide how long a *cold* build takes. Nuitka's onefile
   packer compresses every payload file separately and each zstd level-22 stream
   costs ~360 ms to set up regardless of file size, so the ~2300 Qt QML files
@@ -113,9 +119,10 @@ because the workflow had its own copy of the command and missed
 ## Verifying a build
 
 `./NanokaLeaks --smoke-test` (or `NanokaLeaks.exe --smoke-test` on Windows)
-builds the main window once and exits, without touching the network. It fails
-when the bundle cannot find its QML sources or a Qt module they import. CI runs
-it against both binaries before publishing.
+builds the main window and both overlays (details, settings) once and exits,
+without touching the network. It fails when the bundle cannot find its QML
+sources or a Qt module they import. CI runs it against both binaries before
+publishing.
 
 Nuitka creates `main.build/`, `main.dist/`, and `main.onefile-build/` as
 intermediates. They are ignored by git.

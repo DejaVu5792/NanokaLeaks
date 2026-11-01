@@ -30,12 +30,12 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 from ..api import GAMES, fetch_manifest
 from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
 from ..settings import get_enabled_games
-from .details import open_details
+from .details import CharacterDetailsPopup, open_details
 from .external import open_external_url
 from .loader import LoadThread
 from .preload import get_preload_manager
 from .qml_host import create_qml_widget
-from .settings import open_settings
+from .settings import SettingsPopup, open_settings
 from .styles import STYLESHEET
 from .view_model import SectionsModel
 
@@ -674,17 +674,25 @@ def _run_app(argv, *, smoke_test=False):
         _install_mouse_trace(app)
 
     if smoke_test:
-        # Loading Main.qml is what fails when a compiled bundle is missing its
-        # QML sources or a Qt module they import, so reaching this point is the
-        # whole test.  Failures are caught here instead of escaping, because a
-        # console-less Windows build would otherwise pop a blocking dialog.
+        # Loading the QML trees is what fails when a compiled bundle is missing
+        # its QML sources or a Qt module they import.  The two overlays are
+        # separate trees, so build them as well; instantiating the popups loads
+        # their QML without opening them (which would start fetches).  Failures
+        # are caught here instead of escaping, because a console-less Windows
+        # build would otherwise pop a blocking dialog.
         try:
             window = NanokaViewer(load_data=False)
+            # Constructing the popups loads their QML trees.  They stay
+            # parented to the window, so the process exit tears them down.
+            CharacterDetailsPopup(window)
+            SettingsPopup(window)
         except Exception:
-            logger.exception("Smoke test failed: could not build the window")
+            logger.exception("Smoke test failed: could not build the QML trees")
             return 1
         window.close()
-        logger.info("Smoke test passed")
+        logger.info(
+            "Smoke test passed (window, details overlay, settings overlay)"
+        )
         return 0
 
     window = NanokaViewer()

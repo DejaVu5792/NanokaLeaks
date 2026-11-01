@@ -51,3 +51,35 @@ for module in "${qml_excluded[@]}"; do
         --noinclude-dlls="PySide6/qml/$module/*"
     )
 done
+
+# Qt shared libraries that only exist for modules the viewer never imports.
+#
+# --include-qt-plugins=qml makes Nuitka pull every QML plugin, and it follows
+# each plugin's dependency chain into the Qt libraries before the QML file
+# exclusions above are applied. The result is a bundle carrying most of the Qt
+# SDK: QtWebEngineCore alone is ~195 MB, and Qt 3D, Charts, Multimedia, Pdf and
+# the unused Controls styles add another ~60 MB.
+#
+# These are matched against the destination filename, so they sit at the
+# distribution root. Four namespaces are deliberately kept: QtQuick (plus
+# Controls/Controls2 Templates/Basic/Fusion/Impl, Layouts, Shapes, Window),
+# QtQml, QtSvg (theme icons) and the platform integration (XcbQpa, Wayland).
+qt_libs_excluded=(
+    libQt6WebEngine* libQt6WebChannel* libQt6WebView*
+    libQt6WebSockets* libQt6Positioning*
+    libQt6Quick3D* libQt63D* libQt6ShaderTools* libQt6SpatialAudio*
+    libQt6Charts* libQt6DataVisualization* libQt6Graphs*
+    libQt6Multimedia* libQt6Pdf* libQt6VirtualKeyboard*
+    libQt6RemoteObjects* libQt6Scxml* libQt6Sensors* libQt6StateMachine*
+    libQt6TextToSpeech* libQt6Location* libQt6Labs*
+    libQt6QuickTimeline* libQt6QuickParticles* libQt6QuickEffects*
+    libQt6QuickVectorImage* libQt6QuickDialogs2* libQt6QuickTest*
+    libQt6Test* libQt6Sql* libQt6QmlLocalStorage*
+    libQt6QuickControls2FluentWinUI3* libQt6QuickControls2Imagine*
+    libQt6QuickControls2Material* libQt6QuickControls2Universal*
+    libQt6WaylandCompositor* libQt6EglFS* libQt6EglFsKmsSupport*
+)
+
+for lib in "${qt_libs_excluded[@]}"; do
+    nuitka_flags+=(--noinclude-dlls="$lib")
+done
