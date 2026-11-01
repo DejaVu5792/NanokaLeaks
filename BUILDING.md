@@ -119,9 +119,10 @@ because the workflow had its own copy of the command and missed
 ## Verifying a build
 
 `./NanokaLeaks --smoke-test` (or `NanokaLeaks.exe --smoke-test` on Windows)
-builds the main window once and exits, without touching the network. It fails
-when the bundle cannot find its QML sources or a Qt module they import. CI runs
-it against both binaries before publishing.
+builds the main window and both overlays (details, settings) once and exits,
+without touching the network. It fails when the bundle cannot find its QML
+sources or a Qt module they import. CI runs it against both binaries before
+publishing.
 
 Nuitka creates `main.build/`, `main.dist/`, and `main.onefile-build/` as
 intermediates. They are ignored by git.
