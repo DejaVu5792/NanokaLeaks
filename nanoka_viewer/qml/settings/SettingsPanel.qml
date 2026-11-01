@@ -509,7 +509,7 @@ Item {
                     Layout.fillWidth: true
                     showButton: false
                     title: "Smart artwork centering"
-                    tooltip: "Offsets the details artwork horizontally toward the spectral-residual saliency centroid. On by default."
+                    tooltip: "Offsets the details artwork horizontally toward its detail-weighted centroid. On by default."
                     checked: settings.srCentroid
                     onToggled: (checked) => settings.setSrCentroid(checked)
                 }
