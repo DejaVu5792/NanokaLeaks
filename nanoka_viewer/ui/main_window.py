@@ -138,8 +138,13 @@ class NanokaViewer(QMainWindow):
         bool, lambda self: self._reload_enabled, notify=reloadEnabledChanged
     )
 
-    def __init__(self):
-        """Initialize the main window."""
+    def __init__(self, *, load_data: bool = True):
+        """Initialize the main window.
+
+        *load_data* starts the first character fetch.  ``--smoke-test`` turns it
+        off: the point there is to prove the window and its QML tree can be
+        built from the bundle, not to touch the network.
+        """
         super().__init__()
         logger.info("Initializing NanokaViewer...")
         init_start = time.time()
@@ -192,7 +197,8 @@ class NanokaViewer(QMainWindow):
 
         init_elapsed = time.time() - init_start
         logger.info(f"GUI initialized in {init_elapsed:.3f}s")
-        self.load_data()
+        if load_data:
+            self.load_data()
 
     # -- QML-facing state --------------------------------------------------
 
@@ -568,6 +574,14 @@ def main(argv=None):
         metavar="FILE",
         help="Where to save the cProfile stats (default: nanoka_profile.prof)",
     )
+    parser.add_argument(
+        "--smoke-test",
+        action="store_true",
+        help=(
+            "Build the main window once and exit; fails when a compiled "
+            "bundle is missing its QML sources or Qt modules"
+        ),
+    )
     args, remaining = parser.parse_known_args(argv)
 
     log_level = logging.DEBUG if args.verbose else logging.INFO
@@ -618,7 +632,7 @@ def main(argv=None):
         profiler.enable()
 
         try:
-            return _run_app(remaining)
+            return _run_app(remaining, smoke_test=args.smoke_test)
         finally:
             profiler.disable()
             profiler.dump_stats(profile_output)
@@ -628,7 +642,7 @@ def main(argv=None):
             stats.print_stats(40)
             logger.info(f"Profile stats saved to {profile_output}")
     else:
-        return _run_app(remaining)
+        return _run_app(remaining, smoke_test=args.smoke_test)
 
 
 def _app_icon() -> QIcon:
@@ -643,7 +657,7 @@ def _app_icon() -> QIcon:
     return QIcon()
 
 
-def _run_app(argv):
+def _run_app(argv, *, smoke_test=False):
     """Create and run the QApplication."""
     import os
 
@@ -658,6 +672,20 @@ def _run_app(argv):
         app.setWindowIcon(icon)
     if os.environ.get("NANOKA_TRACE_MOUSE"):
         _install_mouse_trace(app)
+
+    if smoke_test:
+        # Loading Main.qml is what fails when a compiled bundle is missing its
+        # QML sources or a Qt module they import, so reaching this point is the
+        # whole test.  Failures are caught here instead of escaping, because a
+        # console-less Windows build would otherwise pop a blocking dialog.
+        try:
+            window = NanokaViewer(load_data=False)
+        except Exception:
+            logger.exception("Smoke test failed: could not build the window")
+            return 1
+        window.close()
+        logger.info("Smoke test passed")
+        return 0
 
     window = NanokaViewer()
     window.show()
