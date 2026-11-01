@@ -14,3 +14,40 @@ nuitka_flags=(
     --include-data-dir=nanoka_viewer/qml=nanoka_viewer/qml
     --include-qt-plugins=qml
 )
+
+# Qt QML modules that nothing in the bundle imports.
+#
+# --include-qt-plugins=qml makes Nuitka walk the whole PySide6/Qt/qml tree and
+# ship every module it finds, together with each module's plugin libraries and
+# their shared-library dependency chain (QtWebEngine alone is about 200 MB on
+# disk). Dropping the unused modules takes the onefile payload from ~136 MB to
+# ~41 MB, and removes ~2100 of the ~2300 files that Nuitka compresses one at a
+# time while packing: each file gets a fresh zstd level-22 stream, and the
+# context setup alone costs ~360 ms regardless of file size, so those files are
+# what make a cold onefile build take 10-15 minutes.
+#
+# Only exclude a module that no shipped QML file imports. QtQuick.Shapes must
+# stay, for example, because the Controls "Basic" style imports it. The viewer
+# imports QtQuick, QtQuick.Controls (plus its `impl` submodule and the Fusion
+# style) and QtQuick.Layouts.
+qml_excluded=(
+    Qt3D Qt5Compat QtCharts QtDataVisualization QtGraphs QtLocation
+    QtMultimedia QtPositioning QtQuick3D QtRemoteObjects QtScxml
+    QtSensors QtTest QtTextToSpeech QtWayland QtWebChannel QtWebEngine
+    QtWebSockets QtWebView
+    Qt/labs
+    QtQuick/Dialogs QtQuick/Effects QtQuick/LocalStorage QtQuick/Pdf
+    QtQuick/Particles QtQuick/Scene2D QtQuick/Scene3D QtQuick/Timeline
+    QtQuick/VectorImage QtQuick/VirtualKeyboard QtQuick/tooling
+    QtQuick/Controls/FluentWinUI3 QtQuick/Controls/Imagine
+    QtQuick/Controls/Material QtQuick/Controls/Universal
+    QtQuick/Controls/designer
+    QtQml/StateMachine
+)
+
+for module in "${qml_excluded[@]}"; do
+    nuitka_flags+=(
+        --noinclude-data-files="PySide6/qml/$module"
+        --noinclude-dlls="PySide6/qml/$module/*"
+    )
+done

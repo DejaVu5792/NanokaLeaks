@@ -61,23 +61,24 @@ uv run python -m unittest discover -s tests -v
 `just build` runs:
 
 ```sh
+source packaging/nuitka_flags.sh
 uv run nuitka \
     --standalone \
     --onefile \
     --onefile-as-archive \
-    --enable-plugin=pyside6 \
-    --assume-yes-for-downloads \
-    --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png \
-    --include-data-dir=nanoka_viewer/qml=nanoka_viewer/qml \
-    --include-qt-plugins=qml \
-    --noinclude-data-files/--noinclude-dlls pairs per unused Qt QML module \
+    "${nuitka_flags[@]}" \
     -o NanokaLeaks \
     main.py
 ```
 
-(The `--noinclude-*` flags are generated from the `qml_excluded` list in the
-[`justfile`](justfile) `build` recipe — see the list there and in
-[`packaging/build_appimage.sh`](packaging/build_appimage.sh).)
+Every packaging path — `just build`, `packaging/build_appimage.sh` and the
+release workflow — sources
+[`packaging/nuitka_flags.sh`](packaging/nuitka_flags.sh), which owns the shared
+flags: the `.qml` data directory, the Qt plugin families and the QML module
+exclusion list. Keeping one copy is what stops the release build from quietly
+diverging from the local one; v6.0.0 shipped a binary without its QML sources
+because the workflow had its own copy of the command and missed
+`--include-data-dir`.
 
 - `--standalone` bundles Python and the Qt/PySide6 libraries.
 - `--onefile-as-archive` still produces a single executable, but uses Nuitka's
@@ -102,6 +103,19 @@ uv run nuitka \
   (~200 MB on disk) pulled in through `qml/QtWebEngine`'s plugin. Only exclude
   a module that no shipped QML file imports: `QtQuick.Shapes`, for example, must
   stay because the Controls `Basic` style imports it.
+- The exclusions also decide how long a *cold* build takes. Nuitka's onefile
+  packer compresses every payload file separately and each zstd level-22 stream
+  costs ~360 ms to set up regardless of file size, so the ~2300 Qt QML files
+  alone add 10-15 minutes. The exclusion list brings that down to ~185 files. A
+  warm cache hides this either way (packaging drops to seconds), so the size of
+  the artifact is the more visible difference.
+
+## Verifying a build
+
+`./NanokaLeaks --smoke-test` (or `NanokaLeaks.exe --smoke-test` on Windows)
+builds the main window once and exits, without touching the network. It fails
+when the bundle cannot find its QML sources or a Qt module they import. CI runs
+it against both binaries before publishing.
 
 Nuitka creates `main.build/`, `main.dist/`, and `main.onefile-build/` as
 intermediates. They are ignored by git.
