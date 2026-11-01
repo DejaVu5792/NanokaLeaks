@@ -4,7 +4,6 @@ version = "6.0.1"
 description = "View newest characters from nanoka.cc"
 requires-python = ">=3.13"
 dependencies = [
-    "customtkinter",
     "requests",
     "pillow",
     "pyside6>=6.12.0",

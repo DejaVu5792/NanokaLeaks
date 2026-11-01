@@ -6,7 +6,7 @@ Qt still paints around that tree:
 
 * the window and central widget background;
 * plain ``QPushButton``s, which the confirmation ``QMessageBox``es use (and the
-  fake hosts in the tests, including the legacy ``viewBtn`` rules);
+  fake hosts in the tests);
 * scroll bars for the widget-based test hosts;
 * the transparent popup hosts, so the QML backdrop shows the window through.
 """
@@ -36,27 +36,6 @@ QPushButton:pressed {
 QPushButton:disabled {
     background: palette(midlight);
     color: palette(placeholder-text);
-    border: 1px solid palette(mid);
-}
-
-QPushButton#viewBtn {
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 11px;
-    background: palette(highlight);
-    color: palette(highlighted-text);
-    border: 1px solid transparent;
-}
-
-QPushButton#viewBtn:hover {
-    background: palette(highlight);
-    color: palette(highlighted-text);
-    border: 1px solid palette(window-text);
-}
-
-QPushButton#viewBtn:pressed {
-    background: palette(mid);
-    color: palette(button-text);
     border: 1px solid palette(mid);
 }
 

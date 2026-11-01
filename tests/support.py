@@ -263,7 +263,6 @@ def make_details_host(
     content = QWidget()
     content_layout = QVBoxLayout(content)
     button = QPushButton(button_text)
-    button.setObjectName("viewBtn")
     button.setFixedSize(120, 28)
     content_layout.addWidget(button)
     content_layout.addStretch(1)

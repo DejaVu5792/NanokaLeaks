@@ -300,14 +300,6 @@ class HoverStyleTests(QtTestCase):
             "palettes; use palette(mid) for hover instead",
         )
 
-    def test_view_button_hover_keeps_the_highlight_colour(self):
-        block = re.search(
-            r"QPushButton#viewBtn:hover\s*\{([^}]*)\}", STYLESHEET
-        )
-        self.assertIsNotNone(block)
-        self.assertIn("palette(highlight)", block.group(1))
-        self.assertNotIn("palette(light)", block.group(1))
-
     def test_rendered_hover_is_lighter_than_the_dark_light_role(self):
         apply_catppuccin_palette(self.application)
         host = QWidget()
