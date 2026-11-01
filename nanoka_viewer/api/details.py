@@ -32,6 +32,7 @@ from .cache_info import (
     record_build_cache_write,
 )
 from .cache_io import directory_size_bytes, write_bytes_atomic
+from .characters import cached_versions
 from .constants import BASE_URL, CACHE_DIR
 from .manifest import cached_latest_version, get_latest_version
 from .models import get_character_url, get_name
@@ -544,6 +545,59 @@ def _detail_url(game: str, version: str, char_id: str) -> str:
     return f"{BASE_URL}/{game}/{version}/en/character/{char_id}.json"
 
 
+def _read_cached_detail(
+    cache_key: tuple[str, str, str], *, remember: bool
+) -> CharacterDetail | None:
+    """Load one detail payload from disk, dropping it when it is corrupt."""
+    disk_path = _detail_disk_path(cache_key)
+    if not disk_path.exists():
+        return None
+    try:
+        with disk_path.open("rb") as handle:
+            detail = pickle.load(handle)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read cached detail %s: %s", disk_path, exc)
+        try:
+            disk_path.unlink()
+        except OSError:
+            pass
+        return None
+    if remember:
+        _detail_cache[cache_key] = detail
+        return copy.deepcopy(detail)
+    return detail
+
+
+def _cached_detail_other_version(
+    game: str, char_id: str, skip_version: str = "", *, remember: bool = False
+) -> CharacterDetail | None:
+    """Return a detail cached under another game version, newest first.
+
+    Offline, the manifest may already name a version we never downloaded while
+    the text for the previous version is still on disk.  Showing that is better
+    than an error screen; the payload keeps its own build context, so the
+    recommended build stays consistent with the detail text.
+    """
+    if not get_setting("cache_character_details"):
+        return None
+    for version in cached_versions(game):
+        if version == skip_version:
+            continue
+        detail = _read_cached_detail(
+            (game, version, str(char_id)), remember=remember
+        )
+        if detail is not None:
+            logger.warning(
+                "Using cached detail for %s %s from version %s "
+                "after a connection failure",
+                game,
+                char_id,
+                version,
+            )
+            return detail
+    return None
+
+
 def load_character_detail(
     game: str, char_id: str, *, remember: bool = True
 ) -> CharacterDetail:
@@ -554,12 +608,25 @@ def load_character_detail(
     detail request is retried.  Results are cached in memory by (game, version,
     char_id) unless *remember* is false; bulk preloads use that to write the
     disk cache without keeping every raw payload in memory.
+
+    When the network is unavailable, a payload cached for an older version of
+    the same game is served instead of failing.
     """
     try:
         version = str(get_latest_version(game))
     except Exception as exc:  # noqa: BLE001 - a fresh manifest may still work
         logger.warning("Could not read the cached manifest: %s", exc)
-        version = _latest_version(game)
+        try:
+            version = _latest_version(game)
+        except Exception as fresh_exc:  # noqa: BLE001
+            cached = _cached_detail_other_version(game, char_id, remember=remember)
+            if cached is not None:
+                return cached
+            if isinstance(fresh_exc, requests.RequestException):
+                raise DetailUnavailable(
+                    "Could not reach nanoka.cc. Check your connection."
+                ) from fresh_exc
+            raise
 
     cache_key = (game, version, str(char_id))
     caching = get_setting("cache_character_details")
@@ -569,21 +636,9 @@ def load_character_detail(
         return copy.deepcopy(_detail_cache[cache_key])
 
     if caching:
-        disk_path = _detail_disk_path(cache_key)
-        if disk_path.exists():
-            try:
-                with disk_path.open("rb") as handle:
-                    detail = pickle.load(handle)
-                if remember:
-                    _detail_cache[cache_key] = detail
-                    return copy.deepcopy(detail)
-                return detail
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Could not read cached detail %s: %s", disk_path, exc)
-                try:
-                    disk_path.unlink()
-                except OSError:
-                    pass
+        detail = _read_cached_detail(cache_key, remember=remember)
+        if detail is not None:
+            return detail
 
     try:
         raw = _get_json(_detail_url(game, version, char_id))
@@ -603,21 +658,9 @@ def load_character_detail(
             return copy.deepcopy(_detail_cache[cache_key])
 
         if caching:
-            disk_path = _detail_disk_path(cache_key)
-            if disk_path.exists():
-                try:
-                    with disk_path.open("rb") as handle:
-                        detail = pickle.load(handle)
-                    if remember:
-                        _detail_cache[cache_key] = detail
-                        return copy.deepcopy(detail)
-                    return detail
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Could not read cached detail %s: %s", disk_path, exc)
-                    try:
-                        disk_path.unlink()
-                    except OSError:
-                        pass
+            detail = _read_cached_detail(cache_key, remember=remember)
+            if detail is not None:
+                return detail
         try:
             raw = _get_json(_detail_url(game, version, char_id))
         except requests.HTTPError as retry_exc:
@@ -627,10 +670,20 @@ def load_character_detail(
                 ) from retry_exc
             raise
         except requests.RequestException as retry_exc:
+            cached = _cached_detail_other_version(
+                game, char_id, version, remember=remember
+            )
+            if cached is not None:
+                return cached
             raise DetailUnavailable(
                 "Could not reach nanoka.cc. Check your connection."
             ) from retry_exc
     except requests.RequestException as exc:
+        cached = _cached_detail_other_version(
+            game, char_id, version, remember=remember
+        )
+        if cached is not None:
+            return cached
         raise DetailUnavailable(
             "Could not reach nanoka.cc. Check your connection."
         ) from exc

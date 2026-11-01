@@ -58,12 +58,13 @@ class DetailsLoggingTests(QtTestCase):
         popup = open_details_for(window, button)
 
         with self.assertLogs("nanoka_viewer.ui.details", level="DEBUG") as logs:
-            QTest.mouseClick(popup, Qt.MouseButton.LeftButton, pos=QPoint(4, 4))
+            QTest.mouseClick(
+                popup._qml, Qt.MouseButton.LeftButton, pos=QPoint(4, 4)
+            )
             flush()
 
         output = "\n".join(logs.output)
-        self.assertIn("overlay press", output)
-        self.assertIn("overlay release", output)
+        self.assertIn("close requested", output)
         self.assertIn("closing details popup", output)
 
 

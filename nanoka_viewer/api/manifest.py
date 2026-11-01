@@ -20,8 +20,27 @@ _manifest_cache = None
 _manifest_cache_time = 0
 
 
+def _read_manifest_cache():
+    """Return the on-disk manifest, or ``None`` when it cannot be used."""
+    try:
+        with open(MANIFEST_CACHE_FILE, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.error(f"Error reading disk cache: {e}")
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def fetch_manifest():
-    """Fetch the manifest with caching (memory and disk)."""
+    """Fetch the manifest with caching (memory and disk).
+
+    A stale on-disk manifest is still used when the network is unavailable.
+    The freshness window only decides when to *revalidate*, not whether cached
+    data may be served at all: without the fallback, being offline for more
+    than a day made every cached character and detail unreachable.
+    """
     global _manifest_cache, _manifest_cache_time
     current_time = time.time()
 
@@ -35,27 +54,39 @@ def fetch_manifest():
         )
         return _manifest_cache
 
-    # Check disk cache
-    try:
-        if MANIFEST_CACHE_FILE.exists():
-            # Check if disk cache is still valid
+    # Read the disk cache once: it is either fresh enough to skip the network
+    # or the fallback when the network request fails.
+    disk_data = _read_manifest_cache()
+    if disk_data is not None:
+        try:
             cache_age = current_time - MANIFEST_CACHE_FILE.stat().st_mtime
-            if cache_age < DISK_CACHE_TIMEOUT:
-                with open(MANIFEST_CACHE_FILE, "r") as f:
-                    data = json.load(f)
-                logger.info(f"Using cached manifest from disk (age: {cache_age:.1f}s)")
-                # Update memory cache
-                _manifest_cache = data
-                _manifest_cache_time = current_time
-                return data
-    except Exception as e:
-        logger.error(f"Error reading disk cache: {e}")
+        except OSError:
+            cache_age = 0.0
+        if cache_age < DISK_CACHE_TIMEOUT:
+            logger.info(f"Using cached manifest from disk (age: {cache_age:.1f}s)")
+            # Update memory cache
+            _manifest_cache = disk_data
+            _manifest_cache_time = current_time
+            return disk_data
 
     # Fetch new manifest
     logger.info("Fetching new manifest from network")
-    response = requests.get(f"{BASE_URL}/manifest.json", timeout=30)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.get(f"{BASE_URL}/manifest.json", timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        if disk_data is None:
+            raise
+        logger.warning(
+            "Could not refresh the manifest (%s); using the cached copy from disk",
+            exc,
+        )
+        # Cache the fallback in memory too, so each game load does not wait for
+        # another connection timeout while we stay offline.
+        _manifest_cache = disk_data
+        _manifest_cache_time = current_time
+        return disk_data
 
     # Update caches
     _manifest_cache = data

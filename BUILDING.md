@@ -68,9 +68,16 @@ uv run nuitka \
     --enable-plugin=pyside6 \
     --assume-yes-for-downloads \
     --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png \
+    --include-data-dir=nanoka_viewer/qml=nanoka_viewer/qml \
+    --include-qt-plugins=qml \
+    --noinclude-data-files/--noinclude-dlls pairs per unused Qt QML module \
     -o NanokaLeaks \
     main.py
 ```
+
+(The `--noinclude-*` flags are generated from the `qml_excluded` list in the
+[`justfile`](justfile) `build` recipe — see the list there and in
+[`packaging/build_appimage.sh`](packaging/build_appimage.sh).)
 
 - `--standalone` bundles Python and the Qt/PySide6 libraries.
 - `--onefile-as-archive` still produces a single executable, but uses Nuitka's
@@ -81,6 +88,20 @@ uv run nuitka \
   onefile payload, extracted at runtime). The app loads it from
   `QCoreApplication.applicationDirPath()`, falling back to
   `nanoka_viewer/assets/nanokaleaks.png` when running from source.
+- `--include-data-dir` ships the viewer's QML sources
+  (`nanoka_viewer/qml/Main.qml` and friends) at the same relative path.
+  `nanoka_viewer/ui/qml_host.py` resolves them from the source tree or from the
+  extracted bundle.
+- `--include-qt-plugins=qml` ships Qt's QML module tree (`PySide6/qml`) so
+  imports like `QtQuick.Controls` resolve in the bundle; Nuitka sets
+  `QML2_IMPORT_PATH` accordingly in standalone builds.
+- The `--noinclude-data-files`/`--noinclude-dlls` pairs drop the Qt QML modules
+  the viewer never imports. Each module's plugin DLL would otherwise be bundled
+  along with its shared-library dependency chain — without the exclusions the
+  onefile grows from ~41 MB to ~136 MB, dragged up mainly by QtWebEngine
+  (~200 MB on disk) pulled in through `qml/QtWebEngine`'s plugin. Only exclude
+  a module that no shipped QML file imports: `QtQuick.Shapes`, for example, must
+  stay because the Controls `Basic` style imports it.
 
 Nuitka creates `main.build/`, `main.dist/`, and `main.onefile-build/` as
 intermediates. They are ignored by git.

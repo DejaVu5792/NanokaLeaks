@@ -8,13 +8,13 @@ The overlay then had to fight sibling subsurfaces for z-order, which QWidget
 raise could not reliably win.
 
 The in-app browser (and thus QtWebEngine) has been removed, so the anchor is
-gone and nothing is native except the top-level window. Every widget now paints
-into the single main-window backing store, so a QWidget-level raise keeps the
-overlay on top and there are no subsurfaces to mis-composite.
+gone and nothing is native except the top-level window.  The main view is QML
+inside a single ``QQuickWidget``; the details/settings overlays are still
+widgets, parented to that widget, so they paint in the same backing store.
 
 These tests boot the real ``NanokaViewer`` window and pin down:
   * the absence of native child subsurfaces (the black-bar regression guard),
-  * the real ``view_btn`` -> ``open_details`` path opening the overlay,
+  * the real QML View button -> ``open_details`` path opening the overlay,
   * overlay geometry tracking the host across repeated maximize/restore.
 """
 
@@ -22,10 +22,11 @@ from __future__ import annotations
 
 import unittest
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QWidget
 
-from support import QtTestCase, flush, real_viewer
+from support import QtTestCase, find_qml_item, flush, real_viewer
 
 from nanoka_viewer.ui.details import CharacterDetailsPopup
 
@@ -37,6 +38,16 @@ def native_children(window) -> list[QWidget]:
         for w in window.findChildren(QWidget)
         if w.testAttribute(Qt.WidgetAttribute.WA_NativeWindow)
     ]
+
+
+def click_qml_item(window, item):
+    """Click a QML item through the real QQuickWidget event path."""
+    centre = item.mapToScene(QPointF(item.width() / 2, item.height() / 2))
+    QTest.mouseClick(
+        window.centralWidget(),
+        Qt.MouseButton.LeftButton,
+        pos=centre.toPoint(),
+    )
 
 
 class NativeSubsurfaceRegressionTests(QtTestCase):
@@ -56,7 +67,7 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
     def test_overlay_is_a_plain_child_widget_not_a_subsurface(self):
         """The overlay must paint in the single backing store, not a surface."""
         with real_viewer() as (window, card):
-            card.view_btn.click()
+            window.openDetails("hsr", "1001")
             flush()
             popup = self.get_popup()
             self.assertIsInstance(popup, CharacterDetailsPopup)
@@ -67,31 +78,35 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
             self.assertIs(popup.parentWidget(), window.centralWidget())
 
     def test_real_view_button_opens_the_overlay(self):
-        """Clicking the production View button must open the details popup."""
+        """Clicking the production QML View button must open the popup."""
         with real_viewer() as (window, card):
             self.assertIsNone(self.get_popup())
-            card.view_btn.click()
+            button = find_qml_item(card, "viewButton")
+            self.assertIsNotNone(button)
+
+            click_qml_item(window, button)
             flush()
+
             popup = self.get_popup()
             self.assertIsNotNone(popup)
             self.assertTrue(popup.isVisible())
             self.assertEqual(popup._game, "hsr")
-            self.assertEqual(popup._char_id, card.char_id)
+            self.assertEqual(popup._char_id, "1001")
 
     def test_maximize_restore_relaunch_stress_on_real_window(self):
         """50x maximize -> restore -> maximize -> relaunch on the real app.
 
-        Each cycle drives the production lifecycle: open the overlay via the
-        real View button, maximize, restore, maximize again, then close and
-        relaunch it. This catches both the maximize black-bar regression (no
-        native subsurfaces may appear) and stale-overlay bugs on relaunch.
+        Each cycle drives the production lifecycle: open the overlay, maximize,
+        restore, maximize again, then close and relaunch it. This catches both
+        the maximize black-bar regression (no native subsurfaces may appear)
+        and stale-overlay bugs on relaunch.
         """
         with real_viewer() as (window, card):
             central = window.centralWidget()
+            button = find_qml_item(card, "viewButton")
 
             for cycle in range(50):
-                # Relaunch through the real View button.
-                card.view_btn.click()
+                window.openDetails("hsr", "1001")
                 flush()
                 popup = self.get_popup()
                 self.assertIsNotNone(popup, f"popup missing on cycle {cycle}")
@@ -104,15 +119,15 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
 
                 window.showMaximized()
                 flush(4)
-                self._assert_overlay_ok(popup, central, card, f"max#{cycle}")
+                self._assert_overlay_ok(popup, central, button, f"max#{cycle}")
 
                 window.showNormal()
                 flush(4)
-                self._assert_overlay_ok(popup, central, card, f"norm#{cycle}")
+                self._assert_overlay_ok(popup, central, button, f"norm#{cycle}")
 
                 window.showMaximized()
                 flush(4)
-                self._assert_overlay_ok(popup, central, card, f"max2#{cycle}")
+                self._assert_overlay_ok(popup, central, button, f"max2#{cycle}")
                 self.assertEqual(
                     native_children(window),
                     [],
@@ -120,7 +135,7 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
                 )
 
                 # Close before the next relaunch. The popup is a shared
-                # singleton: close hides it, the next View click reuses it.
+                # singleton: close hides it, the next open reuses it.
                 popup.close_popup()
                 flush()
                 self.assertFalse(
@@ -128,7 +143,7 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
                     f"popup still visible after close in {cycle}",
                 )
 
-    def _assert_overlay_ok(self, popup, central, card, tag):
+    def _assert_overlay_ok(self, popup, central, button, tag):
         self.assertTrue(popup.isVisible(), f"popup hidden after {tag}")
         self.assertEqual(
             popup.geometry(),
@@ -136,11 +151,11 @@ class NativeSubsurfaceRegressionTests(QtTestCase):
             f"popup geometry wrong after {tag}",
         )
         self.assertFalse(
-            card.view_btn.underMouse(),
+            button.property("hovered"),
             f"View button stuck hovered after {tag}",
         )
         self.assertFalse(
-            card.view_btn.isDown(),
+            button.property("down"),
             f"View button stuck pressed after {tag}",
         )
 

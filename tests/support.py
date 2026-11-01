@@ -15,8 +15,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import unittest
 
-from PySide6.QtCore import QEvent, QEventLoop, QPoint, Qt, QTimer
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QPointF, Qt, QTimer
+from PySide6.QtGui import QColor, QMouseEvent, QPalette
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -100,6 +101,121 @@ def wait(milliseconds: int = 80):
     loop = QEventLoop()
     QTimer.singleShot(milliseconds, loop.quit)
     loop.exec()
+
+
+def wait_for(predicate, timeout: int = 2000, step: int = 10, message: str = ""):
+    """Spin the event loop until *predicate* is true, or fail the test."""
+    elapsed = 0
+    while not predicate():
+        if elapsed >= timeout:
+            raise AssertionError(message or "condition was never met")
+        wait(step)
+        elapsed += step
+
+
+def find_qml_item(root, object_name: str):
+    """Find a QML item by ``objectName`` in the visual item tree.
+
+    ``QObject.findChild`` does not reliably traverse the tree that a Qt Quick
+    view builds for its delegates (the visual parent chain is not the QObject
+    parent chain), so walk ``childItems()`` instead.
+    """
+    from PySide6.QtQuick import QQuickItem
+
+    queue = [root]
+    while queue:
+        item = queue.pop(0)
+        if item is None:
+            continue
+        if item.objectName() == object_name:
+            return item
+        if isinstance(item, QQuickItem):
+            queue.extend(item.childItems())
+    return None
+
+
+def find_qml_items(root, object_name: str) -> list:
+    """Return every QML item with *object_name*, in visual-tree order."""
+    from PySide6.QtQuick import QQuickItem
+
+    found = []
+    queue = [root]
+    while queue:
+        item = queue.pop(0)
+        if item is None:
+            continue
+        if item.objectName() == object_name:
+            found.append(item)
+        if isinstance(item, QQuickItem):
+            queue.extend(item.childItems())
+    return found
+
+
+def qml_centre(item, root) -> QPoint:
+    """Return the centre of a QML *item* mapped into *root*'s coordinates."""
+    point = item.mapToItem(root, item.width() / 2, item.height() / 2)
+    return QPoint(round(point.x()), round(point.y()))
+
+
+def click_qml(widget, item) -> None:
+    """Click the centre of a QML *item* through its ``QQuickWidget``."""
+    QTest.mouseClick(
+        widget,
+        Qt.MouseButton.LeftButton,
+        pos=qml_centre(item, widget.rootObject()),
+    )
+    flush()
+
+
+def _send_qml_mouse(widget, kind, pos: QPoint, buttons) -> None:
+    """Send one mouse event carrying *buttons* (``QTest.mouseMove`` cannot)."""
+    event = QMouseEvent(
+        kind,
+        QPointF(pos),
+        QPointF(widget.mapToGlobal(pos)),
+        Qt.MouseButton.LeftButton,
+        buttons,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(widget, event)
+    flush(2)
+
+
+def press_qml(widget, item) -> QPoint:
+    """Press the left button on the centre of a QML *item*; return the point."""
+    point = qml_centre(item, widget.rootObject())
+    _send_qml_mouse(
+        widget, QEvent.Type.MouseButtonPress, point, Qt.MouseButton.LeftButton
+    )
+    return point
+
+
+def move_qml(widget, point: QPoint) -> None:
+    """Move the pointer with the left button still held."""
+    _send_qml_mouse(
+        widget, QEvent.Type.MouseMove, point, Qt.MouseButton.LeftButton
+    )
+    wait(10)
+
+
+def release_qml(widget, point: QPoint) -> None:
+    """Release the left button at *point* and let the UI settle."""
+    _send_qml_mouse(
+        widget,
+        QEvent.Type.MouseButtonRelease,
+        point,
+        Qt.MouseButton.NoButton,
+    )
+    flush()
+    wait(60)
+
+
+def drag_qml(widget, item, dy: int, steps: int = 6) -> None:
+    """Press on a QML *item*, drag it *dy* pixels and release."""
+    start = press_qml(widget, item)
+    for step in range(1, steps + 1):
+        move_qml(widget, QPoint(start.x(), round(start.y() + dy * step / steps)))
+    release_qml(widget, QPoint(start.x(), round(start.y() + dy)))
 
 
 def reset_popup():
@@ -220,7 +336,7 @@ class QtTestCase(unittest.TestCase):
 
 
 def open_details_for(window, button):
-    """Open the shared details popup the way ``CardWidget`` does."""
+    """Open the shared details popup the way a card's View button does."""
     details.open_details("hsr", "1", None, window, source=button)
     flush()
     return details._popup
@@ -244,26 +360,25 @@ _HSR_TEST_CHARS = {
 def real_viewer(with_card=True, games=None):
     """Boot the real ``NanokaViewer`` window with only the network stubbed.
 
-    The whole widget tree (native anchor removal, card sections, the real
-    ``view_btn`` -> ``open_details`` path) is the production code. Only the
-    HTTP-backed loaders are replaced so the suite stays offline and fast.
+    The whole production path is exercised: the QML tree, the section model,
+    the batched loader and the real QML View button.  Only the HTTP-backed
+    loaders and the image provider are replaced so the suite stays offline.
 
     *games* optionally restricts the enabled games (defaults to every game,
     independent of the user's real settings file).
 
-    Yields ``(window, card)``. *card* is the real populated ``CardWidget``
-    (or ``None`` when ``with_card`` is False).
+    Yields ``(window, card)``.  *card* is the first QML ``CharacterCard``
+    (``None`` when *with_card* is False).
     """
-    import nanoka_viewer.ui.card as _card_module
+    import nanoka_viewer.ui.image_provider as image_provider
     import nanoka_viewer.ui.loader as loader
     import nanoka_viewer.ui.main_window as main_window
-    from nanoka_viewer.ui.card import CardWidget
 
     originals = (
         loader.get_all_characters_with_new_status,
         main_window.fetch_manifest,
         main_window.get_enabled_games,
-        _card_module.request_image,
+        image_provider.load_qt_image_sync,
         details.load_character_detail,
         details.load_character_art,
         details.load_character_build,
@@ -282,7 +397,9 @@ def real_viewer(with_card=True, games=None):
         for game in _HSR_TEST_CHARS
     }
     main_window.get_enabled_games = lambda: list(GAMES if games is None else games)
-    _card_module.request_image = lambda *a, **k: None
+    # A null image makes the provider report a failure, which is exactly the
+    # offline path the card's placeholder has to handle.
+    image_provider.load_qt_image_sync = lambda url, size: None
     details.load_character_detail = lambda game, char_id: CharacterDetail(
         game=game,
         char_id=char_id,
@@ -298,31 +415,37 @@ def real_viewer(with_card=True, games=None):
     details.has_cached_art = lambda url: False
 
     reset_popup()
-    window = main_window.NanokaViewer()
-    window.show()
-    window.activateWindow()
-    flush()
-
-    card = None
-    if with_card:
-        # Let the LoadThread populate the real card via the event loop.
-        for _ in range(50):
-            wait(20)
-            cards = window.game_sections["hsr"].cards_container.findChildren(
-                CardWidget
-            )
-            if cards:
-                card = cards[0]
-                break
-
+    window = None
     try:
+        window = main_window.NanokaViewer()
+        window.show()
+        window.activateWindow()
+        flush()
+
+        card = None
+        if with_card:
+            # Let the LoadThread populate the section and the view realise its
+            # first delegate.
+            wait_for(
+                lambda: window.sections_model.section("hsr") is not None
+                and window.sections_model.section("hsr").characters.rowCount() > 0,
+                timeout=2000,
+                message="the hsr section never received a character",
+            )
+            wait_for(
+                lambda: find_qml_item(window.qml_root(), "characterCard") is not None,
+                timeout=2000,
+                message="the first character card was never realised",
+            )
+            card = find_qml_item(window.qml_root(), "characterCard")
+
         yield window, card
     finally:
         (
             loader.get_all_characters_with_new_status,
             main_window.fetch_manifest,
             main_window.get_enabled_games,
-            _card_module.request_image,
+            image_provider.load_qt_image_sync,
             details.load_character_detail,
             details.load_character_art,
             details.load_character_build,
@@ -331,11 +454,12 @@ def real_viewer(with_card=True, games=None):
             details.has_cached_art,
         ) = originals
         reset_popup()
-        try:
-            window.close()
-            window.deleteLater()
-        except RuntimeError:
-            pass
+        if window is not None:
+            try:
+                window.close()
+                window.deleteLater()
+            except RuntimeError:
+                pass
         application = app()
         application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         flush(2)

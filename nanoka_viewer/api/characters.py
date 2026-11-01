@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 import requests
 
@@ -20,9 +21,78 @@ logger = logging.getLogger(__name__)
 _character_cache = {}
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    """Return a sortable key for version strings such as ``"4.0"``."""
+    return tuple(int(part) for part in re.findall(r"\d+", str(version)))
+
+
+def cached_versions(game: str) -> list[str]:
+    """Return every character version cached on disk for *game*, newest first."""
+    versions = []
+    try:
+        for path in CHARACTER_CACHE_DIR.glob(f"{game}_*.json"):
+            version = path.name[len(game) + 1 : -len(".json")]
+            if version:
+                versions.append(version)
+    except OSError as exc:
+        logger.debug("Could not list character cache for %s: %s", game, exc)
+    return sorted(versions, key=_version_key, reverse=True)
+
+
+def _newest_cached_version(game: str) -> str | None:
+    """Return the newest character version cached on disk for *game*.
+
+    Used as an offline fallback when the manifest cannot be refreshed or names
+    a version whose character file was never downloaded.
+    """
+    versions = cached_versions(game)
+    return versions[0] if versions else None
+
+
+def _read_character_cache(game: str, version: str):
+    """Load one character cache file, or return ``None`` when unusable."""
+    cache_file = CHARACTER_CACHE_DIR / f"{game}_{version}.json"
+    try:
+        if not cache_file.exists():
+            return None
+        with open(cache_file, "r") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        logger.error(
+            "Error reading character disk cache for %s version %s: %s",
+            game,
+            version,
+            exc,
+        )
+        return None
+    return data
+
+
+def _remember(game: str, version: str, data) -> None:
+    _character_cache.setdefault(game, {})[version] = data
+
+
 def fetch_characters(game):
-    """Fetch character data for a game with caching."""
-    version = get_latest_version(game)
+    """Fetch character data for a game with caching.
+
+    When the network is unavailable the newest cached character file is used
+    instead, even if the manifest on disk is older than its freshness window or
+    names a version whose file was never downloaded.
+    """
+    try:
+        version = get_latest_version(game)
+    except (requests.RequestException, KeyError, TypeError) as exc:
+        cached_version = _newest_cached_version(game)
+        if cached_version is None:
+            raise
+        logger.warning(
+            "Could not resolve the latest version for %s (%s); "
+            "falling back to cached version %s",
+            game,
+            exc,
+            cached_version,
+        )
+        version = cached_version
 
     # Check memory cache first
     if game in _character_cache and version in _character_cache[game]:
@@ -32,41 +102,41 @@ def fetch_characters(game):
         return _character_cache[game][version]
 
     # Check disk cache
-    try:
-        character_cache_file = CHARACTER_CACHE_DIR / f"{game}_{version}.json"
-        if character_cache_file.exists():
-            # Check if disk cache is still valid by comparing with manifest
-            manifest_data = (
-                fetch_manifest()
-            )  # This will use cached manifest if available
-            latest_version = manifest_data[game]["latest"]
-            if latest_version == version:  # Only use cache if version matches latest
-                with open(character_cache_file, "r") as f:
-                    data = json.load(f)
-                logger.info(
-                    f"Using cached character data from disk for {game} version {version}"
-                )
-                # Update memory cache
-                if game not in _character_cache:
-                    _character_cache[game] = {}
-                _character_cache[game][version] = data
-                return data
-    except Exception as e:
-        logger.error(
-            f"Error reading character disk cache for {game} version {version}: {e}"
+    data = _read_character_cache(game, version)
+    if data is not None:
+        logger.info(
+            f"Using cached character data from disk for {game} version {version}"
         )
+        _remember(game, version, data)
+        return data
 
     # Fetch from network
     logger.info(f"Fetching new character data for {game} version {version}")
     url = f"{BASE_URL}/{game}/{version}/character.json"
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except (requests.RequestException, ValueError):
+        # The manifest may name a version we have never downloaded.  Anything
+        # already on disk is better than an empty screen while offline.
+        cached_version = _newest_cached_version(game)
+        if cached_version is not None and cached_version != version:
+            cached = _read_character_cache(game, cached_version)
+            if cached is not None:
+                logger.warning(
+                    "Could not fetch %s characters for version %s; "
+                    "using cached version %s",
+                    game,
+                    version,
+                    cached_version,
+                )
+                _remember(game, cached_version, cached)
+                return cached
+        raise
 
     # Update caches
-    if game not in _character_cache:
-        _character_cache[game] = {}
-    _character_cache[game][version] = data
+    _remember(game, version, data)
     try:
         character_cache_file = CHARACTER_CACHE_DIR / f"{game}_{version}.json"
         with open(character_cache_file, "w") as f:

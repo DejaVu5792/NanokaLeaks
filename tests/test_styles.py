@@ -27,6 +27,8 @@ from support import (
     flush,
     make_details_host,
     open_details_for,
+    wait,
+    wait_for,
 )
 
 from nanoka_viewer.ui.styles import STYLESHEET
@@ -209,50 +211,74 @@ class DetailsSurfaceTests(QtTestCase):
         window, central, _scroll, button, _anchor = make_details_host()
         self.track_window(window)
         popup = open_details_for(window, button)
+        wait_for(
+            lambda: popup._model.state == "ready",
+            timeout=4000,
+            message="the details content never rendered",
+        )
+        # Let the QQuickWidget render the frame the grab will read: it keeps
+        # showing its previous frame until the next render pass.
+        wait(150)
 
         alternate = QColor(DISTINCT_ROLES["AlternateBase"])
         base = QColor(DISTINCT_ROLES["Base"])
 
-        header = popup.panel.findChild(QFrame, "detailsHeader")
-        self.assertIsNotNone(header)
+        image = popup.grab().toImage()
+        panel = popup.panel_rect()
+        art_width = round(panel.width() * 0.25)
+
+        header = image.pixelColor(
+            panel.left() + panel.width() // 2, panel.top() + 20
+        )
         self.assertEqual(
-            header.grab().toImage().pixelColor(header.width() // 2, 20).name(),
+            header.name(),
             alternate.name(),
             "details header must use palette(alternate-base)",
         )
 
-        body_image = popup.body.grab().toImage()
-        self.assertEqual(
-            body_image.pixelColor(
-                body_image.width() - 8, body_image.height() - 8
-            ).name(),
-            base.name(),
-            "details body must use palette(base)",
-        )
-        # The gradient overlay now darkens the bottom edge, so probe near the
-        # top where the overlay is fully transparent.
-        art_image = popup.art_column.grab().toImage()
-        art_pixel = art_image.pixelColor(art_image.width() - 10, 10)
+        # The gradient overlay darkens the bottom edge, so probe near the top
+        # where the overlay is fully transparent.
+        art = image.pixelColor(panel.left() + art_width - 12, panel.top() + 56)
         self.assertLessEqual(
             max(
                 abs(actual - expected)
                 for actual, expected in zip(
-                    art_pixel.getRgb()[:3], alternate.getRgb()[:3]
+                    art.getRgb()[:3], alternate.getRgb()[:3]
                 )
             ),
             2,
-            f"art column must use palette(alternate-base), got {art_pixel.name()}",
+            f"art column must use palette(alternate-base), got {art.name()}",
+        )
+
+        body = image.pixelColor(
+            panel.left() + panel.width() - 20,
+            panel.top() + panel.height() - 20,
+        )
+        self.assertEqual(
+            body.name(),
+            base.name(),
+            "details body must use palette(base)",
         )
 
     def test_panel_is_not_transparent(self):
         window, central, _scroll, button, _anchor = make_details_host()
         self.track_window(window)
         popup = open_details_for(window, button)
+        wait_for(
+            lambda: popup._model.state == "ready",
+            timeout=4000,
+            message="the details content never rendered",
+        )
+        wait(150)
 
         base = QColor(DISTINCT_ROLES["Base"])
-        panel_image = popup.panel.grab().toImage()
-        centre = panel_image.pixelColor(
-            panel_image.width() // 2, panel_image.height() // 2
+        image = popup.grab().toImage()
+        panel = popup.panel_rect()
+        # The gap between the art column and the first card is plain panel
+        # background; a transparent QML root would show the dimmed backdrop.
+        centre = image.pixelColor(
+            panel.left() + round(panel.width() * 0.25) + 4,
+            panel.top() + 56,
         )
         self.assertEqual(
             centre.name(),
