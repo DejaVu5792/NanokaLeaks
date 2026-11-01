@@ -1,5 +1,5 @@
 # NanokaLeaks
-Quick VIBE CODED python script to quickly view newest characters in games tracked by [nanoka](https://nanoka.cc/)
+VIBE CODED python script to quickly view newest characters in games tracked by [nanoka](https://nanoka.cc/)
 
 ## Installation
 ### Using [bin](https://github.com/marcosnils/bin)
