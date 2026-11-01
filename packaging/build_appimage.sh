@@ -54,13 +54,11 @@ ZSYNC_MAKE="$APPIMAGETOOL_DIR/squashfs-root/usr/bin/zsyncmake"
 
 echo "Building standalone Nuitka distribution..."
 
+source "$ROOT/packaging/nuitka_flags.sh"
+
 uv run nuitka \
     --standalone \
-    --enable-plugin=pyside6 \
-    --assume-yes-for-downloads \
-    --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png \
-    --include-data-dir=nanoka_viewer/qml=nanoka_viewer/qml \
-    --include-qt-plugins=qml \
+    "${nuitka_flags[@]}" \
     -o NanokaLeaks \
     main.py
 

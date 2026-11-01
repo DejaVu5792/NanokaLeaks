@@ -69,17 +69,17 @@ jobs:
         run: uv sync --frozen
 
       - name: Compile with Nuitka
-        run: >
-          uv run nuitka
-          --standalone
-          --onefile
-          --onefile-as-archive
-          --enable-plugin=pyside6
-          --assume-yes-for-downloads
-          --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png
-          ${{ matrix.extra_flags }}
-          -o ${{ matrix.binary_name }}
-          main.py
+        shell: bash
+        run: |
+          source packaging/nuitka_flags.sh
+          uv run nuitka \
+            --standalone \
+            --onefile \
+            --onefile-as-archive \
+            "${nuitka_flags[@]}" \
+            ${{ matrix.extra_flags }} \
+            -o ${{ matrix.binary_name }} \
+            main.py
 
       - name: Upload Build Artifact
         if: startsWith(github.ref, 'refs/tags/')
