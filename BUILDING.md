@@ -38,7 +38,7 @@ just appimage   # AppImage + zsync under dist/
 
 | Output | Recipe | Notes |
 | --- | --- | --- |
-| `NanokaLeaks` | `just build` | Linux onefile, ~41 MB |
+| `NanokaLeaks` | `just build` | Linux onefile (archive format), ~58 MB |
 | `NanokaLeaks.exe` | `just build` on Windows | onefile; add `--windows-disable-console` to hide the console (CI does) |
 | `dist/NanokaLeaks-<version>-x86_64.AppImage` | `just appimage` | self-contained, ~49 MB |
 | `dist/NanokaLeaks-<version>-x86_64.AppImage.zsync` | `just appimage` | delta-update control file, ~170 KB |
@@ -105,10 +105,21 @@ because the workflow had its own copy of the command and missed
   of the Qt SDK: QtWebEngineCore alone is ~195 MB, and Qt 3D, Charts, Multimedia
   and Pdf add another ~60 MB. Measured on Linux, both lists together take the
   distribution from 540 MB to 258 MB and the onefile from 158 MB to 71 MB.
+- Two smaller lists finish the job: `qt_orphan_libs` drops libraries nothing
+  links any more (the OpenSSL 3 pair, when Python links OpenSSL 4, and `libavif`)
+  and `qt_plugins_excluded` drops plugin families the viewer never loads (Qt
+  TLS, print support, and the tiff/wbmp/tga/icns/pdf image formats). PNG, JPEG,
+  WebP, GIF and SVG stay; they are what the artwork and theme icons use.
 - Only exclude a module or library that no shipped QML file imports.
   `QtQuick.Shapes` must stay, for example, because the Controls `Basic` style
   imports it; the QtQuick/QtQml/Controls stack, QtSvg (theme icons) and the
   platform integration (XcbQpa, Wayland) are always kept.
+- Python dependencies are part of the payload too. The artwork focus point used
+  to need NumPy, whose manylinux wheel ships a bundled OpenBLAS and
+  `libgfortran`: 41.7 MB unpacked for one FFT call. It now uses a Pillow
+  difference-of-Gaussians high-pass (`nanoka_viewer/saliency.py`), which takes
+  the onefile from 70.8 MB to 58.2 MB and leaves Qt as the only large
+  dependency.
 - The exclusions also decide how long a *cold* build takes. Nuitka's onefile
   packer compresses every payload file separately and each zstd level-22 stream
   costs ~360 ms to set up regardless of file size, so the ~2300 Qt QML files

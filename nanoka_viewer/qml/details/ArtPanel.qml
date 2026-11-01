@@ -92,7 +92,7 @@ Item {
             // whole pixels so the texture isn't resampled at a half-pixel offset
             width: Math.round(implicitWidth * coverScale)
             height: Math.round(implicitHeight * coverScale)
-            // details.artFocusX (0..1) is the saliency centroid; 0.5 is the
+            // details.artFocusX (0..1) is the detail centroid; 0.5 is the
             // old centre crop. Clamp so the artwork never reveals an edge.
             x: Math.round(Math.min(0, Math.max(
                 artFrame.width - width,

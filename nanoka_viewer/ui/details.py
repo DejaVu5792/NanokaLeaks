@@ -35,7 +35,7 @@ from ..api.details import (
     load_character_build,
     load_character_detail,
 )
-from ..saliency import sr_centroid_x
+from ..saliency import detail_centroid_x
 from ..settings import get_setting
 from .details_model import DetailsViewModel
 from .image_provider import ART_PROVIDER_ID, NanokaArtProvider
@@ -108,7 +108,7 @@ class _ArtLoadThread(QThread):
         focus_x = 0.5
         if get_setting("sr_centroid_centering"):
             try:
-                focus_x = sr_centroid_x(data)
+                focus_x = detail_centroid_x(data)
             except Exception:  # noqa: BLE001 - artwork must still render
                 logger.exception("Could not compute artwork focus")
         self.loaded.emit((data, focus_x))

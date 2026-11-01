@@ -13,8 +13,9 @@ DEFAULT_SETTINGS = {
     # often than detail text, so they remain a separate cache category.
     "cache_character_builds": True,
     "cache_character_artwork": True,
-    # Experimental: shift the details artwork toward the spectral-residual
-    # saliency centroid instead of the geometric centre.
+    # Experimental: shift the details artwork toward its detail-weighted
+    # centroid instead of the geometric centre.  The key predates the
+    # Pillow-only centroid and is kept so saved settings keep working.
     "sr_centroid_centering": True,
 }
 
