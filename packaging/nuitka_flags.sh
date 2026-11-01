@@ -83,3 +83,31 @@ qt_libs_excluded=(
 for lib in "${qt_libs_excluded[@]}"; do
     nuitka_flags+=(--noinclude-dlls="$lib")
 done
+
+# Shared libraries nothing in the bundle links any more; they are leftovers of
+# the Qt SDK and Addons chains dropped above.
+#
+#   libcrypto.so.3 / libssl.so.3 - OpenSSL 3. Python links OpenSSL 4 (that pair
+#     is kept, requests needs it), and the Qt TLS plugin is dropped below.
+#   libavif-* - no image-format plugin in the bundle references it.
+qt_orphan_libs=(libcrypto.so.3 libssl.so.3 libavif-*)
+
+for lib in "${qt_orphan_libs[@]}"; do
+    nuitka_flags+=(--noinclude-dlls="$lib")
+done
+
+# Qt plugins the viewer never loads. Image formats stay limited to what the
+# artwork and theme icons use: PNG (built into Qt), JPEG, WebP and SVG.
+qt_plugins_excluded=(
+    "PySide6/qt-plugins/tls/*"
+    "PySide6/qt-plugins/printsupport/*"
+    "PySide6/qt-plugins/imageformats/*tiff*"
+    "PySide6/qt-plugins/imageformats/*wbmp*"
+    "PySide6/qt-plugins/imageformats/*tga*"
+    "PySide6/qt-plugins/imageformats/*icns*"
+    "PySide6/qt-plugins/imageformats/*qpdf*"
+)
+
+for plugin in "${qt_plugins_excluded[@]}"; do
+    nuitka_flags+=(--noinclude-dlls="$plugin")
+done

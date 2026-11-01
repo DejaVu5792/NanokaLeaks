@@ -253,8 +253,8 @@ class DetailsViewModel(QObject):
     def set_art(self, source: str, focus_x: float = 0.5):
         """Show the decoded artwork served by *source*.
 
-        ``focus_x`` is the saliency centroid used as the horizontal crop
-        centre (0.5 is the geometric centre).
+        ``focus_x`` is the detail centroid used as the horizontal crop centre
+        (0.5 is the geometric centre).
         """
         self._art_source = source
         self._art_focus_x = min(1.0, max(0.0, float(focus_x)))
