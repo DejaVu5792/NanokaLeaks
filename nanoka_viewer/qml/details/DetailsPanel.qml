@@ -227,6 +227,7 @@ Item {
                                         required property var modelData
 
                                         Layout.fillWidth: true
+                                        Layout.preferredWidth: 1      // equal halves
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 4
 
@@ -253,6 +254,13 @@ Item {
                                             }
                                         }
                                     }
+                                }
+
+                                // keeps a lone section (like Substats) at half width
+                                Item {
+                                    visible: buildRow.modelData.length < 2
+                                    Layout.fillWidth: true
+                                    Layout.preferredWidth: 1
                                 }
                             }
                         }
@@ -318,13 +326,13 @@ Item {
                                         required property var modelData
 
                                         Layout.fillWidth: true
-                                        Layout.preferredWidth: 1      // equal halves in every row
+                                        Layout.preferredWidth: 1          // equal halves in every row
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 8
 
                                         Label {
-                                            Layout.fillWidth: true
-                                            Layout.minimumWidth: 0
+                                            Layout.preferredWidth: 112
+                                            Layout.minimumWidth: 112
                                             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             text: stat.modelData.label
                                             color: palette.placeholderText
@@ -333,13 +341,17 @@ Item {
                                         }
 
                                         Label {
-                                            Layout.alignment: Qt.AlignRight | Qt.AlignTop
-                                            horizontalAlignment: Text.AlignRight
+                                            Layout.alignment: Qt.AlignLeft | Qt.AlignTop
+                                            horizontalAlignment: Text.AlignLeft
                                             text: stat.modelData.value
                                             color: palette.text
                                             font.pixelSize: 11
                                             font.bold: true
                                         }
+
+                                        // lets the cell grow to its half of the row; without a fill child the
+                                        // cell is capped at its content width and the halves go uneven
+                                        Item { Layout.fillWidth: true }
                                     }
                                 }
 
