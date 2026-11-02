@@ -9,6 +9,21 @@ import time
 from pathlib import Path
 
 _SERVER_AUTH_OID = "1.3.6.1.5.5.7.3.1"
+_SYSTEM_CA_BUNDLES = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu, Arch
+    "/etc/pki/tls/certs/ca-bundle.crt",  # Fedora, RHEL
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # RHEL
+    "/etc/ssl/ca-bundle.pem",  # openSUSE
+    "/etc/ssl/cert.pem",  # Alpine, macOS
+)
+
+
+def _system_ca_bundle() -> str | None:
+    """Return the first usable OS certificate bundle, if any."""
+    return next(
+        (path for path in _SYSTEM_CA_BUNDLES if Path(path).is_file()),
+        None,
+    )
 
 
 def _windows_ca_bundle() -> str | None:
@@ -49,18 +64,7 @@ def _ensure_ca_bundle() -> None:
     if sys.platform == "win32":
         bundle = _windows_ca_bundle()
     else:
-        bundle = next(
-            (
-                path
-                for path in (
-                    "/etc/ssl/certs/ca-certificates.crt",   # Debian, Ubuntu, Arch
-                    "/etc/pki/tls/certs/ca-bundle.crt",     # Fedora, RHEL
-                    "/etc/ssl/cert.pem",                    # Alpine, macOS
-                )
-                if Path(path).is_file()
-            ),
-            None,
-        )
+        bundle = _system_ca_bundle()
     if bundle:
         os.environ.setdefault("SSL_CERT_FILE", bundle)
         os.environ.setdefault("REQUESTS_CA_BUNDLE", bundle)

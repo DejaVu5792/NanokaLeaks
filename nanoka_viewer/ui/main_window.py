@@ -663,6 +663,23 @@ def _run_app(argv, *, smoke_test=False):
         _install_mouse_trace(app)
 
     if smoke_test:
+        # A compiled bundle can start fine and still fail on its first HTTPS
+        # request when certifi's cacert.pem was not packaged.  Check the bundle
+        # requests will actually use so CI catches that regression too.
+        try:
+            import certifi
+
+            ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or certifi.where()
+            ca_bundle_ok = Path(ca_bundle).is_file() or Path(ca_bundle).is_dir()
+        except Exception:
+            logger.exception("Smoke test failed: could not resolve the CA bundle")
+            return 1
+        if not ca_bundle_ok:
+            logger.error(
+                "Smoke test failed: TLS CA bundle is missing at %s", ca_bundle
+            )
+            return 1
+
         # Loading the QML trees is what fails when a compiled bundle is missing
         # its QML sources or a Qt module they import.  The two overlays are
         # separate trees, so build them as well; instantiating the popups loads
