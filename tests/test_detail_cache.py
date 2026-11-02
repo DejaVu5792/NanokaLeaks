@@ -73,12 +73,15 @@ class DetailCacheRememberTests(unittest.TestCase):
         files = list(self.art_dir.glob("*.bin"))
         self.assertEqual(len(files), 1, "the artwork should still be written to disk")
 
-    def test_remember_false_skips_the_deep_copy(self):
-        with patch.object(details_api.copy, "deepcopy") as deepcopy:
-            details_api.load_character_detail("hsr", "1", remember=False)
-            details_api.load_character_detail("hsr", "1", remember=False)
+    def test_warm_memory_hit_returns_the_cached_instance(self):
+        first = details_api.load_character_detail("hsr", "1", remember=True)
 
-        deepcopy.assert_not_called()
+        with patch.object(details_api, "_get_json") as get_json:
+            second = details_api.load_character_detail("hsr", "1", remember=True)
+
+        get_json.assert_not_called()
+        self.assertIs(second, first)
+        self.assertIs(second, details_api._detail_cache[("hsr", "1.0", "1")])
 
     def test_artwork_remember_true_fills_the_memory_cache(self):
         details_api.load_character_art("https://example/art.webp", remember=True)

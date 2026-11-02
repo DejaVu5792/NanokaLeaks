@@ -1,6 +1,9 @@
 import QtQuick
 import QtQuick.Controls
 
+import "../Theme.js" as Theme
+import ".."
+
 // The artwork column: cover-cropped art, a bottom gradient and the name/meta
 // overlay.
 //
@@ -10,13 +13,6 @@ import QtQuick.Controls
 Item {
     id: artPanel
     objectName: "detailsArtColumn"
-
-    // Same 50/50 Midlight/Mid blend the widget skeleton used.
-    readonly property color skeletonColor: Qt.rgba(
-        (palette.midlight.r + palette.mid.r) / 2,
-        (palette.midlight.g + palette.mid.g) / 2,
-        (palette.midlight.b + palette.mid.b) / 2,
-        1)
 
     Rectangle {
         anchors.fill: parent
@@ -44,27 +40,16 @@ Item {
 
     // Loading placeholder: the whole column pulses.
     Rectangle {
+        id: skeleton
         objectName: "detailArtSkeleton"
         anchors.fill: parent
         visible: details.artState === "skeleton"
-        color: artPanel.skeletonColor
+        color: Theme.skeletonColor(palette)
         Accessible.name: "Loading character artwork"
 
-        SequentialAnimation on opacity {
-            running: true
-            loops: Animation.Infinite
-            NumberAnimation {
-                from: 0.55
-                to: 0.95
-                duration: 900
-                easing.type: Easing.InOutSine
-            }
-            NumberAnimation {
-                from: 0.95
-                to: 0.55
-                duration: 900
-                easing.type: Easing.InOutSine
-            }
+        SkeletonPulse {
+            target: skeleton
+            active: skeleton.visible
         }
     }
 

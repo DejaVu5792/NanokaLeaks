@@ -31,7 +31,7 @@ from typing import Callable
 from ..settings import get_enabled_games
 from .cache_info import record_build_cache_write
 from .characters import fetch_characters
-from .constants import GAMES
+from .constants import GAMES, is_manekin
 from .details import (
     DetailUnavailable,
     load_character_art,
@@ -47,6 +47,20 @@ PRELOAD_DETAILS = "details"
 PRELOAD_BUILDS = "builds"
 PRELOAD_ARTWORK = "artwork"
 PRELOAD_KINDS = (PRELOAD_DETAILS, PRELOAD_BUILDS, PRELOAD_ARTWORK)
+
+# How each kind is named in the header's background-cache line and in the
+# settings dialog.  Keep both next to the kind constants so adding a kind
+# cannot leave one of the two UIs with an unnamed progress entry.
+PRELOAD_CACHE_LABELS = {
+    PRELOAD_DETAILS: "details",
+    PRELOAD_BUILDS: "build tables",
+    PRELOAD_ARTWORK: "artwork",
+}
+PRELOAD_STATUS_LABELS = {
+    PRELOAD_DETAILS: "detail pages",
+    PRELOAD_BUILDS: "build tables",
+    PRELOAD_ARTWORK: "artwork images",
+}
 
 # The static host is happy with a handful of parallel requests, but 16 workers
 # measurably regressed in testing.  Artwork uses fewer workers because each
@@ -92,12 +106,7 @@ def _character_ids(game: str) -> list[str]:
     if game == "gi":
         # Keep the preload in sync with get_all_characters_with_new_status(),
         # which hides the Manekina/Manekin variants from the card list.
-        ids = [
-            char_id
-            for char_id in ids
-            if not char_id.startswith("10000118-")
-            and not char_id.startswith("10000117-")
-        ]
+        ids = [char_id for char_id in ids if not is_manekin(char_id)]
     return ids
 
 

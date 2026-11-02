@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
 from .qml_host import create_qml_widget
 
@@ -45,6 +45,28 @@ def is_alive(widget: QWidget | None) -> bool:
     except RuntimeError:
         return False
     return True
+
+
+def popup_host_for(parent: QWidget) -> QWidget:
+    """Return the widget an overlay should cover for *parent*."""
+    if isinstance(parent, QMainWindow):
+        return parent.centralWidget() or parent
+    return parent
+
+
+def reusable_popup(popup: PopupHost | None, host: QWidget) -> PopupHost | None:
+    """Return *popup* when it can still serve *host*, otherwise drop it.
+
+    Module-level singletons outlive old windows and can point at a wrapper
+    whose C++ object is gone, or at a different host after the window was
+    rebuilt.  Both cases need the same close-and-forget handling.
+    """
+    if popup is None or not is_alive(popup):
+        return None
+    if popup._host is not host:
+        popup.close_popup()
+        return None
+    return popup
 
 
 class PopupHost(QWidget):

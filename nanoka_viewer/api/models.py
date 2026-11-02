@@ -1,19 +1,26 @@
 """Character model utilities and display helpers."""
 
+from .constants import BASE_URL, GAMES
+from .game_data import (
+    GI_ELEMENTS,
+    HSR_PATHS,
+    WW_ELEMENT_ICONS,
+    WW_ELEMENTS,
+    WW_WEAPON_ICONS,
+    WW_WEAPONS,
+    ZZZ_ELEMENTS,
+    ZZZ_SPECIALTIES,
+)
+
 
 def get_character_url(game, char_id, char_data):
     """Get the URL for a character on the nanoka website."""
-    if game == "zzz":
-        return f"https://zzz.nanoka.cc/character/{char_id}/"
-    elif game == "hsr":
-        return f"https://hsr.nanoka.cc/character/{char_id}"
-    elif game == "gi":
-        return f"https://gi.nanoka.cc/character/{char_id}"
-    elif game == "ww":
-        return f"https://ww.nanoka.cc/character/{char_id}"
-    elif game == "nte":
-        return f"https://nte.nanoka.cc/character/{char_id}"
-    return ""
+    info = GAMES.get(game)
+    if info is None:
+        return ""
+    # ZZZ's character pages use a trailing slash; the other games do not.
+    suffix = "/" if game == "zzz" else ""
+    return f"{info['url']}/character/{char_id}{suffix}"
 
 
 def get_rarity(game, char_data):
@@ -40,39 +47,13 @@ def get_rarity(game, char_data):
 def get_element(game, char_data):
     """Get the element string for a character."""
     if game == "zzz":
-        elements = {
-            200: "Physical",
-            201: "Fire",
-            202: "Ice",
-            203: "Electric",
-            204: "Wind",
-            205: "Ether",
-            300: "Lumiflux",
-        }
-        return elements.get(char_data.get("element", 200), "Physical")
+        return ZZZ_ELEMENTS.get(char_data.get("element", 200), "Physical")
     elif game == "hsr":
         return char_data.get("damageType", "Physical")
     elif game == "gi":
-        elements = {
-            "Pyro": "Pyro",
-            "Hydro": "Hydro",
-            "Anemo": "Anemo",
-            "Electro": "Electro",
-            "Dendro": "Dendro",
-            "Cryo": "Cryo",
-            "Geo": "Geo",
-        }
-        return elements.get(char_data.get("element", "Physical"), "Physical")
+        return GI_ELEMENTS.get(char_data.get("element", "Physical"), "Physical")
     elif game == "ww":
-        elements = {
-            1: "Glacio",
-            2: "Fusion",
-            3: "Electro",
-            4: "Aero",
-            5: "Spectro",
-            6: "Havoc",
-        }
-        return elements.get(char_data.get("element", 1), "Glacio")
+        return WW_ELEMENTS.get(char_data.get("element", 1), "Glacio")
     elif game == "nte":
         return char_data.get("element", "Unknown")
     return "Physical"
@@ -121,25 +102,25 @@ def get_character_image(game, char_data, char_id=None):
     """Get the character portrait image URL."""
     icon = char_data.get("icon", "")
     if game == "zzz":
-        return f"https://static.nanoka.cc/assets/zzz/{icon}.webp"
+        return f"{BASE_URL}/assets/zzz/{icon}.webp"
     elif game == "hsr":
         if char_id:
-            return f"https://static.nanoka.cc/assets/hsr/avatarshopicon/{char_id}.webp"
-        return f"https://static.nanoka.cc/assets/hsr/avatarshopicon/{icon}.webp"
+            return f"{BASE_URL}/assets/hsr/avatarshopicon/{char_id}.webp"
+        return f"{BASE_URL}/assets/hsr/avatarshopicon/{icon}.webp"
     elif game == "gi":
-        return f"https://static.nanoka.cc/assets/gi/{icon}.webp"
+        return f"{BASE_URL}/assets/gi/{icon}.webp"
     elif game == "ww":
         if icon.startswith("http://") or icon.startswith("https://"):
             return icon
         path = icon.replace("/Game/Aki/UI/", "")
         path = path.split(".")[0]
-        return f"https://static.nanoka.cc/assets/ww/{path}.webp"
+        return f"{BASE_URL}/assets/ww/{path}.webp"
     elif game == "nte":
         if icon.startswith("http://") or icon.startswith("https://"):
             return icon
         if not icon.startswith("/"):
             icon = "/" + icon
-        return f"https://static.nanoka.cc/assets/nte{icon}.webp"
+        return f"{BASE_URL}/assets/nte{icon}.webp"
     return ""
 
 
@@ -147,32 +128,15 @@ def get_element_image(game, char_data):
     """Get the element icon image URL."""
     element = get_element(game, char_data)
     if game == "zzz":
-        element_map = {
-            "Physical": "Physical",
-            "Fire": "Fire",
-            "Ice": "Ice",
-            "Electric": "Electric",
-            "Wind": "Wind",
-            "Ether": "Ether",
-            "Lumiflux": "Lumiflux",
-        }
-        return f"https://static.nanoka.cc/assets/zzz/Icon{element_map.get(element, 'Physical')}.webp"
+        return f"{BASE_URL}/assets/zzz/Icon{element}.webp"
     elif game == "hsr":
-        return f"https://static.nanoka.cc/assets/hsr/element/{element.lower()}.webp"
+        return f"{BASE_URL}/assets/hsr/element/{element.lower()}.webp"
     elif game == "gi":
-        return f"https://static.nanoka.cc/assets/gi/{element}.webp"
+        return f"{BASE_URL}/assets/gi/{element}.webp"
     elif game == "ww":
         element_id = char_data.get("element", 1)
-        element_map = {
-            1: "Ice",
-            2: "Fire",
-            3: "Thunder",
-            4: "Wind",
-            5: "Light",
-            6: "Dark",
-        }
-        element_name = element_map.get(element_id, "Ice")
-        return f"https://static.nanoka.cc/assets/ww/UIResources/Common/Image/IconElementAttri/T_IconElementAttri{element_name}.webp"
+        element_name = WW_ELEMENT_ICONS.get(element_id, "Ice")
+        return f"{BASE_URL}/assets/ww/UIResources/Common/Image/IconElementAttri/T_IconElementAttri{element_name}.webp"
     elif game == "nte":
         icon_path = char_data.get("element_icon", "")
         if icon_path.startswith("http://") or icon_path.startswith("https://"):
@@ -180,49 +144,21 @@ def get_element_image(game, char_data):
         icon_path = icon_path.replace("biandui/YH_UI_zudui_shaixuan", "Equip/UI_YH_kongmuicon4_")
         if not icon_path.startswith("/"):
             icon_path = "/" + icon_path
-        return f"https://static.nanoka.cc/assets/nte{icon_path}.webp"
+        return f"{BASE_URL}/assets/nte{icon_path}.webp"
     return ""
 
 
 def get_specialty(game, char_data):
     """Get the specialty/path/weapon name for a character."""
     if game == "zzz":
-        type_map = {
-            1: "Attack",
-            2: "Stun",
-            3: "Anomaly",
-            4: "Support",
-            5: "Defense",
-            6: "Rupture",
-            7: "Armorer",
-        }
-        return type_map.get(char_data.get("type", 1), "Attack")
+        return ZZZ_SPECIALTIES.get(char_data.get("type", 1), "Attack")
     elif game == "hsr":
-        path_map = {
-            "Warrior": "Destruction",
-            "Rogue": "The Hunt",
-            "Mage": "Erudition",
-            "Knight": "Preservation",
-            "Warlock": "Nihility",
-            "Priest": "Abundance",
-            "Shaman": "Harmony",
-            "Memory": "Remembrance",
-            "Elation": "Elation",
-        }
         base_type = char_data.get("baseType", "Unknown")
-        return path_map.get(base_type, base_type)
+        return HSR_PATHS.get(base_type, base_type)
     elif game == "gi":
         return char_data.get("weapon", "Unknown")
     elif game == "ww":
-        weapon_map = {
-            1: "Broadblade",
-            2: "Sword",
-            3: "Pistol",
-            4: "Gauntlets",
-            5: "Rectifier",
-        }
-        weapon_id = char_data.get("weapon", 1)
-        return weapon_map.get(weapon_id, "Unknown")
+        return WW_WEAPONS.get(char_data.get("weapon", 1), "Unknown")
     elif game == "nte":
         return "None"
     return "Unknown"
@@ -232,22 +168,14 @@ def get_specialty_image(game, char_data):
     """Get the specialty/path/weapon icon image URL."""
     specialty = get_specialty(game, char_data)
     if game == "zzz":
-        return f"https://static.nanoka.cc/assets/zzz/Icon{specialty}.webp"
+        return f"{BASE_URL}/assets/zzz/Icon{specialty}.webp"
     elif game == "hsr":
         path = char_data.get("baseType", "")
-        return f"https://static.nanoka.cc/assets/hsr/pathicon/{path.lower()}.webp"
+        return f"{BASE_URL}/assets/hsr/pathicon/{path.lower()}.webp"
     elif game == "gi":
         weapon = char_data.get("weapon", "")
-        return f"https://static.nanoka.cc/assets/gi/{weapon}.webp"
+        return f"{BASE_URL}/assets/gi/{weapon}.webp"
     elif game == "ww":
-        icon_map = {
-            1: "Sword",
-            2: "Knife",
-            3: "Gun",
-            4: "Fist",
-            5: "Magic",
-        }
-        weapon_id = char_data.get("weapon", 1)
-        icon_name = icon_map.get(weapon_id, "Sword")
-        return f"https://static.nanoka.cc/assets/ww/Static/SP_IconNor{icon_name}.webp"
+        icon_name = WW_WEAPON_ICONS.get(char_data.get("weapon", 1), "Sword")
+        return f"{BASE_URL}/assets/ww/Static/SP_IconNor{icon_name}.webp"
     return ""

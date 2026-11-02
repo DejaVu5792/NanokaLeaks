@@ -99,17 +99,10 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             model: sectionRoot.section.characters
 
-            ScrollBar.horizontal: ScrollBar {
-                policy: ScrollBar.AsNeeded
+            ScrollBar.horizontal: AppScrollBar {
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
-                contentItem: Rectangle {
-                    implicitHeight: 6
-                    radius: 3
-                    color: palette.mid
-                }
-                background: Rectangle { color: "transparent" }
             }
 
             MouseArea {
@@ -133,19 +126,10 @@ Item {
             delegate: Item {
                 id: slot
 
-                required property string charId
-                required property string fullName
-                required property string displayName
-                required property string rarity
-                required property string rarityColor
-                required property string element
-                required property string elementText
-                required property string elementImage
-                required property string specialty
-                required property string specialtyImage
-                required property string image
-                required property string url
-                required property bool isNew
+                // Bound component behaviour hides the implicit delegate context,
+                // so bind the model object explicitly instead of listing every
+                // role as a separate required property.
+                required property var model
 
                 width: sectionRoot.cardWidth
                 height: cardList.height
@@ -153,19 +137,19 @@ Item {
                 CharacterCard {
                     anchors.verticalCenter: parent.verticalCenter
                     game: sectionRoot.section.game
-                    charId: slot.charId
-                    fullName: slot.fullName
-                    displayName: slot.displayName
-                    rarity: slot.rarity
-                    rarityColor: slot.rarityColor
-                    element: slot.element
-                    elementText: slot.elementText
-                    elementImage: slot.elementImage
-                    specialty: slot.specialty
-                    specialtyImage: slot.specialtyImage
-                    image: slot.image
-                    url: slot.url
-                    isNew: slot.isNew
+                    charId: slot.model.charId
+                    fullName: slot.model.fullName
+                    displayName: slot.model.displayName
+                    rarity: slot.model.rarity
+                    rarityColor: slot.model.rarityColor
+                    element: slot.model.element
+                    elementText: slot.model.elementText
+                    elementImage: slot.model.elementImage
+                    specialty: slot.model.specialty
+                    specialtyImage: slot.model.specialtyImage
+                    image: slot.model.image
+                    url: slot.model.url
+                    isNew: slot.model.isNew
                 }
             }
         }

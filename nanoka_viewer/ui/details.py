@@ -22,7 +22,7 @@ import logging
 
 from PySide6.QtCore import QThread, QTimer, Signal
 from PySide6.QtGui import QCursor, QImage
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from ..api.details import (
     BuildSection,
@@ -39,7 +39,7 @@ from ..saliency import detail_centroid_x
 from ..settings import get_setting
 from .details_model import DetailsViewModel
 from .image_provider import ART_PROVIDER_ID, NanokaArtProvider
-from .popup_host import PopupHost, is_alive
+from .popup_host import PopupHost, popup_host_for, reusable_popup
 
 logger = logging.getLogger(__name__)
 
@@ -436,18 +436,11 @@ def open_details(
     global _popup
     if parent is None:
         return
-    if isinstance(parent, QMainWindow):
-        host = parent.centralWidget() or parent
-    else:
-        host = parent
+    host = popup_host_for(parent)
 
     # The module-level popup outlives old host windows; never touch a wrapper
-    # whose C++ object is already gone.
-    if _popup is not None and not is_alive(_popup):
-        _popup = None
-    if _popup is not None and _popup._host is not host:
-        _popup.close_popup()
-        _popup = None
+    # whose C++ object is already gone or that covers a previous host.
+    _popup = reusable_popup(_popup, host)
     if _popup is None:
         _popup = CharacterDetailsPopup(host)
 

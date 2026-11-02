@@ -2,11 +2,11 @@
 
 These cover the failure modes that made the card grid feel broken:
 
-* the same URL at two sizes must not return one size's pixmap,
+* the same URL at two sizes must not return one size's image,
+* a warm memory hit must not read or decode the payload again,
 * a corrupt disk entry must be repaired/removed instead of poisoning the cache,
 * the memory cache must stay bounded,
-* cancelling a request must not fire its callback,
-* requests are coalesced per (url, size), not per URL.
+* the disk cache must follow ``XDG_CACHE_HOME`` like the rest of the app.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 from PySide6.QtCore import QBuffer, QIODevice
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter
 
 import support
 
@@ -76,23 +76,15 @@ class ImageLoaderTests(unittest.TestCase):
         self.cache_dir = Path(self._temp_dir.name)
         self._original_cache_dir = il.IMAGE_CACHE_DIR
         self._original_max_bytes = il.IMAGE_CACHE_MAX_BYTES
-        self._original_failure_ttl = il.FAILURE_TTL
         self._original_get_session = il._get_session
         il.IMAGE_CACHE_DIR = self.cache_dir
         il._cache_clear()
-        il._FAILED.clear()
-        with il._LOCK:
-            il._CALLBACKS.clear()
 
     def tearDown(self):
         il.IMAGE_CACHE_DIR = self._original_cache_dir
         il.IMAGE_CACHE_MAX_BYTES = self._original_max_bytes
-        il.FAILURE_TTL = self._original_failure_ttl
         il._get_session = self._original_get_session
         il._cache_clear()
-        il._FAILED.clear()
-        with il._LOCK:
-            il._CALLBACKS.clear()
         self._temp_dir.cleanup()
 
     def test_cache_key_includes_size(self):
@@ -100,8 +92,8 @@ class ImageLoaderTests(unittest.TestCase):
         il._get_session = lambda: session
         url = "https://example.invalid/portrait.png"
 
-        small = il.load_qt_image(url, (18, 18))
-        large = il.load_qt_image(url, (80, 80))
+        small = il.load_qt_image_sync(url, (18, 18))
+        large = il.load_qt_image_sync(url, (80, 80))
 
         self.assertIsNotNone(small)
         self.assertIsNotNone(large)
@@ -113,6 +105,21 @@ class ImageLoaderTests(unittest.TestCase):
         )
         # The encoded payload is shared on disk: only one download.
         self.assertEqual(session.calls, 1)
+
+    def test_memory_hit_does_not_touch_the_disk(self):
+        url = "https://example.invalid/portrait.png"
+        il._get_session = lambda: FakeSession(png_bytes())
+
+        first = il.load_qt_image_sync(url, (18, 18))
+        self.assertIsNotNone(first)
+
+        with mock.patch.object(
+            il, "_read_cache_file", side_effect=AssertionError("disk read")
+        ):
+            second = il.load_qt_image_sync(url, (18, 18))
+
+        self.assertIs(second, first)
+        self.assertEqual(len(il.IMAGE_CACHE), 1)
 
     def test_image_is_cover_cropped_not_stretched(self):
         session = FakeSession(banded_png(100, 200))
@@ -155,100 +162,30 @@ class ImageLoaderTests(unittest.TestCase):
 
     def test_memory_cache_is_bounded(self):
         il.IMAGE_CACHE_MAX_BYTES = 1000
-        pixmap = QPixmap(20, 10)  # 20*10*4 = 800 bytes
+        image = QImage(20, 10, QImage.Format.Format_ARGB32)  # 20*10*4 = 800 bytes
 
         for index in range(5):
-            il._cache_put((f"url-{index}", (20, 10)), pixmap)
+            il._cache_put((f"url-{index}", (20, 10)), image)
 
         self.assertLessEqual(len(il.IMAGE_CACHE), 2)
         self.assertLessEqual(il._CACHE_BYTES, 1000)
 
-    def test_cancelled_request_is_not_invoked(self):
-        key = ("https://example.invalid/x.png", (18, 18))
-        calls = []
-        request = il.ImageRequest(key, calls.append)
-        with il._LOCK:
-            il._CALLBACKS[key] = [request]
+    def test_clear_image_cache_drops_memory_and_disk(self):
+        url = "https://example.invalid/portrait.png"
+        il._get_session = lambda: FakeSession(png_bytes())
+        il.load_qt_image_sync(url, (18, 18))
+        self.assertTrue(il.IMAGE_CACHE)
 
-        request.cancel()
-        il._handle_image_loaded(key, QImage(10, 10, QImage.Format.Format_ARGB32))
+        il.clear_image_cache()
 
-        self.assertEqual(calls, [])
-        self.assertNotIn(key, il._CALLBACKS)
+        self.assertFalse(il.IMAGE_CACHE)
+        self.assertEqual(il._CACHE_BYTES, 0)
+        self.assertEqual(list(self.cache_dir.iterdir()), [])
 
-    def test_failed_url_is_not_refetched_during_ttl(self):
-        url = "https://example.invalid/missing.png"
-        key = (url, (18, 18))
-        il._handle_image_failed(key)
 
-        with mock.patch.object(il.image_executor, "submit") as submit:
-            result = il.request_image(url, lambda pm: None, (18, 18))
-
-        self.assertIsNone(result)
-        submit.assert_not_called()
-
-    def test_failure_callbacks_run_and_cancelled_ones_are_skipped(self):
-        key = ("https://example.invalid/missing.png", (80, 80))
-        calls = []
-        first = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("first"))
-        second = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("second"))
-        cancelled = il.ImageRequest(key, lambda pm: None, on_failed=lambda: calls.append("cancelled"))
-        cancelled.cancelled = True
-        with il._LOCK:
-            il._CALLBACKS[key] = [first, second, cancelled]
-
-        il._handle_image_failed(key)
-
-        self.assertEqual(calls, ["first", "second"])
-
-    def test_failed_url_retries_after_ttl(self):
-        url = "https://example.invalid/missing.png"
-        key = (url, (18, 18))
-        il.FAILURE_TTL = 0
-        il._handle_image_failed(key)
-
-        submitted = []
-
-        def fake_submit(fn, *args, **kwargs):
-            submitted.append((fn, args, kwargs))
-
-        with mock.patch.object(il.image_executor, "submit", side_effect=fake_submit):
-            request = il.request_image(url, lambda pm: None, (18, 18))
-
-        self.assertIsNotNone(request)
-        self.assertEqual(len(submitted), 1)
-        request.cancel()
-
-    def test_success_clears_a_previous_failure(self):
-        url = "https://example.invalid/recovered.png"
-        key = (url, (18, 18))
-        il._handle_image_failed(key)
-        self.assertIn(key, il._FAILED)
-
-        il._handle_image_loaded(key, QImage(10, 10, QImage.Format.Format_ARGB32))
-
-        self.assertNotIn(key, il._FAILED)
-
-    def test_requests_are_coalesced_per_size(self):
-        url = "https://example.invalid/x.png"
-        submitted = []
-
-        def fake_submit(fn, *args, **kwargs):
-            submitted.append((fn, args, kwargs))
-
-        with mock.patch.object(il.image_executor, "submit", side_effect=fake_submit):
-            first = il.request_image(url, lambda pm: None, (18, 18))
-            second = il.request_image(url, lambda pm: None, (18, 18))
-            third = il.request_image(url, lambda pm: None, (80, 80))
-
-        self.assertEqual(len(submitted), 2)
-        self.assertIs(il._CALLBACKS[(url, (18, 18))][0], first)
-        self.assertIs(il._CALLBACKS[(url, (18, 18))][1], second)
-        self.assertIs(il._CALLBACKS[(url, (80, 80))][0], third)
-
-        first.cancel()
-        second.cancel()
-        third.cancel()
+class ImageCacheLocationTests(unittest.TestCase):
+    def test_disk_cache_lives_under_the_shared_cache_dir(self):
+        self.assertEqual(il.IMAGE_CACHE_DIR, il.CACHE_DIR / "images")
 
 
 if __name__ == "__main__":

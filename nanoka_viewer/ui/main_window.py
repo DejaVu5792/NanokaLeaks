@@ -28,7 +28,7 @@ from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 from ..api import GAMES, fetch_manifest
-from ..api.preload import PRELOAD_ARTWORK, PRELOAD_BUILDS, PRELOAD_DETAILS
+from ..api.preload import PRELOAD_CACHE_LABELS
 from ..settings import get_enabled_games
 from .details import CharacterDetailsPopup, open_details
 from .external import open_external_url
@@ -45,12 +45,6 @@ logger = logging.getLogger(__name__)
 _DETACHED_THREADS = set()
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
-
-_CACHE_LABELS = {
-    PRELOAD_DETAILS: "details",
-    PRELOAD_BUILDS: "build tables",
-    PRELOAD_ARTWORK: "artwork",
-}
 
 _TRACED_MOUSE_EVENTS = frozenset(
     {
@@ -174,7 +168,6 @@ class NanokaViewer(QMainWindow):
         self._qml.setObjectName("qmlView")
         self.setCentralWidget(self._qml)
 
-        self._loading_chars = {}
         self._loading_index = {}
         self._load_generation = 0
         self._load_threads = []
@@ -269,13 +262,13 @@ class NanokaViewer(QMainWindow):
         """Show background cache progress in the header."""
         self._cache_label_timer.stop()
         if progress.total:
-            label = _CACHE_LABELS.get(progress.kind, progress.kind)
+            label = PRELOAD_CACHE_LABELS.get(progress.kind, progress.kind)
             self._set_cache(f"Preloading {label} {progress.completed}/{progress.total}")
         else:
             self._set_cache("Preparing preload...")
 
     def _on_preload_finished(self, summary):
-        label = _CACHE_LABELS.get(summary.kind, summary.kind)
+        label = PRELOAD_CACHE_LABELS.get(summary.kind, summary.kind)
         if summary.cancelled:
             text = f"Preload stopped at {summary.completed}/{summary.total}"
         else:
@@ -311,7 +304,6 @@ class NanokaViewer(QMainWindow):
         self._set_reload(text="Loading...", enabled=False)
         self._set_status("Loading...")
         self._fetch_finished = False
-        self._loading_chars.clear()
         self._loading_index.clear()
         self._pending_sections = set(games)
 
@@ -372,9 +364,8 @@ class NanokaViewer(QMainWindow):
         Games-tab reorder never reloads anything.
         """
         changed = self.sections_model.sync(order)
-        for game in list(self._loading_chars):
+        for game in list(self._loading_index):
             if game not in order:
-                self._loading_chars.pop(game, None)
                 self._loading_index.pop(game, None)
         self._pending_sections.intersection_update(order)
         return changed
@@ -430,8 +421,8 @@ class NanokaViewer(QMainWindow):
         except Exception as e:
             logger.error(f"Error fetching version for {game}: {e}")
 
-        # Store characters for progressive loading
-        self._loading_chars[game] = list(chars)
+        # Track the progressive loader's cursor; the character list itself is
+        # already owned by the closure that schedules the batches.
         self._loading_index[game] = 0
 
         # Start progressive loading
@@ -485,7 +476,6 @@ class NanokaViewer(QMainWindow):
         section = self.sections_model.section(game)
         if section is None:
             # The game was disabled while its cards were streaming in.
-            self._loading_chars.pop(game, None)
             self._loading_index.pop(game, None)
             return
         section.characters.append_many(batch_chars)
@@ -505,7 +495,6 @@ class NanokaViewer(QMainWindow):
         else:
             # Loading complete
             section.set_status(f"{len(chars)} total")
-            self._loading_chars.pop(game, None)
             self._loading_index.pop(game, None)
             logger.info(f"Finished loading all {len(chars)} characters for {game}")
             self._mark_section_done(game)

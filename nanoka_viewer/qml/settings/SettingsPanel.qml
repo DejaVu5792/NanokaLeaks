@@ -26,12 +26,10 @@ Item {
         height: 48
         clip: true
 
-        Rectangle {
+        HDivider {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 1
-            color: palette.midlight
         }
 
         RowLayout {
@@ -101,18 +99,7 @@ Item {
         contentWidth: width
         contentHeight: cacheColumn.implicitHeight + 38
 
-        ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
-            // AsNeeded can keep the bar visible after the page shrinks to fit
-            // (it is re-evaluated on size changes only), so track the size.
-            visible: size < 1.0
-            contentItem: Rectangle {
-                implicitWidth: 6
-                radius: 3
-                color: palette.mid
-            }
-            background: Rectangle { color: "transparent" }
-        }
+        ScrollBar.vertical: AppScrollBar {}
 
         Column {
             id: cacheColumn
@@ -148,11 +135,9 @@ Item {
                     onPreloadClicked: settings.preload("details")
                 }
 
-                Rectangle {
+                HDivider {
                     objectName: "settingsRowSeparator"
                     Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: palette.midlight
                 }
 
                 CacheRow {
@@ -172,11 +157,9 @@ Item {
                     onPreloadClicked: settings.preload("builds")
                 }
 
-                Rectangle {
+                HDivider {
                     objectName: "settingsRowSeparator"
                     Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: palette.midlight
                 }
 
                 CacheRow {
@@ -243,18 +226,7 @@ Item {
         contentWidth: width
         contentHeight: viewColumn.implicitHeight + 38
 
-        ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
-            // AsNeeded can keep the bar visible after the page shrinks to fit
-            // (it is re-evaluated on size changes only), so track the size.
-            visible: size < 1.0
-            contentItem: Rectangle {
-                implicitWidth: 6
-                radius: 3
-                color: palette.mid
-            }
-            background: Rectangle { color: "transparent" }
-        }
+        ScrollBar.vertical: AppScrollBar {}
 
         Column {
             id: viewColumn
@@ -290,11 +262,9 @@ Item {
                         implicitHeight: rowItem.implicitHeight
                             + (toggleSlot.index > 0 ? 1 : 0)
 
-                        Rectangle {
+                        HDivider {
                             width: parent.width
-                            height: 1
                             visible: toggleSlot.index > 0
-                            color: palette.midlight
                         }
 
                         GameToggleRow {

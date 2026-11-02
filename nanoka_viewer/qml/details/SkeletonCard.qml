@@ -3,6 +3,9 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 
+import "../Theme.js" as Theme
+import ".."
+
 // One card-shaped loading placeholder: rows of pulsing bars.
 //
 // ``rows`` is a list of rows and each row is a list of ``[weight, height]``
@@ -13,6 +16,10 @@ Rectangle {
 
     property var rows: []
     property real pulse: 0.55
+    // The caller keeps this false while the skeleton page is hidden; a hidden
+    // delegate still reports visible == true, so visibility alone is not enough
+    // to stop the pulse animation.
+    property bool active: true
 
     implicitHeight: column.implicitHeight + 28
     height: implicitHeight
@@ -21,29 +28,10 @@ Rectangle {
     border.width: 1
     border.color: palette.mid
 
-    // Same 50/50 Midlight/Mid blend the widget skeleton used: visible against
-    // both Base and AlternateBase in light and dark themes.
-    readonly property color skeletonColor: Qt.rgba(
-        (palette.midlight.r + palette.mid.r) / 2,
-        (palette.midlight.g + palette.mid.g) / 2,
-        (palette.midlight.b + palette.mid.b) / 2,
-        1)
-
-    SequentialAnimation on pulse {
-        running: true
-        loops: Animation.Infinite
-        NumberAnimation {
-            from: 0.55
-            to: 0.95
-            duration: 900
-            easing.type: Easing.InOutSine
-        }
-        NumberAnimation {
-            from: 0.95
-            to: 0.55
-            duration: 900
-            easing.type: Easing.InOutSine
-        }
+    SkeletonPulse {
+        target: card
+        targetProperty: "pulse"
+        active: card.active && card.visible
     }
 
     ColumnLayout {
@@ -74,7 +62,7 @@ Rectangle {
                         Layout.preferredWidth: modelData[0]
                         implicitHeight: modelData[1]
                         radius: 4
-                        color: card.skeletonColor
+                        color: Theme.skeletonColor(palette)
                         opacity: card.pulse
                     }
                 }

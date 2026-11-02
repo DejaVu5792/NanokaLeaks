@@ -79,15 +79,7 @@ Item {
             contentWidth: width
             contentHeight: contentColumn.implicitHeight + 32
 
-            ScrollBar.vertical: ScrollBar {
-                policy: ScrollBar.AsNeeded
-                contentItem: Rectangle {
-                    implicitWidth: 6
-                    radius: 3
-                    color: palette.mid
-                }
-                background: Rectangle { color: "transparent" }
-            }
+            ScrollBar.vertical: AppScrollBar {}
 
             Column {
                 id: contentColumn
@@ -114,6 +106,7 @@ Item {
                     }
 
                     SkeletonCard {
+                        active: details.state === "loading"
                         width: parent.width
                         rows: [
                             [[26, 16]],
@@ -126,6 +119,7 @@ Item {
                     }
 
                     SkeletonCard {
+                        active: details.state === "loading"
                         width: parent.width
                         rows: [
                             [[22, 16]],
@@ -135,6 +129,7 @@ Item {
                     }
 
                     SkeletonCard {
+                        active: details.state === "loading"
                         width: parent.width
                         rows: [
                             [[20, 16]],
@@ -146,6 +141,7 @@ Item {
                     }
 
                     SkeletonCard {
+                        active: details.state === "loading"
                         width: parent.width
                         rows: [
                             [[18, 16]],

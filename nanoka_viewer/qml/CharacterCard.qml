@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import "Theme.js" as Theme
+
 // One character card: rarity, portrait, element/specialty icons, name and the
 // two actions (details popup, external browser).
 //
@@ -83,26 +85,12 @@ Item {
                     anchors.fill: parent
                     radius: portraitFrame.radius
                     visible: !card.portraitFailed
-                    color: Qt.rgba(
-                        (palette.midlight.r + palette.mid.r) / 2,
-                        (palette.midlight.g + palette.mid.g) / 2,
-                        (palette.midlight.b + palette.mid.b) / 2,
-                        1)
+                    color: Theme.skeletonColor(palette)
 
-                    SequentialAnimation on opacity {
-                        running: placeholder.visible
-                                 && portrait.status !== Image.Ready
-                        loops: Animation.Infinite
-                        NumberAnimation {
-                            from: 0.55; to: 0.95
-                            duration: 900
-                            easing.type: Easing.InOutSine
-                        }
-                        NumberAnimation {
-                            from: 0.95; to: 0.55
-                            duration: 900
-                            easing.type: Easing.InOutSine
-                        }
+                    SkeletonPulse {
+                        target: placeholder
+                        active: placeholder.visible
+                                && portrait.status !== Image.Ready
                     }
                 }
 
