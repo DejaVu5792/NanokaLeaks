@@ -6,7 +6,9 @@ import re
 
 import requests
 
-from .constants import BASE_URL, CHARACTER_CACHE_DIR
+from .cache_io import write_bytes_atomic
+from .constants import BASE_URL, CHARACTER_CACHE_DIR, is_manekin
+from .http import session
 from .manifest import (
     cached_latest_version,
     clear_manifest_cache,
@@ -114,7 +116,7 @@ def fetch_characters(game):
     logger.info(f"Fetching new character data for {game} version {version}")
     url = f"{BASE_URL}/{game}/{version}/character.json"
     try:
-        response = requests.get(url, timeout=30)
+        response = session.get(url, timeout=30)
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError):
@@ -139,8 +141,10 @@ def fetch_characters(game):
     _remember(game, version, data)
     try:
         character_cache_file = CHARACTER_CACHE_DIR / f"{game}_{version}.json"
-        with open(character_cache_file, "w") as f:
-            json.dump(data, f)
+        write_bytes_atomic(
+            character_cache_file,
+            (json.dumps(data, indent=2) + "\n").encode("utf-8"),
+        )
     except Exception as e:
         logger.error(
             f"Error writing character disk cache for {game} version {version}: {e}"
@@ -175,12 +179,7 @@ def cached_character_count(game):
     if not isinstance(data, dict):
         return None
     if game == "gi":
-        return sum(
-            1
-            for char_id in data
-            if not char_id.startswith("10000118-")
-            and not char_id.startswith("10000117-")
-        )
+        return sum(1 for char_id in data if not is_manekin(char_id))
     return len(data)
 
 
@@ -257,14 +256,8 @@ def get_all_characters_with_new_status(game):
 
     # Filter out Manekina and Manekin for GI (as requested)
     if game == "gi":
-        # Remove Manekina variants (IDs starting with 10000118-)
-        # Remove Manekin variants (IDs starting with 10000117-)
         original_count = len(data)
-        data = {
-            k: v
-            for k, v in data.items()
-            if not k.startswith("10000118-") and not k.startswith("10000117-")
-        }
+        data = {k: v for k, v in data.items() if not is_manekin(k)}
         filtered_count = len(data)
         logger.info(
             f"After filtering out Manekina/Manekin: {filtered_count} characters for GI "

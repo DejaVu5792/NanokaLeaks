@@ -6,12 +6,14 @@ import logging
 
 import requests
 
+from .cache_io import write_bytes_atomic
 from .constants import (
     BASE_URL,
     MANIFEST_CACHE_FILE,
     MEMORY_CACHE_TIMEOUT,
     DISK_CACHE_TIMEOUT,
 )
+from .http import session
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,8 @@ _manifest_cache_time = 0
 def _read_manifest_cache():
     """Return the on-disk manifest, or ``None`` when it cannot be used."""
     try:
-        with open(MANIFEST_CACHE_FILE, "r") as f:
-            data = json.load(f)
+        with MANIFEST_CACHE_FILE.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
     except FileNotFoundError:
         return None
     except Exception as e:
@@ -72,7 +74,7 @@ def fetch_manifest():
     # Fetch new manifest
     logger.info("Fetching new manifest from network")
     try:
-        response = requests.get(f"{BASE_URL}/manifest.json", timeout=30)
+        response = session.get(f"{BASE_URL}/manifest.json", timeout=30)
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError) as exc:
@@ -92,8 +94,10 @@ def fetch_manifest():
     _manifest_cache = data
     _manifest_cache_time = current_time
     try:
-        with open(MANIFEST_CACHE_FILE, "w") as f:
-            json.dump(data, f)
+        write_bytes_atomic(
+            MANIFEST_CACHE_FILE,
+            (json.dumps(data, indent=2) + "\n").encode("utf-8"),
+        )
     except Exception as e:
         logger.error(f"Error writing disk cache: {e}")
 
@@ -122,14 +126,11 @@ def cached_latest_version(game):
         except (KeyError, TypeError):
             return None
 
+    data = _read_manifest_cache()
     try:
-        if MANIFEST_CACHE_FILE.exists():
-            with open(MANIFEST_CACHE_FILE, "r") as f:
-                data = json.load(f)
-            return str(data[game]["latest"])
-    except Exception as exc:  # noqa: BLE001 - a missing cache is not an error
-        logger.debug("Could not read cached manifest: %s", exc)
-    return None
+        return str(data[game]["latest"])
+    except (KeyError, TypeError):
+        return None
 
 
 def clear_manifest_cache():

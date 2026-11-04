@@ -37,10 +37,6 @@ from nanoka_viewer.api.manifest import (
 OFFLINE = requests.ConnectionError("network is unreachable")
 
 
-def offline_manifest(*args, **kwargs):
-    raise OFFLINE
-
-
 class OfflineCacheTestCase(unittest.TestCase):
     """Shared temporary cache and network stubs for the offline scenarios."""
 
@@ -97,14 +93,8 @@ class OfflineCacheTestCase(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-        # ``fetch_characters`` and ``details`` import the manifest helpers by
-        # name, but those functions still read the (patched) manifest module
-        # globals, so no re-patching is needed there.
-        self.offline = patch.object(manifest_api.requests, "get", offline_manifest)
-        self.offline.start()
-        self.addCleanup(self.offline.stop)
-
-        # ``details`` uses a shared requests.Session rather than requests.get.
+        # Manifest, characters and details share one session, so a single
+        # patch covers every network path.
         self.offline_session = patch.object(
             details_api._session, "get", side_effect=OFFLINE
         )

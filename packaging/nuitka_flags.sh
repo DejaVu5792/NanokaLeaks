@@ -10,6 +10,7 @@
 nuitka_flags=(
     --enable-plugin=pyside6
     --assume-yes-for-downloads
+    --include-package-data=certifi
     --include-data-files=nanoka_viewer/assets/nanokaleaks.png=nanokaleaks.png
     --include-data-dir=nanoka_viewer/qml=nanoka_viewer/qml
     --include-qt-plugins=qml

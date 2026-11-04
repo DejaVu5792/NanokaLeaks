@@ -36,7 +36,6 @@ class BatchLoadingTests(QtTestCase):
             section = window.sections_model.section("hsr")
             chars = [(f"id{index}", _HSR_CHAR, False) for index in range(25)]
             section.characters.clear()
-            window._loading_chars["hsr"] = list(chars)
             window._loading_index["hsr"] = 0
 
             window._load_next_batch("hsr", chars, window._load_generation)

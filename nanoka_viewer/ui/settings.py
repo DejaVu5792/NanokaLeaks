@@ -14,7 +14,7 @@ import logging
 from datetime import datetime
 
 from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtWidgets import QMessageBox
 
 from ..api import (
     GAMES,
@@ -26,13 +26,19 @@ from ..api import (
 from ..api.preload import (
     PRELOAD_ARTWORK,
     PRELOAD_BUILDS,
-    PRELOAD_DETAILS,
+    PRELOAD_STATUS_LABELS,
     PreloadProgress,
     PreloadSummary,
 )
-from ..settings import DEFAULT_SETTINGS, load_settings, save_settings
+from ..settings import (
+    DEFAULT_SETTINGS,
+    load_settings,
+    normalize_game_ids,
+    normalize_game_order,
+    save_settings,
+)
 from .image_loader import clear_image_cache
-from .popup_host import PopupHost, is_alive
+from .popup_host import PopupHost, popup_host_for, reusable_popup
 from .preload import get_preload_manager
 from .settings_model import (
     CACHE_KINDS,
@@ -45,12 +51,6 @@ from .settings_model import (
 )
 
 logger = logging.getLogger(__name__)
-
-_PRELOAD_LABELS = {
-    PRELOAD_DETAILS: "detail pages",
-    PRELOAD_BUILDS: "build tables",
-    PRELOAD_ARTWORK: "artwork images",
-}
 
 
 class SettingsPopup(PopupHost):
@@ -157,24 +157,11 @@ class SettingsPopup(PopupHost):
     @staticmethod
     def _game_order_from(settings: dict) -> list[str]:
         """Return the full, sanitized game order for the settings dict."""
-        order: list[str] = []
-        raw = settings.get("game_order")
-        if isinstance(raw, (list, tuple)):
-            for value in raw:
-                game = str(value)
-                if game in GAMES and game not in order:
-                    order.append(game)
-        for game in GAMES:
-            if game not in order:
-                order.append(game)
-        return order
+        return normalize_game_order(settings.get("game_order"))
 
     @staticmethod
     def _disabled_games_from(settings: dict) -> set[str]:
-        raw = settings.get("disabled_games")
-        if not isinstance(raw, (list, tuple)):
-            return set()
-        return {str(value) for value in raw if str(value) in GAMES}
+        return set(normalize_game_ids(settings.get("disabled_games")))
 
     def _load_game_settings(self, settings: dict):
         """Populate the toggle rows and the order list without saving."""
@@ -409,7 +396,7 @@ class SettingsPopup(PopupHost):
             self._model.set_status(f"Preload failed: {manager.last_error}")
 
     def _show_progress(self, progress: PreloadProgress):
-        label = _PRELOAD_LABELS.get(progress.kind, progress.kind)
+        label = PRELOAD_STATUS_LABELS.get(progress.kind, progress.kind)
         name = progress.name
         if len(name) > 28:
             name = name[:27].rstrip() + "..."
@@ -419,7 +406,7 @@ class SettingsPopup(PopupHost):
         self._model.set_status(text)
 
     def _show_summary(self, summary: PreloadSummary):
-        label = _PRELOAD_LABELS.get(summary.kind, summary.kind)
+        label = PRELOAD_STATUS_LABELS.get(summary.kind, summary.kind)
         cached = max(0, summary.completed - summary.failed - summary.skipped)
         if summary.cancelled:
             text = f"Stopped. Preloaded {cached} {label}."
@@ -506,16 +493,9 @@ def open_settings(parent):
     global _settings_popup
     if parent is None:
         return None
-    if isinstance(parent, QMainWindow):
-        host = parent.centralWidget() or parent
-    else:
-        host = parent
+    host = popup_host_for(parent)
 
-    if _settings_popup is not None and not is_alive(_settings_popup):
-        _settings_popup = None
-    if _settings_popup is not None and _settings_popup._host is not host:
-        _settings_popup.close_popup()
-        _settings_popup = None
+    _settings_popup = reusable_popup(_settings_popup, host)
     if _settings_popup is None:
         _settings_popup = SettingsPopup(host)
 

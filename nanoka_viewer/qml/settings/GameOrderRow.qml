@@ -47,70 +47,30 @@ Item {
     }
 
     // Keyboard/pointer alternative to dragging: one step per click.
-    ToolButton {
+    MoveButton {
         id: upButton
 
         objectName: "orderRowUp"
         anchors.right: downButton.left
         anchors.rightMargin: 2
         anchors.verticalCenter: parent.verticalCenter
-        implicitWidth: 22
-        implicitHeight: 22
+        glyph: "\u2191"
+        tip: row.ghost ? "" : "Move up"
         enabled: row.canMoveUp
         onClicked: row.moveUp()
-
-        ToolTip.text: "Move up"
-        ToolTip.visible: !row.ghost && hovered && enabled
-        ToolTip.delay: 600
-
-        background: Rectangle {
-            radius: 3
-            color: upButton.hovered && upButton.enabled
-                ? palette.alternateBase
-                : "transparent"
-        }
-
-        contentItem: Text {
-            text: "\u2191"
-            color: palette.text
-            opacity: upButton.enabled ? 1.0 : 0.35
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
     }
 
-    ToolButton {
+    MoveButton {
         id: downButton
 
         objectName: "orderRowDown"
         anchors.right: parent.right
         anchors.rightMargin: 6
         anchors.verticalCenter: parent.verticalCenter
-        implicitWidth: 22
-        implicitHeight: 22
+        glyph: "\u2193"
+        tip: row.ghost ? "" : "Move down"
         enabled: row.canMoveDown
         onClicked: row.moveDown()
-
-        ToolTip.text: "Move down"
-        ToolTip.visible: !row.ghost && hovered && enabled
-        ToolTip.delay: 600
-
-        background: Rectangle {
-            radius: 3
-            color: downButton.hovered && downButton.enabled
-                ? palette.alternateBase
-                : "transparent"
-        }
-
-        contentItem: Text {
-            text: "\u2193"
-            color: palette.text
-            opacity: downButton.enabled ? 1.0 : 0.35
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
     }
 
     HoverHandler {

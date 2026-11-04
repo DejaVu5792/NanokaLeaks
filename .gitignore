@@ -15,3 +15,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Profiler output (just profile)
+/profiles/
