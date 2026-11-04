@@ -9,7 +9,11 @@ ScrollBar {
     visible: size < 1.0
 
     contentItem: Rectangle {
+        // A vertical bar is sized by implicitWidth, a horizontal one by
+        // implicitHeight.  Setting both keeps this shared component visible
+        // in either orientation (the old per-page bars did exactly that).
         implicitWidth: 6
+        implicitHeight: 6
         radius: 3
         color: palette.mid
     }
