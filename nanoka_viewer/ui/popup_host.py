@@ -2,10 +2,14 @@
 
 Qt places and raises child widgets itself, so each popup keeps a thin
 ``QWidget`` that covers the central widget.  Everything the user sees and
-interacts with -- the dimmed backdrop, the centred rounded panel, Escape,
-click-outside-to-close and blocking input to the window underneath -- lives in
-``qml/Overlay.qml``.  This module only keeps the widget plumbing Qt requires:
-sizing against the host, raising, focus and dropping stale hover state.
+interacts with -- the dimmed backdrop and click-outside-to-close -- lives in
+``qml/Overlay.qml``, and the modal input guard below keeps presses and wheel
+events away from the window underneath.  Escape is a window shortcut on this
+widget: keyboard focus can be on the window content instead of the popup
+(Wayland grants activation asynchronously and dragging a page can leave focus
+behind), where a QML ``Keys`` handler never sees the key.  This module only
+keeps the widget plumbing Qt requires: sizing against the host, raising,
+focus, the Escape shortcut and dropping stale hover state.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
 from .qml_host import create_qml_widget
@@ -120,6 +125,24 @@ class PopupHost(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.hide()
 
+        # Escape must close the popup even when keyboard focus is not inside
+        # it.  That happens on Wayland right after the overlay is shown (the
+        # compositor grants activation asynchronously) and after dragging the
+        # page, which can leave focus on the window content.  A window
+        # shortcut is routed through the window, not the focus item, so it
+        # cannot be missed.  It is enabled only while this popup is visible.
+        self._escape_shortcut = QShortcut(
+            QKeySequence(Qt.Key.Key_Escape), self
+        )
+        self._escape_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._escape_shortcut.setEnabled(False)
+        self._escape_shortcut.activated.connect(self._request_close)
+        # Closing is the right response even if another popup happens to have
+        # an Escape shortcut enabled at the same time.
+        self._escape_shortcut.activatedAmbiguously.connect(
+            self._request_close
+        )
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -181,6 +204,7 @@ class PopupHost(QWidget):
         self.show()  # showEvent sizes it against the host
         if self.blocks_host_input:
             self._install_input_guard()
+        self._escape_shortcut.setEnabled(True)
         self.setFocus()
         if self._qml is not None:
             self._qml.setFocus()
@@ -189,6 +213,7 @@ class PopupHost(QWidget):
 
     def close_popup(self):
         """Hide the popup, drop popup state and return focus to the host."""
+        self._escape_shortcut.setEnabled(False)
         if not self.isVisible() and not self._input_guard_installed:
             return
         self.logger.debug("closing %s", self.log_name)

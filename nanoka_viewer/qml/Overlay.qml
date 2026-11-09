@@ -3,9 +3,12 @@ import QtQuick
 // Full-window lightbox shell shared by the popups.
 //
 // The hosting widget only covers the central widget and paints nothing: the
-// dimmed backdrop, the centred rounded panel, Escape and click-outside all
-// live here.  The backdrop MouseArea sits under the panel, so panel content
-// keeps every event it accepts and only the gaps fall through to it.
+// dimmed backdrop, the centred rounded panel and click-outside live here.
+// The backdrop MouseArea sits under the panel, so panel content keeps every
+// event it accepts and only the gaps fall through to it.  Escape is a window
+// shortcut in PopupHost rather than a Keys handler because keyboard focus can
+// sit outside this QML tree (Wayland grants activation asynchronously, and
+// dragging the page can leave focus behind).
 Item {
     id: overlay
     objectName: "overlayRoot"
@@ -37,7 +40,7 @@ Item {
 
     focus: true
 
-    Keys.onEscapePressed: overlay.closeRequested()
+    // Escape is deliberately not handled here: see the file header.
 
     Rectangle {
         id: backdrop

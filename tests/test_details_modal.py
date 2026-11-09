@@ -238,6 +238,24 @@ class BackdropAndLifecycleTests(QtTestCase):
 
         self.assertFalse(popup.isVisible())
 
+    def test_escape_closes_when_focus_is_outside_the_popup(self):
+        window, central, _scroll, button, _anchor = make_details_host()
+        self.track_window(window)
+        popup = open_details_for(window, button)
+
+        # Wayland grants activation asynchronously and dragging the page can
+        # leave focus on the window content instead of the popup view.  The
+        # modal input guard then swallows a plain Escape key event, so the
+        # popup must close through a window shortcut rather than a QML Keys
+        # handler that only runs for the focused item.
+        central.setFocus()
+        flush()
+
+        QTest.keyClick(window.windowHandle(), Qt.Key.Key_Escape)
+        flush()
+
+        self.assertFalse(popup.isVisible())
+
     def test_opening_the_same_character_twice_does_not_reload(self):
         window, central, _scroll, button, _anchor = make_details_host()
         self.track_window(window)
