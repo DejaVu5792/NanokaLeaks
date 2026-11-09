@@ -40,15 +40,7 @@ Rectangle {
         boundsBehavior: Flickable.StopAtBounds
         model: sections
 
-        ScrollBar.vertical: ScrollBar {
-            policy: ScrollBar.AsNeeded
-            contentItem: Rectangle {
-                implicitWidth: 6
-                radius: 3
-                color: palette.mid
-            }
-            background: Rectangle { color: "transparent" }
-        }
+        ScrollBar.vertical: AppScrollBar {}
 
         delegate: Column {
             id: sectionRow
