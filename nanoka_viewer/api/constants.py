@@ -7,7 +7,7 @@ BASE_URL = "https://static.nanoka.cc"
 
 # Keep the version in sync with pyproject.toml; it is only used to identify the
 # client to static.nanoka.cc.
-APP_VERSION = "6.1.0"
+APP_VERSION = "6.1.1"
 USER_AGENT = f"NanokaLeaks/{APP_VERSION} (+https://nanoka.cc)"
 
 # Cache directory using XDG_CACHE_HOME or fallback to ~/.cache
