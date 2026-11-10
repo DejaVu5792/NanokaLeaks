@@ -27,6 +27,19 @@ ZZZ_SPECIALTIES = {
     7: "Armorer",
 }
 
+# Element/weapon catalogs used by the card filters.  They follow a sensible
+# display order; the filters also merge any extra category the loaded data
+# reports, so a new element or weapon never becomes unfilterable.
+HSR_ELEMENTS = (
+    "Physical",
+    "Fire",
+    "Ice",
+    "Thunder",
+    "Wind",
+    "Quantum",
+    "Imaginary",
+)
+
 HSR_PATHS = {
     "Warrior": "Destruction",
     "Rogue": "The Hunt",
@@ -37,6 +50,17 @@ HSR_PATHS = {
     "Shaman": "Harmony",
     "Memory": "Remembrance",
     "Elation": "Elation",
+}
+
+# NTE has no weapon category; its elements use the same icon paths the cards
+# request.  The value is the source path stored in ``element_icon``.
+NTE_ELEMENTS = {
+    "Chaos": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_01",
+    "Nature": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_02",
+    "Psyche": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_03",
+    "Incantation": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_04",
+    "Lakshana": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_05",
+    "Cosmos": "/Game/UI/UI/biandui/YH_UI_zudui_shaixuan_06",
 }
 
 GI_ELEMENTS = {

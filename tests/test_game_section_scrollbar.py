@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QWidget
 
 from support import QtTestCase, find_qml_item, flush, wait, wait_for
 
-from nanoka_viewer.ui import qml_host, view_model
+from nanoka_viewer.ui import filter_model, qml_host, view_model
 from nanoka_viewer.ui.view_model import SectionsModel
 
 _HSR_CHAR = {
@@ -65,7 +65,11 @@ class GameSectionScrollBarTests(QtTestCase):
         """Build a window whose card strip overflows and return its bar."""
         self.viewer = _StubViewer()
         self.sections = SectionsModel()
-        self.sections.sync(["hsr"])
+        with (
+            patch.object(filter_model, "get_element_image", return_value=""),
+            patch.object(filter_model, "get_specialty_image", return_value=""),
+        ):
+            self.sections.sync(["hsr"])
         section = self.sections.section("hsr")
         self.assertIsNotNone(section)
         # Real artwork URLs would make the offscreen QML engine fetch remote

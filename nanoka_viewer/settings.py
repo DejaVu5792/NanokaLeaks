@@ -18,6 +18,8 @@ DEFAULT_SETTINGS = {
     # centroid instead of the geometric centre.  The key predates the
     # Pillow-only centroid and is kept so saved settings keep working.
     "sr_centroid_centering": True,
+    # Per-game element/weapon filter bars next to the version badges.
+    "element_weapon_filters": True,
 }
 
 _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")

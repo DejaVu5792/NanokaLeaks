@@ -29,7 +29,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 from ..api import GAMES, fetch_manifest
 from ..api.preload import PRELOAD_CACHE_LABELS
-from ..settings import get_enabled_games
+from ..settings import get_enabled_games, get_setting
 from .details import CharacterDetailsPopup, open_details
 from .external import open_external_url
 from .loader import LoadThread
@@ -176,6 +176,7 @@ class NanokaViewer(QMainWindow):
         self._load_in_progress = False
         self._reload_pending = False
         self._settings_popup = None
+        self._filters_enabled = get_setting("element_weapon_filters")
         self._sync_sections(self._desired_games())
 
         self.load_thread = None
@@ -348,6 +349,7 @@ class NanokaViewer(QMainWindow):
         popup = open_settings(self)
         if popup is not None and popup is not self._settings_popup:
             popup.games_changed.connect(self.apply_game_settings)
+            popup.filters_changed.connect(self.apply_filter_settings)
             self._settings_popup = popup
 
     # -- game sections -----------------------------------------------------
@@ -368,7 +370,18 @@ class NanokaViewer(QMainWindow):
             if game not in order:
                 self._loading_index.pop(game, None)
         self._pending_sections.intersection_update(order)
+        self._apply_filter_setting()
         return changed
+
+    def _apply_filter_setting(self):
+        """Show or hide the filter bars on every live section."""
+        for section in self.sections_model.sections():
+            section.set_filters_enabled(self._filters_enabled)
+
+    def apply_filter_settings(self, enabled: bool):
+        """Apply a View-tab filter toggle change to the live view."""
+        self._filters_enabled = bool(enabled)
+        self._apply_filter_setting()
 
     def apply_game_settings(self):
         """Apply Games-tab changes to the live view immediately."""

@@ -44,6 +44,7 @@ from .settings_model import (
     CACHE_KINDS,
     SECTION_CACHING,
     SECTION_EXPERIMENTAL,
+    SECTION_FILTERS,
     SECTION_ORDER,
     SECTION_TOGGLE,
     TAB_CACHE,
@@ -62,6 +63,7 @@ class SettingsPopup(PopupHost):
     logger = logging.getLogger(__name__)
 
     games_changed = Signal()
+    filters_changed = Signal(bool)
 
     width_ratio = 0.46
     min_width = 360
@@ -92,6 +94,9 @@ class SettingsPopup(PopupHost):
         self._model.experimentalSettingChanged.connect(
             self._on_experimental_setting_changed
         )
+        self._model.filtersSettingChanged.connect(
+            self._on_filters_setting_changed
+        )
         self._model.preloadRequested.connect(self._on_cache_clicked)
         self._model.clearCacheRequested.connect(self._clear_cache)
         self._model.resetRequested.connect(self._on_reset_requested)
@@ -113,6 +118,7 @@ class SettingsPopup(PopupHost):
         self._load_game_settings(settings)
         self._refresh_game_counts()
         self._load_experimental(settings)
+        self._load_filters(settings)
         self._model.setTab(TAB_CACHE)
         self._model.set_status("")
         self._reset_clear_button()
@@ -150,6 +156,22 @@ class SettingsPopup(PopupHost):
     def _save_experimental(self):
         settings = dict(load_settings())
         settings["sr_centroid_centering"] = self._model.srCentroid
+        save_settings(settings)
+
+    # -- View tab: filter bars ---------------------------------------------
+
+    def _load_filters(self, settings: dict):
+        self._model.set_filters_enabled(
+            bool(settings.get("element_weapon_filters", True))
+        )
+
+    def _on_filters_setting_changed(self, checked: bool):
+        self._save_filters()
+        self.filters_changed.emit(bool(checked))
+
+    def _save_filters(self):
+        settings = dict(load_settings())
+        settings["element_weapon_filters"] = self._model.filtersEnabled
         save_settings(settings)
 
     # -- Games tab ---------------------------------------------------------
@@ -258,6 +280,8 @@ class SettingsPopup(PopupHost):
             self._reset_toggle_section()
         elif section == SECTION_ORDER:
             self._reset_order_section()
+        elif section == SECTION_FILTERS:
+            self._reset_filters_section()
         elif section == SECTION_EXPERIMENTAL:
             self._reset_experimental_section()
 
@@ -297,6 +321,13 @@ class SettingsPopup(PopupHost):
         settings["disabled_games"] = [game for game in order if game in disabled]
         save_settings(settings)
         self.games_changed.emit()
+
+    def _reset_filters_section(self):
+        self._model.set_filters_enabled(
+            bool(DEFAULT_SETTINGS["element_weapon_filters"])
+        )
+        self._save_filters()
+        self.filters_changed.emit(self._model.filtersEnabled)
 
     def _reset_experimental_section(self):
         self._model.set_experimental(

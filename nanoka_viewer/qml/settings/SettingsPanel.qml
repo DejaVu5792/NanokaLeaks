@@ -456,6 +456,42 @@ Item {
 
             SettingsSectionHeader {
                 width: parent.width
+                title: "Filters"
+                tooltip: "Reset the filter-bar option to its default"
+                resetObjectName: "resetFilters"
+                onResetClicked: settings.resetSection("filters")
+            }
+
+            Label {
+                objectName: "filtersHint"
+                width: parent.width
+                text: "Shows an element/weapon filter bar next to each game's version badges."
+                color: palette.placeholderText
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+
+            SettingsCard {
+                width: parent.width
+
+                CacheRow {
+                    objectName: "filtersRow"
+                    Layout.fillWidth: true
+                    showButton: false
+                    title: "Element and weapon filters"
+                    tooltip: "Adds a per-game filter bar for the character cards. On by default."
+                    checked: settings.filtersEnabled
+                    onToggled: (checked) => settings.setFiltersEnabled(checked)
+                }
+            }
+
+            Item {
+                width: 1
+                height: 8
+            }
+
+            SettingsSectionHeader {
+                width: parent.width
                 title: "Experimental"
                 tooltip: "Reset experimental options to their defaults"
                 resetObjectName: "resetExperimental"
