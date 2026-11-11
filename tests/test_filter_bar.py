@@ -98,13 +98,14 @@ class FilterBarQmlTests(QtTestCase):
 
         click_qml(self.widget, self._qml("filterCategory-Fire"))
 
-        self.assertEqual(self._card_count(), 2)
+        # The first click while everything is selected isolates the category.
+        self.assertEqual(self._card_count(), 1)
         self.assertIn("Fire", self.section.filters.keys())
-        self.assertNotIn("Fire", self.section.filters.enabled_keys())
+        self.assertEqual(self.section.filters.enabled_keys(), {"Fire"})
 
     def test_select_all_partial_selection_enables_then_disables(self):
         click_qml(self.widget, self._qml("filterCategory-Fire"))
-        self.assertEqual(self._card_count(), 2)
+        self.assertEqual(self._card_count(), 1)
 
         click_qml(self.widget, self._qml("filterSelectAll"))
         self.assertEqual(self._card_count(), 3)
@@ -121,11 +122,11 @@ class FilterBarQmlTests(QtTestCase):
         weapon = self._qml("filterCategory-The Hunt")
         click_qml(self.widget, weapon)
 
-        self.assertEqual(self._card_count(), 2)
+        self.assertEqual(self._card_count(), 1)
 
     def test_hiding_the_bar_shows_every_card(self):
         click_qml(self.widget, self._qml("filterCategory-Fire"))
-        self.assertEqual(self._card_count(), 2)
+        self.assertEqual(self._card_count(), 1)
 
         self.section.set_filters_enabled(False)
         flush()

@@ -88,15 +88,27 @@ class FilterModelTests(QtTestCase):
         self.assertIsNone(self.model.data(QModelIndex()))
 
     def test_toggle_only_affects_one_category(self):
+        self.model.toggle("Fire")
+        self.model.toggle("Fire")
+        self.model.toggle("Ice")
+
+        self.assertFalse(self.model.data(self.model.index(1, 0), self.model.EnabledRole))
+        self.assertTrue(self.model.data(self.model.index(2, 0), self.model.EnabledRole))
+        self.assertFalse(self.model.allEnabled)
+
+    def test_first_click_isolates_when_everything_is_enabled(self):
         changed = []
         self.model.stateChanged.connect(lambda: changed.append(True))
 
         self.model.toggle("Fire")
 
-        self.assertFalse(self.model.data(self.model.index(1, 0), self.model.EnabledRole))
-        self.assertNotIn("Fire", self.model.enabled_keys())
+        self.assertEqual(self.model.enabled_keys(), {"Fire"})
         self.assertFalse(self.model.allEnabled)
         self.assertEqual(len(changed), 1)
+
+        # Once isolated, the next click toggles the category normally.
+        self.model.toggle("Fire")
+        self.assertEqual(self.model.enabled_keys(), set())
 
     def test_select_all_partial_selection_enables_everything_first(self):
         self.model.toggle("Fire")
@@ -114,14 +126,15 @@ class FilterModelTests(QtTestCase):
         self.model.setMode(MODE_WEAPON)
 
         self.assertEqual(self.model.mode, MODE_WEAPON)
+        self.assertTrue(self.model.allEnabled)
         self.assertIn("Destruction", self.model.enabled_keys())
-        self.assertNotIn("Destruction", self.model.keys(MODE_ELEMENT))
 
         self.model.toggle("The Hunt")
+        self.assertEqual(self.model.enabled_keys(), {"The Hunt"})
         self.model.setMode(MODE_ELEMENT)
 
-        self.assertNotIn("Fire", self.model.enabled_keys())
-        self.assertIn("Physical", self.model.enabled_keys())
+        self.assertEqual(self.model.enabled_keys(), {"Fire"})
+        self.assertNotIn("Physical", self.model.enabled_keys())
 
     def test_mode_switch_stays_on_elements_without_a_weapon_catalog(self):
         model = FilterModel("nte")
@@ -154,6 +167,16 @@ class FilterModelTests(QtTestCase):
         )
         self.assertEqual(self.model.keys().count("Lumiflux"), 1)
 
+    def test_genshin_physical_fallback_is_not_a_filter(self):
+        self.assertNotIn("Physical", _keys(element_catalog("gi")))
+
+        model = FilterModel("gi")
+        model.add_categories(
+            MODE_ELEMENT, [{"key": "Physical", "icon": "fallback"}]
+        )
+
+        self.assertNotIn("Physical", model.keys())
+
 
 class CharacterFilterProxyTests(QtTestCase):
     def setUp(self):
@@ -180,13 +203,17 @@ class CharacterFilterProxyTests(QtTestCase):
         self.assertEqual(self.proxy.rowCount(), 3)
 
     def test_disabled_element_hides_its_cards(self):
-        self.filters.toggle("Fire")
+        self.filters.setAllEnabled(False)
+        self.filters.toggle("Physical")
+        self.filters.toggle("Ice")
 
         self.assertEqual(self._ids(), ["1001", "1003"])
 
     def test_disabled_weapon_hides_its_cards_in_weapon_mode(self):
         self.filters.setMode(MODE_WEAPON)
-        self.filters.toggle("The Hunt")
+        self.filters.setAllEnabled(False)
+        self.filters.toggle("Destruction")
+        self.filters.toggle("Erudition")
 
         self.assertEqual(self._ids(), ["1001", "1003"])
 

@@ -42,6 +42,11 @@ MODES = (MODE_ELEMENT, MODE_WEAPON)
 # Placeholders such as NTE's missing weapon are not useful filter entries.
 IGNORED_KEYS = frozenset({"", "None", "Unknown"})
 
+# Genshin's Traveler avatars report no element, which the card helper maps to
+# its "Physical" fallback.  Physical is not a Genshin element, so it must not
+# become a filter entry.
+EXCLUDED_CATEGORIES = {"gi": frozenset({"Physical"})}
+
 
 def _category(key: str, icon: str) -> dict[str, str]:
     return {"key": key, "label": key, "icon": icon}
@@ -138,6 +143,7 @@ class FilterModel(QAbstractListModel):
 
     def __init__(self, game: str, parent=None):
         super().__init__(parent)
+        self._game = game
         catalog = build_filter_catalog(game)
         self._categories = {
             MODE_ELEMENT: list(catalog[MODE_ELEMENT]),
@@ -234,17 +240,39 @@ class FilterModel(QAbstractListModel):
 
     @Slot(str)
     def toggle(self, key: str):
-        """Toggle one category of the active mode."""
-        rows = self._categories[self._mode]
-        for row, item in enumerate(rows):
+        """Toggle one category of the active mode.
+
+        Clicking an icon while everything is selected isolates that category:
+        the first click narrows the strip to the clicked filter instead of
+        merely clearing it.
+        """
+        values = self._enabled[self._mode]
+        if key not in values:
+            return
+        if len(values) > 1 and all(values.values()):
+            for other in values:
+                values[other] = other == key
+            self._emit_enabled_changed()
+            return
+        values[key] = not values[key]
+        for row, item in enumerate(self._categories[self._mode]):
             if item["key"] != key:
                 continue
-            new_value = not self._enabled[self._mode][key]
-            self._enabled[self._mode][key] = new_value
             index = self.index(row, 0)
             self.dataChanged.emit(index, index, [self.EnabledRole])
-            self.stateChanged.emit()
-            return
+            break
+        self.stateChanged.emit()
+
+    def _emit_enabled_changed(self) -> None:
+        """Report that every enabled flag may have changed."""
+        rows = self._categories[self._mode]
+        if rows:
+            self.dataChanged.emit(
+                self.index(0, 0),
+                self.index(len(rows) - 1, 0),
+                [self.EnabledRole],
+            )
+        self.stateChanged.emit()
 
     @Slot(bool)
     def setAllEnabled(self, enabled: bool):
@@ -279,11 +307,17 @@ class FilterModel(QAbstractListModel):
         if mode not in MODES:
             return
         known = {item["key"] for item in self._categories[mode]}
+        excluded = EXCLUDED_CATEGORIES.get(self._game, frozenset())
         additions = []
         for item in categories:
             key = str(item.get("key", ""))
             icon = str(item.get("icon", ""))
-            if key in known or key in IGNORED_KEYS or not icon:
+            if (
+                key in known
+                or key in IGNORED_KEYS
+                or key in excluded
+                or not icon
+            ):
                 continue
             known.add(key)
             additions.append(_category(key, icon))
@@ -348,4 +382,10 @@ class CharacterFilterProxy(QSortFilterProxyModel):
             if self._filters.mode == MODE_ELEMENT
             else self._weapon_role
         )
-        return source.data(index, role) in self._filters.enabled_keys()
+        category = source.data(index, role)
+        if category not in self._filters.keys():
+            # Excluded or unknown categories have no toggle of their own;
+            # keep their cards visible instead of hiding them behind a
+            # filter the user cannot re-enable.
+            return True
+        return category in self._filters.enabled_keys()
