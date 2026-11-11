@@ -71,6 +71,10 @@ TextEdit {
     //
     // Using a Popup ensures the card renders at the window overlay layer and
     // therefore escapes any Flickable clip rectangle.
+    //
+    // Coordinate note: Popup.x/y are relative to the *parent item* (this
+    // TextEdit).  Window-absolute coordinates come from mapToItem(null, …)
+    // and are only used for the horizontal clamping calculation.
     Popup {
         id: termCard
 
@@ -78,42 +82,6 @@ TextEdit {
         property string termId:   ""
         property string termName: ""
         property string termText: ""
-
-        // Open (or reposition) for the given term id.
-        function openFor(id) {
-            if (typeof details === "undefined") return
-            var name = details.termName(id)
-            var text = details.termTooltip(id)
-            if (name.length === 0 && text.length === 0) return
-
-            termId   = id
-            termName = name
-            termText = text
-
-            // Position: centre over the editor item, prefer above.
-            // mapToItem(null, …) returns coords in the root QQuickItem frame.
-            var pt = editor.mapToItem(null, 0, 0)
-            // Window dimensions via the editor (an Item).
-            var winW = editor.Window.width  || 800
-            var winH = editor.Window.height || 600
-
-            var popupW = cardRect.implicitWidth
-            var popupH = cardRect.implicitHeight
-            var gap    = 8
-
-            // Horizontal: centre on editor, clamped inside window.
-            var cx = pt.x + editor.width / 2 - popupW / 2
-            x = Math.max(8, Math.min(cx, winW - popupW - 8))
-
-            // Vertical: above when there is room, else below.
-            var spaceAbove = pt.y - popupH - gap
-            if (spaceAbove >= 4)
-                y = pt.y - popupH - gap
-            else
-                y = pt.y + editor.height + gap
-
-            open()
-        }
 
         // Sizing: ~60 % of an approximate detail-pane column width.
         // Detail column is (windowWidth × 0.75) − 32 px; 60 % of that.
@@ -123,8 +91,47 @@ TextEdit {
             return Math.max(160, Math.min(320, Math.round(approxCol * 0.60)))
         }
 
+        // ---- reactive positioning (auto-corrects after first layout pass) ----
+
+        // Map editor's top-left to window space for clamping.
+        readonly property var _editorPos: editor.mapToItem(null, 0, 0)
+
+        // Horizontal: centre popup over editor, clamped inside window.
+        // Convert the resulting window-x back to editor-local by subtracting
+        // the editor's own window x.
+        x: {
+            var winW   = editor.Window.width || 800
+            var half   = termCard._cardW / 2
+            var centre = _editorPos.x + editor.width / 2
+            var winX   = Math.max(8, Math.min(centre - half, winW - termCard._cardW - 8))
+            return winX - _editorPos.x
+        }
+
+        // Vertical: prefer above the editor, fall back to below.
+        // Both values are in editor-local coordinates.
+        y: {
+            var popupH = cardRect.implicitHeight || 80   // 80 px fallback before layout
+            var gap    = 8
+            var spaceAbove = _editorPos.y - popupH - gap
+            return spaceAbove >= 4
+                ? -(popupH + gap)                // above editor's top edge
+                :   editor.height + gap          // below editor's bottom edge
+        }
+
         width:  _cardW
         height: cardRect.implicitHeight
+
+        // Open for the given term id; just set data and let bindings handle position.
+        function openFor(id) {
+            if (typeof details === "undefined") return
+            var name = details.termName(id)
+            var text = details.termTooltip(id)
+            if (name.length === 0 && text.length === 0) return
+            termId   = id
+            termName = name
+            termText = text
+            open()
+        }
 
         // Raw popup chrome: none — card provides its own look.
         padding: 0
