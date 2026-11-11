@@ -185,6 +185,17 @@ class SettingsCacheTabTests(QtTestCase):
             self.popup._model.buildsLast, "Last cached: never"
         )
 
+    def test_switch_click_toggles_the_cache_setting(self):
+        row = self._qml("cacheRow-details")
+        box = find_qml_item(row, "cacheCheck")
+        self.assertTrue(box.property("checked"))
+
+        click_qml(self.popup._qml, box)
+        flush()
+
+        self.assertFalse(self.popup._model.cacheDetails)
+        self.assertFalse(self.saved[-1]["cache_character_details"])
+
     def test_checkboxes_are_disabled_while_preloading(self):
         self.manager.running = True
         self.manager.kind = PRELOAD_DETAILS

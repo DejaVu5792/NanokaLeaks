@@ -32,19 +32,31 @@ ColumnLayout {
         Layout.bottomMargin: 2
         spacing: 8
 
-        CheckBox {
+        AppSwitch {
             id: box
 
             objectName: "cacheCheck"
-            Layout.fillWidth: true
-            text: row.title
+            Layout.alignment: Qt.AlignVCenter
             checked: row.checked
             enabled: row.checkEnabled
+            tooltip: row.tooltip
+            onToggled: (checked) => row.toggled(checked)
+        }
+
+        Label {
+            id: titleLabel
+
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            text: row.title
+            color: row.checkEnabled ? palette.text : palette.placeholderText
             font.pixelSize: 12
-            onToggled: row.toggled(checked)
+            elide: Text.ElideRight
+
+            HoverHandler { id: titleHover }
 
             ToolTip.text: row.tooltip
-            ToolTip.visible: hovered && row.tooltip.length > 0
+            ToolTip.visible: titleHover.hovered && row.tooltip.length > 0
             ToolTip.delay: 600
         }
 
@@ -67,7 +79,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: 26
+        Layout.leftMargin: 48
         Layout.bottomMargin: 4
         spacing: 6
 
