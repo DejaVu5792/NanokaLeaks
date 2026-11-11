@@ -158,12 +158,11 @@ Item {
                     visible: details.state === "error"
                     title: "Could not load details"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: details.errorMessage
                         color: palette.placeholderText
                         font.pixelSize: 12
-                        wrapMode: Text.WordWrap
                     }
 
                     AppButton {
@@ -194,7 +193,7 @@ Item {
                     visible: details.buildState === "ready"
                     title: "Recommended Build"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "Suggested by nanoka.cc"
                         color: palette.placeholderText
@@ -227,26 +226,24 @@ Item {
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 4
 
-                                        Label {
+                                        SelectableText {
                                             Layout.fillWidth: true
                                             text: buildSection.modelData.title
                                             color: palette.text
                                             font.pixelSize: 12
                                             font.bold: true
-                                            wrapMode: Text.WordWrap
                                         }
 
                                         Repeater {
                                             model: buildSection.modelData.items
 
-                                            delegate: Label {
+                                            delegate: SelectableText {
                                                 required property var modelData
 
                                                 Layout.fillWidth: true
                                                 text: "\u2022 " + modelData
                                                 color: palette.text
                                                 font.pixelSize: 11
-                                                wrapMode: Text.WordWrap
                                             }
                                         }
                                     }
@@ -269,27 +266,24 @@ Item {
                     visible: details.state === "ready" && details.hasOverview
                     title: "Overview"
 
-                    Text {
+                    SelectableText {
                         objectName: "detailsSubtitle"
                         Layout.fillWidth: true
                         visible: details.subtitle.length > 0
                         text: details.subtitle
-                        textFormat: Text.RichText
-                        wrapMode: Text.WordWrap
+                        textFormat: TextEdit.RichText
                         color: palette.placeholderText
                         font.pixelSize: 11
                     }
 
-                    Text {
+                    SelectableText {
                         objectName: "detailsOverview"
                         Layout.fillWidth: true
                         visible: details.overview.length > 0
                         text: details.overview
-                        textFormat: Text.RichText
-                        wrapMode: Text.WordWrap
+                        textFormat: TextEdit.RichText
                         color: palette.text
                         font.pixelSize: 12
-                        linkColor: palette.link
                     }
                 }
 
@@ -326,17 +320,16 @@ Item {
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 8
 
-                                        Label {
+                                        SelectableText {
                                             Layout.preferredWidth: 112
                                             Layout.minimumWidth: 112
                                             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             text: stat.modelData.label
                                             color: palette.placeholderText
                                             font.pixelSize: 11
-                                            wrapMode: Text.WordWrap
                                         }
 
-                                        Label {
+                                        SelectableText {
                                             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             horizontalAlignment: Text.AlignLeft
                                             text: stat.modelData.value
@@ -361,12 +354,11 @@ Item {
                         }
                     }
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "No constellation, sequence, mindscape, or resonance boosts."
                         color: palette.placeholderText
                         font.pixelSize: 11
-                        wrapMode: Text.WordWrap
                     }
                 }
 
@@ -377,13 +369,12 @@ Item {
                              && details.skills.length > 0
                     title: "Skills"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "Descriptions and multipliers are collapsed. "
                               + "Click a skill to expand."
                         color: palette.placeholderText
                         font.pixelSize: 11
-                        wrapMode: Text.WordWrap
                     }
 
                     Repeater {

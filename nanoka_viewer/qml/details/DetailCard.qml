@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import ".."
+
 // One themed card in the details scroll area.
 //
 // Children land in the body column, so a card reads as
@@ -33,7 +35,7 @@ Rectangle {
         anchors.margins: 14
         spacing: 10
 
-        Label {
+        SelectableText {
             objectName: "detailSectionTitle"
             visible: card.title.length > 0
             Layout.fillWidth: true
@@ -41,7 +43,6 @@ Rectangle {
             color: palette.text
             font.pixelSize: 15
             font.bold: true
-            wrapMode: Text.WordWrap
         }
 
         ColumnLayout {

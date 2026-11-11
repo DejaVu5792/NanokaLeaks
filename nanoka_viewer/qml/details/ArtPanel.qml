@@ -110,7 +110,7 @@ Item {
         spacing: 5
         visible: details.artState === "ready" || details.artState === "unavailable"
 
-        Label {
+        SelectableText {
             objectName: "detailArtName"
             width: parent.width
             visible: details.artName.length > 0
@@ -118,28 +118,26 @@ Item {
             color: "#ffffff"
             font.pixelSize: 22
             font.bold: true
-            wrapMode: Text.WordWrap
         }
 
-        Label {
+        SelectableText {
             objectName: "detailArtMeta"
             width: parent.width
             visible: details.artMeta.length > 0
             text: details.artMeta
             color: Qt.rgba(1, 1, 1, 215 / 255)
             font.pixelSize: 11
-            wrapMode: Text.WordWrap
         }
     }
 
-    Label {
+    SelectableText {
         objectName: "detailArtMessage"
         anchors.centerIn: parent
+        width: parent.width - 28
         visible: details.artState === "unavailable"
         text: details.artMessage
         color: palette.placeholderText
         font.pixelSize: 11
         horizontalAlignment: Text.AlignHCenter
-        wrapMode: Text.WordWrap
     }
 }

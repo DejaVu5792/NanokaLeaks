@@ -4,6 +4,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import ".."
+
 // One collapsed-by-default overview section (passives, traces, mindscapes).
 DisclosureRow {
     id: row
@@ -23,24 +25,21 @@ DisclosureRow {
             Layout.fillWidth: true
             spacing: 2
 
-            Label {
+            SelectableText {
                 Layout.fillWidth: true
                 text: entry.modelData.name
                 color: palette.text
                 font.pixelSize: 12
                 font.bold: true
-                wrapMode: Text.WordWrap
             }
 
-            Text {
+            SelectableText {
                 Layout.fillWidth: true
                 visible: entry.modelData.text.length > 0
                 text: entry.modelData.text
-                textFormat: Text.RichText
-                wrapMode: Text.WordWrap
+                textFormat: TextEdit.RichText
                 color: palette.text
                 font.pixelSize: 12
-                linkColor: palette.link
             }
         }
     }
