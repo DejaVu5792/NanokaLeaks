@@ -9,13 +9,14 @@ Wayland without opening windows or touching the user's desktop:
 from __future__ import annotations
 
 import os
+import tempfile
 from contextlib import contextmanager
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import unittest
 
-from PySide6.QtCore import QEvent, QEventLoop, QPoint, QPointF, Qt, QTimer
+from PySide6.QtCore import QEvent, QEventLoop, QPoint, QPointF, QSettings, Qt, QTimer
 from PySide6.QtGui import QColor, QMouseEvent, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -414,9 +415,20 @@ def real_viewer(with_card=True, games=None):
     details.has_cached_art = lambda url: False
 
     reset_popup()
+    # Keep the window's remembered geometry out of the user's native settings
+    # store and out of the next test run.
+    geometry_dir = tempfile.TemporaryDirectory()
+    window_settings = QSettings(
+        os.path.join(geometry_dir.name, "window.ini"), QSettings.IniFormat
+    )
+    original_window_settings = main_window._window_settings
+    main_window._window_settings = lambda: window_settings
     window = None
     try:
         window = main_window.NanokaViewer()
+        # Tests need a predictable viewport instead of whatever geometry the
+        # real app would restore from the user's settings.
+        window.resize(900, 700)
         window.show()
         window.activateWindow()
         flush()
@@ -459,6 +471,8 @@ def real_viewer(with_card=True, games=None):
                 window.deleteLater()
             except RuntimeError:
                 pass
+        main_window._window_settings = original_window_settings
+        geometry_dir.cleanup()
         application = app()
         application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         flush(2)

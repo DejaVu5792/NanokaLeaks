@@ -15,10 +15,12 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QByteArray,
     QCoreApplication,
     QEvent,
     QObject,
     Property,
+    QSettings,
     QTimer,
     QUrl,
     Signal,
@@ -45,6 +47,47 @@ logger = logging.getLogger(__name__)
 _DETACHED_THREADS = set()
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
+
+# Window geometry is kept in QSettings, which maps to the native store on each
+# platform (registry on Windows, plist on macOS, an INI file elsewhere).
+_WINDOW_GEOMETRY_KEY = "window/geometry"
+
+
+def _window_settings() -> QSettings:
+    """Return the store used for geometry and other window state.
+
+    ``_run_app`` sets the organisation and application names, so the default
+    ``QSettings`` constructor resolves the per-application native location.
+    Tests replace this helper to redirect the store into a temporary file.
+    """
+    return QSettings()
+
+
+def restore_window_geometry(window: QWidget) -> bool:
+    """Restore a previously saved geometry and window state.
+
+    ``saveGeometry`` records size, position and the maximised/fullscreen flag,
+    and ``restoreGeometry`` moves windows that would open off-screen back onto
+    a connected display.  Returns whether a saved geometry was applied.
+    """
+    geometry = _window_settings().value(_WINDOW_GEOMETRY_KEY)
+    if isinstance(geometry, QByteArray):
+        if geometry.isEmpty():
+            return False
+        return bool(window.restoreGeometry(geometry))
+    if isinstance(geometry, (bytes, bytearray)):
+        if not geometry:
+            return False
+        return bool(window.restoreGeometry(QByteArray(geometry)))
+    return False
+
+
+def save_window_geometry(window: QWidget) -> None:
+    """Persist *window*'s size, position and maximised/fullscreen state."""
+    settings = _window_settings()
+    settings.setValue(_WINDOW_GEOMETRY_KEY, window.saveGeometry())
+    settings.sync()
+
 
 _TRACED_MOUSE_EVENTS = frozenset(
     {
@@ -145,7 +188,9 @@ class NanokaViewer(QMainWindow):
 
         self.setWindowTitle("Nanoka Viewer")
         self.setMinimumSize(800, 600)
-        self.resize(950, 750)
+        # Restore the size, position and maximised state the user left the
+        # window in; on first run Qt's default window size applies.
+        restore_window_geometry(self)
         self._updating_theme = False
         # Kept for the widget-based popups (details/settings), which are
         # children of the QQuickWidget and still styled by this sheet.
@@ -532,6 +577,7 @@ class NanokaViewer(QMainWindow):
         keeps a reference until it finishes instead of letting Qt destroy a
         running QThread.
         """
+        save_window_geometry(self)
         self._load_in_progress = False
         self._load_generation += 1
         for thread in list(self._load_threads):
@@ -678,6 +724,9 @@ def _run_app(argv, *, smoke_test=False):
     app = QApplication(argv if argv else sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("NanokaLeaks")
+    # QSettings uses both names to pick the per-user, native configuration
+    # location where the window geometry is persisted.
+    app.setOrganizationName("NanokaLeaks")
     # Match the installed desktop entry and give KWin the icon through
     # xdg_toplevel_icon_v1, which Wayland compositors use for titlebars.
     app.setDesktopFileName("nanokaleaks")
