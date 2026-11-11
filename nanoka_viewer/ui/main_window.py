@@ -606,8 +606,12 @@ class NanokaViewer(QMainWindow):
             self._updating_theme = False
         elif event.type() == QEvent.Type.WindowStateChange:
             logger.debug("Window state changed: %s", self.windowState())
-            # Forward state change to central widget so overlaid child popups update cleanly
-            QApplication.sendEvent(self.centralWidget(), event)
+            # Forward state change to central widget so overlaid child popups update cleanly.
+            # Guard against being called before the central widget is set (e.g. from
+            # restoreGeometry() during __init__, which fires WindowStateChange).
+            cw = self.centralWidget()
+            if cw is not None:
+                QApplication.sendEvent(cw, event)
         super().changeEvent(event)
 
 
