@@ -8,6 +8,58 @@ from typing import Any
 from ..detail_models import ContentEntry, ExtraSection, SkillDetail
 from ..detail_text import format_markup, number, percent, plain_text
 
+_TERM_LINK_RE = re.compile(r"\{LINK#N(\d+)\}")
+
+
+def _term_texts(raw: dict[str, Any]):
+    """Yield the detail text that the pane displays, link markup included."""
+    yield raw.get("name")
+    yield raw.get("desc")
+    for skill in raw.get("skills") or []:
+        if not isinstance(skill, dict):
+            continue
+        yield skill.get("name")
+        yield skill.get("desc")
+        for entry in (skill.get("promote") or {}).values():
+            if not isinstance(entry, dict):
+                continue
+            for line in entry.get("desc") or []:
+                yield line
+    for section in ("passives", "constellations"):
+        for item in raw.get(section) or []:
+            if not isinstance(item, dict):
+                continue
+            yield item.get("name")
+            yield item.get("desc")
+
+
+def linked_term_ids(raw: dict[str, Any]) -> list[str]:
+    """Return rule-term ids referenced by *raw*, in display order."""
+    ids: list[str] = []
+    for text in _term_texts(raw):
+        for term_id in _TERM_LINK_RE.findall(str(text or "")):
+            if term_id not in ids:
+                ids.append(term_id)
+    return ids
+
+
+def linked_terms(
+    raw: dict[str, Any], hyperlinks: dict[str, Any]
+) -> list[ContentEntry]:
+    """Build the Rule Terms card from the shared ``hyperlink.json`` table."""
+    if not isinstance(hyperlinks, dict):
+        return []
+    terms: list[ContentEntry] = []
+    for term_id in linked_term_ids(raw):
+        entry = hyperlinks.get(term_id) or hyperlinks.get(f"N{term_id}")
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "")
+        description = format_markup(entry.get("desc") or "")
+        if name or description:
+            terms.append(ContentEntry(name, description))
+    return terms
+
 
 def fill(text: str, params: list[Any]) -> str:
     def replace(match: re.Match[str]) -> str:

@@ -81,6 +81,9 @@ class DetailsViewModel(QObject):
     extras = Property(
         "QVariantList", lambda self: self._extras, notify=contentChanged
     )
+    terms = Property(
+        "QVariantList", lambda self: self._terms, notify=contentChanged
+    )
 
     buildState = Property(
         str, lambda self: self._build_state, notify=buildChanged
@@ -119,6 +122,7 @@ class DetailsViewModel(QObject):
         self._stat_rows: list[list[dict]] = []
         self._skills: list[dict] = []
         self._extras: list[dict] = []
+        self._terms: list[dict] = []
         self._build_state = BUILD_HIDDEN
         self._build_rows: list[list[dict]] = []
         self._art_state = ART_HIDDEN
@@ -191,6 +195,10 @@ class DetailsViewModel(QObject):
                 ],
             }
             for section in detail.extras
+        ]
+        self._terms = [
+            {"name": term.name, "text": term.text}
+            for term in getattr(detail, "terms", [])
         ]
 
         # A payload that already carries its build needs no worker thread.

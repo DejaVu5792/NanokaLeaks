@@ -13,6 +13,12 @@ from typing import Any
 
 from .constants import BASE_URL
 
+# Genshin wraps cross-references in ``{LINK#<kind><id>}...{/LINK}``.  The
+# viewer has no navigation targets, so the wrapper is dropped and its visible
+# text stays in place.  N-links point at rule terms, which the details pane
+# shows in a dedicated card (see ``detail_games.gi``).
+_LINK_TAG_RE = re.compile(r"\{LINK#[^}]*\}|\{/LINK\}")
+
 _COLOR_NAMES = {
     "title": "#e0c068",
     "highlight": "#ffd166",
@@ -32,6 +38,7 @@ def format_markup(text: Any) -> str:
     source = str(text)
     source = source.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
     source = source.replace("\r\n", "\n").replace("\r", "\n")
+    source = _LINK_TAG_RE.sub("", source)
     output: list[str] = []
     stack: list[str | None] = []
 
@@ -85,7 +92,7 @@ def format_markup(text: Any) -> str:
 
 def plain_text(text: Any) -> str:
     """Remove game markup for compact labels."""
-    return re.sub(r"<[^>]*>", "", str(text or ""))
+    return _LINK_TAG_RE.sub("", re.sub(r"<[^>]*>", "", str(text or "")))
 
 
 def number(value: Any, decimals: int = 0) -> str:

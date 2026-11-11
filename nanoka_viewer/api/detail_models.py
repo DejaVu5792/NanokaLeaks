@@ -75,6 +75,7 @@ class CharacterDetail:
     build: list[BuildSection] = field(default_factory=list)
     skills: list[SkillDetail] = field(default_factory=list)
     extras: list[ExtraSection] = field(default_factory=list)
+    terms: list[ContentEntry] = field(default_factory=list)
     art_url: str = ""
     source_url: str = ""
     build_context: BuildContext | None = field(

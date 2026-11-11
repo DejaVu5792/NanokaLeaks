@@ -410,6 +410,43 @@ Item {
                         }
                     }
                 }
+
+                // -- rule terms -------------------------------------------
+                DetailCard {
+                    objectName: "detailsTermsCard"
+                    visible: details.state === "ready"
+                             && details.terms.length > 0
+                    title: "Rule Terms"
+
+                    Repeater {
+                        model: details.terms
+
+                        delegate: ColumnLayout {
+                            id: term
+                            required property var modelData
+
+                            Layout.fillWidth: true
+                            spacing: 3
+
+                            SelectableText {
+                                Layout.fillWidth: true
+                                text: term.modelData.name
+                                color: palette.text
+                                font.pixelSize: 12
+                                font.bold: true
+                            }
+
+                            SelectableText {
+                                Layout.fillWidth: true
+                                visible: term.modelData.text.length > 0
+                                text: term.modelData.text
+                                textFormat: TextEdit.RichText
+                                color: palette.text
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
+                }
             }
         }
     }

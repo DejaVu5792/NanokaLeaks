@@ -38,6 +38,7 @@ def make_detail(**overrides) -> CharacterDetail:
         ],
         "skills": [SkillDetail("Basic", "Attack", "Hits.", [("Lv1", "50%")], 3)],
         "extras": [ExtraSection("Passives", [ContentEntry("Trace", "Body")])],
+        "terms": [ContentEntry("Rule Term", "Term body")],
         "art_url": "https://example.test/art.png",
     }
     values.update(overrides)
@@ -104,6 +105,10 @@ class DetailsViewModelTests(QtTestCase):
                     "entries": [{"name": "Trace", "text": "Body"}],
                 }
             ],
+        )
+        self.assertEqual(
+            self.model.terms,
+            [{"name": "Rule Term", "text": "Term body"}],
         )
 
     def test_empty_build_removes_the_card(self):

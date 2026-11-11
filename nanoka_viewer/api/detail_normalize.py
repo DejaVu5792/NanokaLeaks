@@ -140,6 +140,9 @@ def normalize(
         detail.stats = gi.stats(raw)
         detail.skills = gi.skills(raw)
         detail.extras = gi.extras(raw)
+        detail.terms = gi.linked_terms(
+            raw, metadata.get("hyperlinks") or {}
+        )
     elif game == "ww":
         detail.stats = ww.stats(raw)
         if with_build:
