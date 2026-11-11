@@ -177,6 +177,7 @@ class NanokaViewer(QMainWindow):
         self._reload_pending = False
         self._settings_popup = None
         self._filters_enabled = get_setting("element_weapon_filters")
+        self._single_filter_selection = get_setting("single_filter_selection")
         self._sync_sections(self._desired_games())
 
         self.load_thread = None
@@ -350,6 +351,9 @@ class NanokaViewer(QMainWindow):
         if popup is not None and popup is not self._settings_popup:
             popup.games_changed.connect(self.apply_game_settings)
             popup.filters_changed.connect(self.apply_filter_settings)
+            popup.filter_selection_changed.connect(
+                self.apply_filter_selection_settings
+            )
             self._settings_popup = popup
 
     # -- game sections -----------------------------------------------------
@@ -377,10 +381,18 @@ class NanokaViewer(QMainWindow):
         """Show or hide the filter bars on every live section."""
         for section in self.sections_model.sections():
             section.set_filters_enabled(self._filters_enabled)
+            section.set_filters_single_selection(
+                self._single_filter_selection
+            )
 
     def apply_filter_settings(self, enabled: bool):
         """Apply a View-tab filter toggle change to the live view."""
         self._filters_enabled = bool(enabled)
+        self._apply_filter_setting()
+
+    def apply_filter_selection_settings(self, single: bool):
+        """Apply the single/multi-select filter choice to the live view."""
+        self._single_filter_selection = bool(single)
         self._apply_filter_setting()
 
     def apply_game_settings(self):

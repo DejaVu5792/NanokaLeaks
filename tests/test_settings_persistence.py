@@ -38,6 +38,16 @@ class SettingsPersistenceTests(unittest.TestCase):
             ]
         )
 
+    def test_single_filter_selection_defaults_on(self):
+        self.assertTrue(
+            app_settings._normalize({})["single_filter_selection"]
+        )
+        self.assertFalse(
+            app_settings._normalize({"single_filter_selection": False})[
+                "single_filter_selection"
+            ]
+        )
+
     def test_games_are_enabled_by_default(self):
         normalized = app_settings._normalize({})
 

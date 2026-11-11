@@ -140,6 +140,7 @@ class FilterModel(QAbstractListModel):
     # Any change that alters which cards are visible.
     stateChanged = Signal()
     modeChanged = Signal()
+    selectionModeChanged = Signal()
 
     def __init__(self, game: str, parent=None):
         super().__init__(parent)
@@ -158,6 +159,7 @@ class FilterModel(QAbstractListModel):
             if self._categories[MODE_ELEMENT]
             else MODE_WEAPON
         )
+        self._single_selection = True
 
     # -- QAbstractListModel ------------------------------------------------
 
@@ -206,6 +208,21 @@ class FilterModel(QAbstractListModel):
 
     allEnabled = Property(bool, _get_all_enabled, notify=stateChanged)
 
+    def _get_single_selection(self) -> bool:
+        return self._single_selection
+
+    def set_single_selection(self, enabled: bool) -> None:
+        """Allow only one active filter, or several when disabled."""
+        enabled = bool(enabled)
+        if enabled == self._single_selection:
+            return
+        self._single_selection = enabled
+        self.selectionModeChanged.emit()
+
+    singleSelection = Property(
+        bool, _get_single_selection, notify=selectionModeChanged
+    )
+
     # -- lookups -----------------------------------------------------------
 
     def enabled_keys(self) -> set[str]:
@@ -248,6 +265,16 @@ class FilterModel(QAbstractListModel):
         """
         values = self._enabled[self._mode]
         if key not in values:
+            return
+        if self._single_selection:
+            if values[key] and sum(values.values()) == 1:
+                # Clicking the active filter clears it: show everything again.
+                for other in values:
+                    values[other] = True
+            else:
+                for other in values:
+                    values[other] = other == key
+            self._emit_enabled_changed()
             return
         if len(values) > 1 and all(values.values()):
             for other in values:

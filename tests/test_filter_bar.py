@@ -124,6 +124,23 @@ class FilterBarQmlTests(QtTestCase):
 
         self.assertEqual(self._card_count(), 1)
 
+    def test_single_selection_replaces_the_previous_filter(self):
+        click_qml(self.widget, self._qml("filterCategory-Fire"))
+        click_qml(self.widget, self._qml("filterCategory-Ice"))
+
+        self.assertEqual(self.section.filters.enabled_keys(), {"Ice"})
+        self.assertEqual(self._card_count(), 1)
+
+    def test_multi_selection_can_add_filters(self):
+        click_qml(self.widget, self._qml("filterCategory-Fire"))
+        self.section.set_filters_single_selection(False)
+        click_qml(self.widget, self._qml("filterCategory-Ice"))
+
+        self.assertEqual(
+            self.section.filters.enabled_keys(), {"Fire", "Ice"}
+        )
+        self.assertEqual(self._card_count(), 2)
+
     def test_hiding_the_bar_shows_every_card(self):
         click_qml(self.widget, self._qml("filterCategory-Fire"))
         self.assertEqual(self._card_count(), 1)

@@ -262,6 +262,10 @@ class Section(QObject):
         self._cards.setFilteringEnabled(enabled)
         self.filtersEnabledChanged.emit()
 
+    def set_filters_single_selection(self, enabled: bool) -> None:
+        """Choose between one active filter and multi-select filtering."""
+        self._filters.set_single_selection(enabled)
+
     def _sync_filter_categories(self, *_args) -> None:
         """Add categories the loaded cards revealed beyond the static catalog.
 

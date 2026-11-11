@@ -20,6 +20,9 @@ DEFAULT_SETTINGS = {
     "sr_centroid_centering": True,
     # Per-game element/weapon filter bars next to the version badges.
     "element_weapon_filters": True,
+    # A filter click replaces the previous one; turning this off allows
+    # selecting several categories at once.
+    "single_filter_selection": True,
 }
 
 _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")

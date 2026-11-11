@@ -483,6 +483,21 @@ Item {
                     checked: settings.filtersEnabled
                     onToggled: (checked) => settings.setFiltersEnabled(checked)
                 }
+
+                HDivider {
+                    objectName: "settingsRowSeparator"
+                    Layout.fillWidth: true
+                }
+
+                CacheRow {
+                    objectName: "singleFilterRow"
+                    Layout.fillWidth: true
+                    showButton: false
+                    title: "One filter at a time"
+                    tooltip: "Selecting a filter replaces the previous one. Turn this off to select several filters at once."
+                    checked: settings.singleFilterSelection
+                    onToggled: (checked) => settings.setSingleFilterSelection(checked)
+                }
             }
 
             Item {

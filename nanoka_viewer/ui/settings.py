@@ -64,6 +64,7 @@ class SettingsPopup(PopupHost):
 
     games_changed = Signal()
     filters_changed = Signal(bool)
+    filter_selection_changed = Signal(bool)
 
     width_ratio = 0.46
     min_width = 360
@@ -96,6 +97,9 @@ class SettingsPopup(PopupHost):
         )
         self._model.filtersSettingChanged.connect(
             self._on_filters_setting_changed
+        )
+        self._model.filterSelectionSettingChanged.connect(
+            self._on_filter_selection_setting_changed
         )
         self._model.preloadRequested.connect(self._on_cache_clicked)
         self._model.clearCacheRequested.connect(self._clear_cache)
@@ -164,14 +168,24 @@ class SettingsPopup(PopupHost):
         self._model.set_filters_enabled(
             bool(settings.get("element_weapon_filters", True))
         )
+        self._model.set_single_filter_selection(
+            bool(settings.get("single_filter_selection", True))
+        )
 
     def _on_filters_setting_changed(self, checked: bool):
         self._save_filters()
         self.filters_changed.emit(bool(checked))
 
+    def _on_filter_selection_setting_changed(self, checked: bool):
+        self._save_filters()
+        self.filter_selection_changed.emit(bool(checked))
+
     def _save_filters(self):
         settings = dict(load_settings())
         settings["element_weapon_filters"] = self._model.filtersEnabled
+        settings["single_filter_selection"] = (
+            self._model.singleFilterSelection
+        )
         save_settings(settings)
 
     # -- Games tab ---------------------------------------------------------
@@ -326,8 +340,14 @@ class SettingsPopup(PopupHost):
         self._model.set_filters_enabled(
             bool(DEFAULT_SETTINGS["element_weapon_filters"])
         )
+        self._model.set_single_filter_selection(
+            bool(DEFAULT_SETTINGS["single_filter_selection"])
+        )
         self._save_filters()
         self.filters_changed.emit(self._model.filtersEnabled)
+        self.filter_selection_changed.emit(
+            self._model.singleFilterSelection
+        )
 
     def _reset_experimental_section(self):
         self._model.set_experimental(

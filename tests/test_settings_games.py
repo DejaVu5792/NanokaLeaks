@@ -62,6 +62,10 @@ class SettingsGamesTabTests(QtTestCase):
         self.popup.games_changed.connect(lambda: self.changes.append(True))
         self.filter_changes = []
         self.popup.filters_changed.connect(self.filter_changes.append)
+        self.filter_selection_changes = []
+        self.popup.filter_selection_changed.connect(
+            self.filter_selection_changes.append
+        )
         self.popup.open_popup()
         flush()
         wait(120)
@@ -159,6 +163,7 @@ class SettingsGamesTabTests(QtTestCase):
 
     def test_filter_reset_restores_default(self):
         self.model.setFiltersEnabled(False)
+        self.model.setSingleFilterSelection(False)
         flush()
 
         self.model.resetSection("filters")
@@ -166,7 +171,24 @@ class SettingsGamesTabTests(QtTestCase):
 
         self.assertTrue(self.model.filtersEnabled)
         self.assertTrue(self.settings["element_weapon_filters"])
+        self.assertTrue(self.model.singleFilterSelection)
+        self.assertTrue(self.settings["single_filter_selection"])
         self.assertEqual(self.filter_changes, [False, True])
+        self.assertEqual(self.filter_selection_changes, [False, True])
+
+    def test_single_filter_row_defaults_on_and_saves(self):
+        self.assertTrue(self.model.singleFilterSelection)
+        self._view_tab()
+
+        row = self._qml("singleFilterRow")
+        self.assertTrue(row.property("checked"))
+
+        self.model.setSingleFilterSelection(False)
+        flush()
+
+        self.assertFalse(self.model.singleFilterSelection)
+        self.assertFalse(self.settings["single_filter_selection"])
+        self.assertEqual(self.filter_selection_changes, [False])
 
     # -- toggling games ----------------------------------------------------
 

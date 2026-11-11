@@ -88,6 +88,7 @@ class FilterModelTests(QtTestCase):
         self.assertIsNone(self.model.data(QModelIndex()))
 
     def test_toggle_only_affects_one_category(self):
+        self.model.set_single_selection(False)
         self.model.toggle("Fire")
         self.model.toggle("Fire")
         self.model.toggle("Ice")
@@ -95,6 +96,34 @@ class FilterModelTests(QtTestCase):
         self.assertFalse(self.model.data(self.model.index(1, 0), self.model.EnabledRole))
         self.assertTrue(self.model.data(self.model.index(2, 0), self.model.EnabledRole))
         self.assertFalse(self.model.allEnabled)
+
+    def test_single_selection_defaults_on(self):
+        self.assertTrue(self.model.singleSelection)
+
+    def test_single_selection_replaces_the_previous_filter(self):
+        self.model.toggle("Fire")
+        self.model.toggle("Ice")
+
+        self.assertEqual(self.model.enabled_keys(), {"Ice"})
+
+    def test_clicking_the_active_single_filter_clears_it(self):
+        self.model.toggle("Fire")
+        self.model.toggle("Fire")
+
+        self.assertTrue(self.model.allEnabled)
+        self.assertEqual(self.model.enabled_keys(), set(self.model.keys()))
+
+    def test_multi_selection_checkbox_allows_several_filters(self):
+        self.model.set_single_selection(False)
+        self.assertFalse(self.model.singleSelection)
+
+        # As in multi-select, the first click over an unfiltered strip
+        # isolates the category, and later clicks extend the selection.
+        self.model.toggle("Fire")
+        self.assertEqual(self.model.enabled_keys(), {"Fire"})
+
+        self.model.toggle("Ice")
+        self.assertEqual(self.model.enabled_keys(), {"Fire", "Ice"})
 
     def test_first_click_isolates_when_everything_is_enabled(self):
         changed = []
@@ -105,10 +134,6 @@ class FilterModelTests(QtTestCase):
         self.assertEqual(self.model.enabled_keys(), {"Fire"})
         self.assertFalse(self.model.allEnabled)
         self.assertEqual(len(changed), 1)
-
-        # Once isolated, the next click toggles the category normally.
-        self.model.toggle("Fire")
-        self.assertEqual(self.model.enabled_keys(), set())
 
     def test_select_all_partial_selection_enables_everything_first(self):
         self.model.toggle("Fire")
@@ -186,6 +211,7 @@ class CharacterFilterProxyTests(QtTestCase):
             (char_id, data, False) for char_id, data in _HSR_CHARS.items()
         )
         self.filters = FilterModel("hsr")
+        self.filters.set_single_selection(False)
         self.proxy = CharacterFilterProxy(
             self.source,
             self.filters,
