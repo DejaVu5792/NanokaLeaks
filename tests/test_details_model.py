@@ -110,9 +110,11 @@ class DetailsViewModelTests(QtTestCase):
             self.model.terms,
             [{"id": "term-1", "name": "Rule Term", "text": "Term body"}],
         )
-        self.assertEqual(
-            self.model.termTooltip("term-1"), "Rule Term\nTerm body"
-        )
+        # termName() returns just the display name; termTooltip() returns
+        # just the description text (the card renders them separately).
+        self.assertEqual(self.model.termName("term-1"), "Rule Term")
+        self.assertEqual(self.model.termTooltip("term-1"), "Term body")
+        self.assertEqual(self.model.termName("missing"), "")
         self.assertEqual(self.model.termTooltip("missing"), "")
 
     def test_empty_build_removes_the_card(self):

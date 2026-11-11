@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
-from ..api.details import CharacterDetail, plain_text
+from ..api.details import CharacterDetail
 
 # Detail payload lifecycle.
 STATE_IDLE = "idle"
@@ -288,18 +288,27 @@ class DetailsViewModel(QObject):
     # -- rule terms --------------------------------------------------------
 
     @Slot(str, result=str)
-    def termTooltip(self, term_id: str) -> str:  # noqa: N802 - QML calls this
-        """Return the hover text for a linked term, or an empty string."""
+    def termName(self, term_id: str) -> str:  # noqa: N802 - QML calls this
+        """Return the display name of a linked term, or an empty string."""
         for term in self._terms:
             if str(term.get("id", "")) != str(term_id):
                 continue
-            name = str(term.get("name") or "")
-            text = " ".join(plain_text(term.get("text") or "").split())
-            if len(text) > 240:
-                text = text[:237].rstrip() + "..."
-            if name and text:
-                return f"{name}\n{text}"
-            return name or text
+            return str(term.get("name") or "")
+        return ""
+
+    @Slot(str, result=str)
+    def termTooltip(self, term_id: str) -> str:  # noqa: N802 - QML calls this
+        """Return the description text for a linked term, or an empty string.
+
+        Returns the rich-text description as stored (HTML anchors intact so the
+        card can render it with ``Text.RichText``).  The name is surfaced
+        separately via :meth:`termName` so the card can render them in
+        different styles.
+        """
+        for term in self._terms:
+            if str(term.get("id", "")) != str(term_id):
+                continue
+            return str(term.get("text") or "")
         return ""
 
     @Slot(str)
