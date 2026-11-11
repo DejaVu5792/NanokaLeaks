@@ -69,6 +69,13 @@ Item {
                     }
                 }
 
+                FilterBar {
+                    objectName: "gameFilterBar"
+                    Layout.leftMargin: 8
+                    visible: sectionRoot.section.filtersEnabled
+                    filters: sectionRoot.section.filters
+                }
+
                 Item { Layout.fillWidth: true }
 
                 Label {
@@ -97,7 +104,7 @@ Item {
             reuseItems: true
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: sectionRoot.section.characters
+            model: sectionRoot.section.cards
 
             ScrollBar.horizontal: AppScrollBar {
                 anchors.bottom: parent.bottom

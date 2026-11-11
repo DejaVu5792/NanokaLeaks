@@ -38,6 +38,7 @@ CACHE_KINDS = ("details", "builds", "artwork")
 SECTION_CACHING = "caching"
 SECTION_TOGGLE = "toggle"
 SECTION_ORDER = "order"
+SECTION_FILTERS = "filters"
 SECTION_EXPERIMENTAL = "experimental"
 
 
@@ -241,10 +242,14 @@ class SettingsViewModel(QObject):
     clearButtonChanged = Signal()
     buttonsChanged = Signal()
     experimentalChanged = Signal()
+    filtersChanged = Signal()
+    filterSelectionChanged = Signal()
 
     # Actions the popup performs; the model never saves or loads anything.
     cacheSettingChanged = Signal(str, bool)
     experimentalSettingChanged = Signal(bool)
+    filtersSettingChanged = Signal(bool)
+    filterSelectionSettingChanged = Signal(bool)
     preloadRequested = Signal(str)
     clearCacheRequested = Signal()
     resetRequested = Signal(str)
@@ -258,6 +263,8 @@ class SettingsViewModel(QObject):
         self._cache = {kind: True for kind in CACHE_KINDS}
         self._cache_enabled = True
         self._sr_centroid = True
+        self._filters_enabled = True
+        self._single_filter_selection = True
         self._sizes = {kind: "" for kind in CACHE_KINDS}
         self._last_cached = ""
         self._status = ""
@@ -372,6 +379,54 @@ class SettingsViewModel(QObject):
 
     srCentroid = Property(
         bool, _get_sr_centroid, notify=experimentalChanged
+    )
+
+    # -- element/weapon filter bars ---------------------------------------
+
+    def _get_filters_enabled(self) -> bool:
+        return self._filters_enabled
+
+    def set_filters_enabled(self, enabled: bool) -> None:
+        """Apply the stored feature flag without emitting an action."""
+        if self._filters_enabled == bool(enabled):
+            return
+        self._filters_enabled = bool(enabled)
+        self.filtersChanged.emit()
+
+    @Slot(bool)
+    def setFiltersEnabled(self, checked: bool):
+        """Called by the View-tab filter toggle."""
+        if self._filters_enabled == bool(checked):
+            return
+        self._filters_enabled = bool(checked)
+        self.filtersChanged.emit()
+        self.filtersSettingChanged.emit(bool(checked))
+
+    filtersEnabled = Property(
+        bool, _get_filters_enabled, notify=filtersChanged
+    )
+
+    def _get_single_filter_selection(self) -> bool:
+        return self._single_filter_selection
+
+    def set_single_filter_selection(self, enabled: bool) -> None:
+        """Apply the stored selection mode without emitting an action."""
+        if self._single_filter_selection == bool(enabled):
+            return
+        self._single_filter_selection = bool(enabled)
+        self.filterSelectionChanged.emit()
+
+    @Slot(bool)
+    def setSingleFilterSelection(self, checked: bool):
+        """Called by the View-tab single-filter toggle."""
+        if self._single_filter_selection == bool(checked):
+            return
+        self._single_filter_selection = bool(checked)
+        self.filterSelectionChanged.emit()
+        self.filterSelectionSettingChanged.emit(bool(checked))
+
+    singleFilterSelection = Property(
+        bool, _get_single_filter_selection, notify=filterSelectionChanged
     )
 
     # -- cache metadata ----------------------------------------------------

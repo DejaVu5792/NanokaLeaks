@@ -254,6 +254,58 @@ class SettingsViewModelTests(unittest.TestCase):
         self.model.setSrCentroid(False)
         self.assertEqual(len(setting), 1)
 
+    def test_filters_default_on(self):
+        self.assertTrue(self.model.filtersEnabled)
+
+    def test_set_filters_enabled_never_emits_an_action(self):
+        changed = Spy(self.model.filtersChanged)
+        setting = Spy(self.model.filtersSettingChanged)
+
+        self.model.set_filters_enabled(False)
+
+        self.assertFalse(self.model.filtersEnabled)
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(len(setting), 0)
+
+    def test_set_filters_enabled_emits_both_signals(self):
+        changed = Spy(self.model.filtersChanged)
+        setting = Spy(self.model.filtersSettingChanged)
+
+        self.model.setFiltersEnabled(False)
+
+        self.assertFalse(self.model.filtersEnabled)
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(setting.calls, [(False,)])
+
+        self.model.setFiltersEnabled(False)
+        self.assertEqual(len(setting), 1)
+
+    def test_single_filter_selection_defaults_on(self):
+        self.assertTrue(self.model.singleFilterSelection)
+
+    def test_set_single_filter_selection_never_emits_an_action(self):
+        changed = Spy(self.model.filterSelectionChanged)
+        setting = Spy(self.model.filterSelectionSettingChanged)
+
+        self.model.set_single_filter_selection(False)
+
+        self.assertFalse(self.model.singleFilterSelection)
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(len(setting), 0)
+
+    def test_set_single_filter_selection_emits_both_signals(self):
+        changed = Spy(self.model.filterSelectionChanged)
+        setting = Spy(self.model.filterSelectionSettingChanged)
+
+        self.model.setSingleFilterSelection(False)
+
+        self.assertFalse(self.model.singleFilterSelection)
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(setting.calls, [(False,)])
+
+        self.model.setSingleFilterSelection(False)
+        self.assertEqual(len(setting), 1)
+
     def test_cache_meta_updates_in_one_burst(self):
         spy = Spy(self.model.cacheMetaChanged)
 

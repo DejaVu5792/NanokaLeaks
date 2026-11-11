@@ -39,6 +39,12 @@ from ..api import (
     get_specialty,
     get_specialty_image,
 )
+from .filter_model import (
+    MODE_ELEMENT,
+    MODE_WEAPON,
+    CharacterFilterProxy,
+    FilterModel,
+)
 
 # The card is a fixed-width column, so long names are cut to one line.
 NAME_LIMIT = 14
@@ -152,6 +158,16 @@ class CharacterModel(QAbstractListModel):
         """Return the loaded character ids in display order."""
         return [row[self.CharIdRole] for row in self._rows]
 
+    def filter_values(self):
+        """Yield ``(element, element_image, specialty, specialty_image)``."""
+        for row in self._rows:
+            yield (
+                row[self.ElementRole],
+                row[self.ElementImageRole],
+                row[self.SpecialtyRole],
+                row[self.SpecialtyImageRole],
+            )
+
     def _make_row(self, char_id, char_data, is_new) -> dict[int, object]:
         name = get_name(self._game, char_data, char_id)
         rarity = get_rarity(self._game, char_data)
@@ -178,6 +194,7 @@ class Section(QObject):
 
     statusChanged = Signal()
     versionsChanged = Signal()
+    filtersEnabledChanged = Signal()
 
     def __init__(self, game: str, name: str, parent: QObject | None = None):
         super().__init__(parent)
@@ -186,7 +203,20 @@ class Section(QObject):
         self._status = "Loading..."
         self._live_version = ""
         self._latest_version = ""
+        self._filters_enabled = True
         self._characters = CharacterModel(game, self)
+        self._filters = FilterModel(game, self)
+        # The QML card list reads the filtered proxy; the raw model stays the
+        # source of truth for lookups and batching.
+        self._cards = CharacterFilterProxy(
+            self._characters,
+            self._filters,
+            element_role=CharacterModel.ElementRole,
+            weapon_role=CharacterModel.SpecialtyRole,
+            parent=self,
+        )
+        self._characters.rowsInserted.connect(self._sync_filter_categories)
+        self._characters.modelReset.connect(self._sync_filter_categories)
 
     game = Property(str, lambda self: self._game, constant=True)
     name = Property(str, lambda self: self._name, constant=True)
@@ -199,6 +229,11 @@ class Section(QObject):
     )
     characters = Property(
         QObject, lambda self: self._characters, constant=True
+    )
+    cards = Property(QObject, lambda self: self._cards, constant=True)
+    filters = Property(QObject, lambda self: self._filters, constant=True)
+    filtersEnabled = Property(
+        bool, lambda self: self._filters_enabled, notify=filtersEnabledChanged
     )
 
     def set_status(self, text: str) -> None:
@@ -217,6 +252,36 @@ class Section(QObject):
         self._live_version = live
         self._latest_version = latest
         self.versionsChanged.emit()
+
+    def set_filters_enabled(self, enabled: bool) -> None:
+        """Show or hide this game's filter bar and its filtering."""
+        enabled = bool(enabled)
+        if enabled == self._filters_enabled:
+            return
+        self._filters_enabled = enabled
+        self._cards.setFilteringEnabled(enabled)
+        self.filtersEnabledChanged.emit()
+
+    def set_filters_single_selection(self, enabled: bool) -> None:
+        """Choose between one active filter and multi-select filtering."""
+        self._filters.set_single_selection(enabled)
+
+    def _sync_filter_categories(self, *_args) -> None:
+        """Add categories the loaded cards revealed beyond the static catalog.
+
+        Catalog data can lag behind the API (a new element, GI's crossbow
+        users).  Every card with a usable icon therefore contributes its own
+        category, so filtering can never hide a card behind a missing toggle.
+        """
+        elements = []
+        weapons = []
+        for element, element_image, specialty, specialty_image in (
+            self._characters.filter_values()
+        ):
+            elements.append({"key": element, "icon": element_image})
+            weapons.append({"key": specialty, "icon": specialty_image})
+        self._filters.add_categories(MODE_ELEMENT, elements)
+        self._filters.add_categories(MODE_WEAPON, weapons)
 
 
 class SectionsModel(QAbstractListModel):

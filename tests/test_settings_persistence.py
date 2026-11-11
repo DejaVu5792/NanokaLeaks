@@ -30,6 +30,24 @@ class SettingsPersistenceTests(unittest.TestCase):
             ]
         )
 
+    def test_element_weapon_filters_default_on(self):
+        self.assertTrue(app_settings._normalize({})["element_weapon_filters"])
+        self.assertFalse(
+            app_settings._normalize({"element_weapon_filters": False})[
+                "element_weapon_filters"
+            ]
+        )
+
+    def test_single_filter_selection_defaults_on(self):
+        self.assertTrue(
+            app_settings._normalize({})["single_filter_selection"]
+        )
+        self.assertFalse(
+            app_settings._normalize({"single_filter_selection": False})[
+                "single_filter_selection"
+            ]
+        )
+
     def test_games_are_enabled_by_default(self):
         normalized = app_settings._normalize({})
 
