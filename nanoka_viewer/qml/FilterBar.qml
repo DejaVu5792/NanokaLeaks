@@ -84,42 +84,52 @@ Rectangle {
             }
         }
 
-        Repeater {
-            model: bar.filters
+        Item {
+            width: 3
+            height: 1
+        }
 
-            delegate: Item {
-                id: category
+        Row {
+            id: categoryRow
+            spacing: 3
 
-                required property var model
+            Repeater {
+                model: bar.filters
 
-                width: 22
-                height: 22
-                opacity: category.model.enabled ? 1.0 : 0.35
+                delegate: Item {
+                    id: category
 
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 1
-                    radius: 4
-                    color: categoryHover.hovered
-                        ? palette.alternateBase : "transparent"
-                }
+                    required property var model
 
-                IconBadge {
-                    anchors.centerIn: parent
-                    source: category.model.icon
-                    fallbackText: category.model.label.length > 0
-                        ? category.model.label.charAt(0) : "?"
-                    tooltip: category.model.label
-                    size: 20
-                }
+                    width: 22
+                    height: 22
+                    opacity: category.model.enabled ? 1.0 : 0.35
 
-                HoverHandler { id: categoryHover }
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: 4
+                        color: categoryHover.hovered
+                            ? palette.alternateBase : "transparent"
+                    }
 
-                MouseArea {
-                    objectName: "filterCategory-" + category.model.key
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: bar.filters.toggle(category.model.key)
+                    IconBadge {
+                        anchors.centerIn: parent
+                        source: category.model.icon
+                        fallbackText: category.model.label.length > 0
+                            ? category.model.label.charAt(0) : "?"
+                        tooltip: category.model.label
+                        size: 18
+                    }
+
+                    HoverHandler { id: categoryHover }
+
+                    MouseArea {
+                        objectName: "filterCategory-" + category.model.key
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: bar.filters.toggle(category.model.key)
+                    }
                 }
             }
         }
