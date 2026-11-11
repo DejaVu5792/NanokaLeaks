@@ -3,44 +3,21 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from ..detail_models import ContentEntry, ExtraSection, SkillDetail
 from ..detail_text import format_markup, number, percent, plain_text
+from ..detail_text import linked_term_ids as _linked_term_ids
 
-_TERM_LINK_RE = re.compile(r"\{LINK#N(\d+)\}")
-
-
-def _term_texts(raw: dict[str, Any]):
-    """Yield the detail text that the pane displays, link markup included."""
-    yield raw.get("name")
-    yield raw.get("desc")
-    for skill in raw.get("skills") or []:
-        if not isinstance(skill, dict):
-            continue
-        yield skill.get("name")
-        yield skill.get("desc")
-        for entry in (skill.get("promote") or {}).values():
-            if not isinstance(entry, dict):
-                continue
-            for line in entry.get("desc") or []:
-                yield line
-    for section in ("passives", "constellations"):
-        for item in raw.get(section) or []:
-            if not isinstance(item, dict):
-                continue
-            yield item.get("name")
-            yield item.get("desc")
+_TERM_SOURCES = ("name", "desc", "skills", "passives", "constellations")
 
 
 def linked_term_ids(raw: dict[str, Any]) -> list[str]:
-    """Return rule-term ids referenced by *raw*, in display order."""
-    ids: list[str] = []
-    for text in _term_texts(raw):
-        for term_id in _TERM_LINK_RE.findall(str(text or "")):
-            if term_id not in ids:
-                ids.append(term_id)
-    return ids
+    """Return rule-term ids referenced by the text the pane displays."""
+    return _linked_term_ids(
+        *(raw.get(key) for key in _TERM_SOURCES), game="gi"
+    )
 
 
 def linked_terms(
@@ -49,16 +26,35 @@ def linked_terms(
     """Build the Rule Terms card from the shared ``hyperlink.json`` table."""
     if not isinstance(hyperlinks, dict):
         return []
-    terms: list[ContentEntry] = []
-    for term_id in linked_term_ids(raw):
+    pending = linked_term_ids(raw)
+    seen: set[str] = set()
+    resolved: list[tuple[str, str, str]] = []
+    while pending:
+        term_id = pending.pop(0)
+        if term_id in seen:
+            continue
+        seen.add(term_id)
         entry = hyperlinks.get(term_id) or hyperlinks.get(f"N{term_id}")
         if not isinstance(entry, dict):
             continue
         name = str(entry.get("name") or "")
-        description = format_markup(entry.get("desc") or "")
+        description = str(entry.get("desc") or "")
+        for index, value in enumerate(entry.get("param") or []):
+            description = description.replace(f"{{{index}}}", str(value))
         if name or description:
-            terms.append(ContentEntry(name, description))
-    return terms
+            resolved.append((term_id, name, description))
+        for linked_id in _linked_term_ids(description, game="gi"):
+            if linked_id not in seen:
+                pending.append(linked_id)
+    names = {term_id: name for term_id, name, _ in resolved}
+    return [
+        ContentEntry(
+            name,
+            format_markup(description, term_names=names),
+            term_id=term_id,
+        )
+        for term_id, name, description in resolved
+    ]
 
 
 def fill(text: str, params: list[Any]) -> str:
@@ -136,7 +132,9 @@ def stats(raw: dict[str, Any]) -> list[tuple[str, str]]:
     ]
 
 
-def skills(raw: dict[str, Any]) -> list[SkillDetail]:
+def skills(
+    raw: dict[str, Any], term_names: Mapping[str, str] | None = None
+) -> list[SkillDetail]:
     skills: list[SkillDetail] = []
     skill_icons_seen = 0
     for skill in raw.get("skills") or []:
@@ -168,7 +166,9 @@ def skills(raw: dict[str, Any]) -> list[SkillDetail]:
             SkillDetail(
                 name=str(skill.get("name") or "Talent"),
                 type_name=type_name,
-                description=format_markup(skill.get("desc") or description),
+                description=format_markup(
+                    skill.get("desc") or description, term_names=term_names
+                ),
                 multipliers=rows,
                 level=10,
             )
@@ -176,12 +176,14 @@ def skills(raw: dict[str, Any]) -> list[SkillDetail]:
     return skills
 
 
-def extras(raw: dict[str, Any]) -> list[ExtraSection]:
+def extras(
+    raw: dict[str, Any], term_names: Mapping[str, str] | None = None
+) -> list[ExtraSection]:
     extras: list[ExtraSection] = []
     passives = [
         ContentEntry(
             str(item.get("name") or "Passive"),
-            format_markup(item.get("desc") or ""),
+            format_markup(item.get("desc") or "", term_names=term_names),
         )
         for item in raw.get("passives") or []
     ]
@@ -190,7 +192,7 @@ def extras(raw: dict[str, Any]) -> list[ExtraSection]:
     constellations = [
         ContentEntry(
             str(item.get("name") or "Constellation"),
-            format_markup(item.get("desc") or ""),
+            format_markup(item.get("desc") or "", term_names=term_names),
         )
         for item in raw.get("constellations") or []
     ]

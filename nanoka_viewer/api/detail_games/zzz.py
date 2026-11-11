@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from ..detail_models import BuildSection, ContentEntry, ExtraSection, SkillDetail
@@ -14,8 +15,54 @@ from ..detail_text import (
     percent,
     plain_text,
 )
+from ..detail_text import linked_term_ids as _linked_term_ids
 
 logger = logging.getLogger(__name__)
+
+_TERM_SOURCES = ("skill", "passive", "talent", "partner_info")
+
+
+def linked_term_ids(raw: dict[str, Any]) -> list[str]:
+    """Return term ids referenced by the text the pane displays."""
+    return _linked_term_ids(
+        *(raw.get(key) for key in _TERM_SOURCES), game="zzz"
+    )
+
+
+def linked_terms(
+    raw: dict[str, Any], nouns: dict[str, Any]
+) -> list[ContentEntry]:
+    """Build the Rule Terms card from ZZZ's shared ``noun.json`` table."""
+    if not isinstance(nouns, dict):
+        return []
+    pending = linked_term_ids(raw)
+    seen: set[str] = set()
+    resolved: list[tuple[str, str, str]] = []
+    while pending:
+        term_id = pending.pop(0)
+        if term_id in seen:
+            continue
+        seen.add(term_id)
+        entry = nouns.get(term_id)
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("title") or entry.get("name") or "")
+        description = str(entry.get("desc") or "")
+        if name or description:
+            resolved.append((term_id, name, description))
+        for linked_id in _linked_term_ids(description, game="zzz"):
+            if linked_id not in seen:
+                pending.append(linked_id)
+    names = {term_id: name for term_id, name, _ in resolved}
+    return [
+        ContentEntry(
+            name,
+            format_markup(description, term_names=names),
+            term_id=term_id,
+        )
+        for term_id, name, description in resolved
+    ]
+
 
 _SKILLS = [
     ("basic", "Basic Attack"),
@@ -115,7 +162,9 @@ def skill_value(param: dict[str, Any], level: int = 12) -> str:
     return f"{value:g}"
 
 
-def skills(raw: dict[str, Any]) -> list[SkillDetail]:
+def skills(
+    raw: dict[str, Any], term_names: Mapping[str, str] | None = None
+) -> list[SkillDetail]:
     skills: list[SkillDetail] = []
     sections = raw.get("skill") or {}
     for key, type_name in _SKILLS:
@@ -131,9 +180,10 @@ def skills(raw: dict[str, Any]) -> list[SkillDetail]:
                 if cleaned and cleaned not in seen:
                     seen.add(cleaned)
                     descriptions.append(
-                        f"<b>{html.escape(name)}</b><br>{format_markup(desc)}"
+                        f"<b>{html.escape(name)}</b><br>"
+                        f"{format_markup(desc, term_names=term_names)}"
                         if name
-                        else format_markup(desc)
+                        else format_markup(desc, term_names=term_names)
                     )
             for param_entry in entry.get("param") or []:
                 param_map = param_entry.get("param") or {}
@@ -236,7 +286,9 @@ def build(raw: dict[str, Any], metadata: dict[str, Any]) -> list[BuildSection]:
     return sections
 
 
-def extras(raw: dict[str, Any]) -> list[ExtraSection]:
+def extras(
+    raw: dict[str, Any], term_names: Mapping[str, str] | None = None
+) -> list[ExtraSection]:
     extras: list[ExtraSection] = []
     passive = raw.get("passive") or {}
     levels = passive.get("level") or {}
@@ -247,7 +299,10 @@ def extras(raw: dict[str, Any]) -> list[ExtraSection]:
         entries = [
             ContentEntry(
                 str(name),
-                format_markup(descs[index] if index < len(descs) else ""),
+                format_markup(
+                    descs[index] if index < len(descs) else "",
+                    term_names=term_names,
+                ),
             )
             for index, name in enumerate(names)
         ]
@@ -257,7 +312,7 @@ def extras(raw: dict[str, Any]) -> list[ExtraSection]:
     talents = [
         ContentEntry(
             str(item.get("name") or "Mindscape"),
-            format_markup(item.get("desc") or ""),
+            format_markup(item.get("desc") or "", term_names=term_names),
         )
         for item in (raw.get("talent") or {}).values()
     ]

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
-from ..api.details import CharacterDetail
+from ..api.details import CharacterDetail, plain_text
 
 # Detail payload lifecycle.
 STATE_IDLE = "idle"
@@ -54,6 +54,9 @@ class DetailsViewModel(QObject):
     # Emitted by the QML buttons; the popup owns the actual behaviour.
     closeRequested = Signal()
     retryRequested = Signal()
+
+    # A rule-term link in a description was clicked; the panel scrolls to it.
+    termActivated = Signal(str)
 
     state = Property(str, lambda self: self._state, notify=stateChanged)
     errorMessage = Property(
@@ -197,7 +200,11 @@ class DetailsViewModel(QObject):
             for section in detail.extras
         ]
         self._terms = [
-            {"name": term.name, "text": term.text}
+            {
+                "id": getattr(term, "term_id", ""),
+                "name": term.name,
+                "text": term.text,
+            }
             for term in getattr(detail, "terms", [])
         ]
 
@@ -277,6 +284,28 @@ class DetailsViewModel(QObject):
         self._art_state = ART_UNAVAILABLE
         self._art_message = message
         self.artChanged.emit()
+
+    # -- rule terms --------------------------------------------------------
+
+    @Slot(str, result=str)
+    def termTooltip(self, term_id: str) -> str:  # noqa: N802 - QML calls this
+        """Return the hover text for a linked term, or an empty string."""
+        for term in self._terms:
+            if str(term.get("id", "")) != str(term_id):
+                continue
+            name = str(term.get("name") or "")
+            text = " ".join(plain_text(term.get("text") or "").split())
+            if len(text) > 240:
+                text = text[:237].rstrip() + "..."
+            if name and text:
+                return f"{name}\n{text}"
+            return name or text
+        return ""
+
+    @Slot(str)
+    def activateTerm(self, term_id: str):  # noqa: N802 - QML calls this name
+        """Ask the panel to reveal the matching Rule Terms entry."""
+        self.termActivated.emit(str(term_id))
 
     # -- actions -----------------------------------------------------------
 

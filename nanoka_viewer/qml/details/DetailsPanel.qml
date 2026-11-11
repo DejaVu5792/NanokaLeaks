@@ -20,6 +20,25 @@ Item {
     // corners.
     property int cornerRadius: 10
 
+    // Scroll to the Rule Terms entry *termId* and briefly flash it.
+    function revealTerm(termId) {
+        var wanted = String(termId)
+        for (var index = 0; index < details.terms.length; ++index) {
+            if (String(details.terms[index].id) !== wanted)
+                continue
+            var item = termsRepeater.itemAt(index)
+            if (!item)
+                return
+            var point = item.mapToItem(contentColumn, 0, 0)
+            var top = point.y + contentColumn.y
+            var maxY = Math.max(0, scroll.contentHeight - scroll.height)
+            scroll.contentY = Math.max(0, Math.min(top - 12, maxY))
+            if (item.flash)
+                item.flash()
+            return
+        }
+    }
+
     // -- header -----------------------------------------------------------
     Item {
         id: headerArea
@@ -419,30 +438,66 @@ Item {
                     title: "Rule Terms"
 
                     Repeater {
+                        id: termsRepeater
                         model: details.terms
 
-                        delegate: ColumnLayout {
+                        delegate: Rectangle {
                             id: term
                             required property var modelData
 
-                            Layout.fillWidth: true
-                            spacing: 3
-
-                            SelectableText {
-                                Layout.fillWidth: true
-                                text: term.modelData.name
-                                color: palette.text
-                                font.pixelSize: 12
-                                font.bold: true
+                            function flash() {
+                                flashAnimation.restart()
                             }
 
-                            SelectableText {
-                                Layout.fillWidth: true
-                                visible: term.modelData.text.length > 0
-                                text: term.modelData.text
-                                textFormat: TextEdit.RichText
-                                color: palette.text
-                                font.pixelSize: 12
+                            Layout.fillWidth: true
+                            implicitHeight: termColumn.implicitHeight + 12
+                            radius: 6
+                            color: "transparent"
+
+                            Rectangle {
+                                id: termFlash
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: palette.highlight
+                                opacity: 0
+                            }
+
+                            SequentialAnimation {
+                                id: flashAnimation
+                                NumberAnimation {
+                                    target: termFlash
+                                    property: "opacity"
+                                    from: 0.28
+                                    to: 0
+                                    duration: 900
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: termColumn
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.margins: 6
+                                spacing: 3
+
+                                SelectableText {
+                                    Layout.fillWidth: true
+                                    text: term.modelData.name
+                                    color: palette.text
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                SelectableText {
+                                    Layout.fillWidth: true
+                                    visible: term.modelData.text.length > 0
+                                    text: term.modelData.text
+                                    textFormat: TextEdit.RichText
+                                    color: palette.text
+                                    font.pixelSize: 12
+                                }
                             }
                         }
                     }
@@ -456,6 +511,10 @@ Item {
 
         function onStateChanged() {
             scroll.contentY = 0
+        }
+
+        function onTermActivated(termId) {
+            panel.revealTerm(termId)
         }
     }
 }

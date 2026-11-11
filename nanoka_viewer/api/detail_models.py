@@ -41,6 +41,8 @@ class ContentEntry:
 
     name: str
     text: str
+    # Set for rule terms so a link in the text can navigate to this entry.
+    term_id: str = ""
 
 
 @dataclass

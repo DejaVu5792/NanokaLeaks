@@ -34,6 +34,8 @@ from .cache_io import directory_size_bytes, write_bytes_atomic
 from .characters import cached_versions
 from .constants import BASE_URL, CACHE_DIR
 from .detail_games import gi as _gi
+from .detail_games import ww as _ww
+from .detail_games import zzz as _zzz
 from .detail_games.hsr import build as _hsr_build
 from .detail_games.ww import build as _ww_build
 from .detail_games.zzz import build as _zzz_build
@@ -454,20 +456,31 @@ def _fetch_detail_text_metadata(
 ) -> dict[str, Any]:
     """Fetch shared text tables the detail normalizer needs.
 
-    Genshin's descriptions cross-reference rule terms by id.  The visible text
-    is already in the character payload; the shared ``hyperlink.json`` adds
-    the term names and descriptions for the Rule Terms card.
+    Genshin, Wuthering Waves and ZZZ keep rule-term names and descriptions in
+    a per-version table rather than inside each character payload.  NTE embeds
+    them in the payload itself, so it needs no extra request.
     """
-    if game != "gi" or not _gi.linked_term_ids(raw):
+    if game == "gi":
+        term_ids = _gi.linked_term_ids(raw)
+        resource, filename = "hyperlink", "hyperlink.json"
+    elif game == "ww":
+        term_ids = _ww.linked_term_ids(raw)
+        resource, filename = "hyperlink", "hyperlink.json"
+    elif game == "zzz":
+        term_ids = _zzz.linked_term_ids(raw)
+        resource, filename = "noun", "noun.json"
+    else:
         return {}
-    hyperlinks = _fetch_metadata_file(
+    if not term_ids:
+        return {}
+    table = _fetch_metadata_file(
         game,
         version,
-        "hyperlink",
-        f"{BASE_URL}/{game}/{version}/en/hyperlink.json",
+        resource,
+        f"{BASE_URL}/{game}/{version}/en/{filename}",
         record=False,
     )
-    return {"hyperlinks": hyperlinks or {}}
+    return {"terms": table or {}}
 
 
 def prefetch_build_metadata(
