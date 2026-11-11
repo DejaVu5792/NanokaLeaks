@@ -39,6 +39,49 @@ Item {
         }
     }
 
+    // Hide any active hover card.
+    function hideTermHover() {
+        termHoverCard.opacity = 0
+    }
+
+    // Display the hover card for *termId* anchored to scene point (*sceneX*, *sceneY*).
+    function showTermHover(termId, sceneX, sceneY) {
+        if (typeof details === "undefined")
+            return
+        var name = details.termName(termId)
+        var body = details.termTooltip(termId)
+        if (name.length === 0 && body.length === 0)
+            return
+
+        termHoverCard.termName = name
+        termHoverCard.termText = body
+
+        var panelPt = panel.mapFromItem(null, sceneX, sceneY)
+        var cardW = termHoverCard.width
+        var cardH = termHoverLayout.implicitHeight + 20
+        var gap = 8
+
+        // Horizontally center on panelPt.x, clamped inside panel
+        var minX = scroll.x + 12
+        var maxX = panel.width - cardW - 12
+        var cx = panelPt.x - cardW / 2
+        termHoverCard.x = Math.max(minX, Math.min(cx, maxX))
+
+        // Position top preferably; flip to bottom if it doesn't fit on screen
+        var topLimit = headerArea.height + 6
+        var spaceAbove = (panelPt.y - cardH - gap) - topLimit
+
+        if (spaceAbove >= 0) {
+            termHoverCard.y = panelPt.y - cardH - gap
+        } else {
+            var bottomY = panelPt.y + 16 + gap
+            var maxBottomY = panel.height - cardH - 10
+            termHoverCard.y = Math.min(bottomY, maxBottomY)
+        }
+
+        termHoverCard.opacity = 1
+    }
+
     // -- header -----------------------------------------------------------
     Item {
         id: headerArea
@@ -97,6 +140,7 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             contentWidth: width
             contentHeight: contentColumn.implicitHeight + 32
+            onContentYChanged: panel.hideTermHover()
 
             ScrollBar.vertical: AppScrollBar {}
 
@@ -506,15 +550,80 @@ Item {
         }
     }
 
+    // -- rule terms hover card --------------------------------------------
+    Rectangle {
+        id: termHoverCard
+        objectName: "termHoverCard"
+        z: 100
+        visible: opacity > 0
+        opacity: 0
+
+        property string termName: ""
+        property string termText: ""
+
+        width: Math.max(220, Math.min(380, Math.round((scroll.width - 32) * 0.60)))
+        implicitHeight: termHoverLayout.implicitHeight + 20
+        height: implicitHeight
+
+        radius: 8
+        color: palette.base
+        border.width: 1
+        border.color: palette.mid
+
+        Behavior on opacity {
+            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+        }
+
+        ColumnLayout {
+            id: termHoverLayout
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 10
+            spacing: 6
+
+            Text {
+                objectName: "termHoverTitle"
+                visible: termHoverCard.termName.length > 0
+                Layout.fillWidth: true
+                text: termHoverCard.termName
+                color: palette.text
+                font.pixelSize: 13
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                objectName: "termHoverBody"
+                visible: termHoverCard.termText.length > 0
+                Layout.fillWidth: true
+                text: termHoverCard.termText
+                textFormat: Text.RichText
+                color: palette.text
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+            }
+        }
+    }
+
     Connections {
         target: details
 
         function onStateChanged() {
             scroll.contentY = 0
+            panel.hideTermHover()
         }
 
         function onTermActivated(termId) {
             panel.revealTerm(termId)
+        }
+
+        function onTermHoverShown(termId, wx, wy) {
+            panel.showTermHover(termId, wx, wy)
+        }
+
+        function onTermHoverHidden() {
+            panel.hideTermHover()
         }
     }
 }
