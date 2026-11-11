@@ -45,6 +45,10 @@ Item {
     }
 
     // Display the hover card for *termId* anchored to scene point (*sceneX*, *sceneY*).
+    //
+    // Content is set first; positioning is deferred one frame via Qt.callLater
+    // so the ColumnLayout can recalculate its implicitHeight with the new text
+    // before we use it for vertical placement.
     function showTermHover(termId, sceneX, sceneY) {
         if (typeof details === "undefined")
             return
@@ -56,18 +60,29 @@ Item {
         termHoverCard.termName = name
         termHoverCard.termText = body
 
+        // Defer placement: layout must re-measure first.
+        Qt.callLater(function() { panel._placeTermHoverCard(sceneX, sceneY) })
+    }
+
+    // Internal: position + reveal the card.  Called the frame after content
+    // is set so implicitHeight reflects the new text.
+    function _placeTermHoverCard(sceneX, sceneY) {
+        if (termHoverCard.termName.length === 0 && termHoverCard.termText.length === 0)
+            return
+
         var panelPt = panel.mapFromItem(null, sceneX, sceneY)
         var cardW = termHoverCard.width
-        var cardH = termHoverLayout.implicitHeight + 20
+        // implicitHeight is now up-to-date after the deferred call.
+        var cardH = termHoverCard.implicitHeight
         var gap = 8
 
-        // Horizontally center on panelPt.x, clamped inside panel
+        // Horizontally: centre on the cursor, clamped inside the scroll column.
         var minX = scroll.x + 12
         var maxX = panel.width - cardW - 12
         var cx = panelPt.x - cardW / 2
         termHoverCard.x = Math.max(minX, Math.min(cx, maxX))
 
-        // Position top preferably; flip to bottom if it doesn't fit on screen
+        // Vertically: prefer above the cursor; fall back to below.
         var topLimit = headerArea.height + 6
         var spaceAbove = (panelPt.y - cardH - gap) - topLimit
 

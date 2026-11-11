@@ -16,6 +16,13 @@ TextEdit {
     readonly property bool hoveringTerm:
         hoveredLink.length > 5 && hoveredLink.indexOf("term:") === 0
 
+    // Cursor position (editor-local) captured at the moment a term link is
+    // entered.  Used by the timer so position is always from hover-entry, not
+    // from an arbitrary future tick when the cursor may have moved away or
+    // when hoverHandler.point has been reset by Qt.
+    property real _hoverX: 0
+    property real _hoverY: 0
+
     readOnly: true
     selectByMouse: true
     activeFocusOnPress: true
@@ -51,10 +58,13 @@ TextEdit {
         onTriggered: {
             if (!editor.hoveringTerm || typeof details === "undefined") return
             var termId = editor.hoveredLink.substring(5)
-            var hx = hoverHandler.point.position.x
-            var hy = hoverHandler.point.position.y
-            var mx = (hx > 0 && hx <= editor.width) ? hx : (editor.width / 2)
-            var my = (hy > 0 && hy <= editor.height) ? hy : (editor.height / 2)
+            // Use the position captured at hover-entry; fall back to the
+            // current handler position and finally the item centre so a
+            // stale/zero reading can never place the card off-screen.
+            var hx = editor._hoverX > 0 ? editor._hoverX : hoverHandler.point.position.x
+            var hy = editor._hoverY > 0 ? editor._hoverY : hoverHandler.point.position.y
+            var mx = (hx >= 0 && hx <= editor.width) ? hx : (editor.width / 2)
+            var my = (hy >= 0 && hy <= editor.height) ? hy : (editor.height / 2)
             var pt = editor.mapToItem(null, mx, my)
             details.showTermHover(termId, pt.x, pt.y)
         }
@@ -62,8 +72,13 @@ TextEdit {
 
     onHoveredLinkChanged: {
         if (editor.hoveringTerm) {
+            // Snapshot the cursor position now, while hoverHandler.point is fresh.
+            editor._hoverX = hoverHandler.point.position.x
+            editor._hoverY = hoverHandler.point.position.y
             hoverTimer.restart()
         } else {
+            editor._hoverX = 0
+            editor._hoverY = 0
             hoverTimer.stop()
             if (typeof details !== "undefined")
                 details.hideTermHover()
