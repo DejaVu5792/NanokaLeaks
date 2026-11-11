@@ -58,13 +58,6 @@ class DetailsViewModel(QObject):
     # A rule-term link in a description was clicked; the panel scrolls to it.
     termActivated = Signal(str)
 
-    # A rule-term link is being hovered; the panel shows the tooltip card.
-    # ``wx`` / ``wy`` are the editor's top-left in root-item coordinates.
-    termHoverShown = Signal(str, float, float)   # termId, wx, wy
-
-    # The hover left; the panel hides the tooltip card.
-    termHoverHidden = Signal()
-
     state = Property(str, lambda self: self._state, notify=stateChanged)
     errorMessage = Property(
         str, lambda self: self._error_message, notify=stateChanged
@@ -322,16 +315,6 @@ class DetailsViewModel(QObject):
     def activateTerm(self, term_id: str):  # noqa: N802 - QML calls this name
         """Ask the panel to reveal the matching Rule Terms entry."""
         self.termActivated.emit(str(term_id))
-
-    @Slot(str, float, float)
-    def showTermHover(self, term_id: str, wx: float, wy: float):  # noqa: N802
-        """Forward a hover-start from any SelectableText to the panel card."""
-        self.termHoverShown.emit(str(term_id), wx, wy)
-
-    @Slot()
-    def hideTermHover(self):  # noqa: N802
-        """Forward a hover-end to hide the panel card."""
-        self.termHoverHidden.emit()
 
     # -- actions -----------------------------------------------------------
 

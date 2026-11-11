@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 
 // Read-only text that supports the usual mouse selection gestures.
 //
@@ -7,21 +9,14 @@ import QtQuick
 // extension, and drag selection inside the details pane.
 //
 // Rule-term links (``term:<id>``) also behave like hyperlinks: the cursor
-// becomes a pointing hand and hovering calls ``details.showTermHover()`` so
-// the DetailsPanel can display a styled card.  Clicking asks the details model
-// to reveal that term in the Rule Terms card.
+// becomes a pointing hand, a styled card tooltip shows the term's name and
+// description after a short delay, and clicking asks the details model to
+// reveal that term in the Rule Terms card.
 TextEdit {
     id: editor
 
     readonly property bool hoveringTerm:
         hoveredLink.length > 5 && hoveredLink.indexOf("term:") === 0
-
-    // Cursor position (editor-local) captured at the moment a term link is
-    // entered.  Used by the timer so position is always from hover-entry, not
-    // from an arbitrary future tick when the cursor may have moved away or
-    // when hoverHandler.point has been reset by Qt.
-    property real _hoverX: 0
-    property real _hoverY: 0
 
     readOnly: true
     selectByMouse: true
@@ -50,38 +45,74 @@ TextEdit {
         details.activateTerm(link.substring(5))
     }
 
-    // Hover delay timer — fires 350 ms after the cursor enters a term link.
-    Timer {
-        id: hoverTimer
-        interval: 350
-        repeat: false
-        onTriggered: {
-            if (!editor.hoveringTerm || typeof details === "undefined") return
-            var termId = editor.hoveredLink.substring(5)
-            // Use the position captured at hover-entry; fall back to the
-            // current handler position and finally the item centre so a
-            // stale/zero reading can never place the card off-screen.
-            var hx = editor._hoverX > 0 ? editor._hoverX : hoverHandler.point.position.x
-            var hy = editor._hoverY > 0 ? editor._hoverY : hoverHandler.point.position.y
-            var mx = (hx >= 0 && hx <= editor.width) ? hx : (editor.width / 2)
-            var my = (hy >= 0 && hy <= editor.height) ? hy : (editor.height / 2)
-            var pt = editor.mapToItem(null, mx, my)
-            details.showTermHover(termId, pt.x, pt.y)
-        }
-    }
+    // Styled card tooltip for rule-term links.
+    //
+    // ToolTip is a Popup: it renders at the window overlay layer and
+    // therefore escapes any Flickable clip rectangle.  The built-in
+    // delay/visible binding replaces an explicit Timer.
+    ToolTip {
+        id: termTip
 
-    onHoveredLinkChanged: {
-        if (editor.hoveringTerm) {
-            // Snapshot the cursor position now, while hoverHandler.point is fresh.
-            editor._hoverX = hoverHandler.point.position.x
-            editor._hoverY = hoverHandler.point.position.y
-            hoverTimer.restart()
-        } else {
-            editor._hoverX = 0
-            editor._hoverY = 0
-            hoverTimer.stop()
-            if (typeof details !== "undefined")
-                details.hideTermHover()
+        // Resolved data for the currently hovered term.
+        readonly property string _termId:
+            editor.hoveringTerm ? editor.hoveredLink.substring(5) : ""
+        readonly property string _termName:
+            (_termId.length > 0 && typeof details !== "undefined")
+                ? details.termName(_termId) : ""
+        readonly property string _termBody:
+            (_termId.length > 0 && typeof details !== "undefined")
+                ? details.termTooltip(_termId) : ""
+
+        visible: editor.hoveringTerm
+                 && (_termName.length > 0 || _termBody.length > 0)
+        delay: 350
+
+        // Sizing: ~60 % of an approximate detail-pane column width.
+        // Detail column is (windowWidth × 0.75) − 32 px; 60 % of that.
+        readonly property int _cardW: {
+            var winW = editor.Window.width || 800
+            var approxCol = winW * 0.75 - 32
+            return Math.max(200, Math.min(380, Math.round(approxCol * 0.60)))
         }
+
+        // Replace the default plain background with a styled card.
+        contentItem: ColumnLayout {
+            id: tipLayout
+            width: termTip._cardW
+            spacing: 6
+
+            Text {
+                visible: termTip._termName.length > 0
+                Layout.fillWidth: true
+                text: termTip._termName
+                color: palette.text
+                font.pixelSize: 13
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                visible: termTip._termBody.length > 0
+                Layout.fillWidth: true
+                text: termTip._termBody
+                textFormat: Text.RichText
+                color: palette.text
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+            }
+        }
+
+        background: Rectangle {
+            radius: 8
+            color: palette.base
+            border.width: 1
+            border.color: palette.mid
+        }
+
+        // Comfortable card padding.
+        leftPadding: 10
+        rightPadding: 10
+        topPadding: 10
+        bottomPadding: 10
     }
 }
