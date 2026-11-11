@@ -4,9 +4,12 @@ import QtQuick.Layouts
 
 import ".."
 
-// One cache option: checkbox + Preload button, with its size and (for the
+// One cache option: switch + Preload button, with its size and (for the
 // builds row) the last-cached time underneath.
-ColumnLayout {
+//
+// Like the game toggles, clicking anywhere on the row toggles the setting;
+// the Preload button keeps owning its own clicks.
+Item {
     id: row
 
     property string title: ""
@@ -24,82 +27,112 @@ ColumnLayout {
     signal toggled(bool checked)
     signal preloadClicked()
 
-    spacing: 2
+    implicitHeight: content.implicitHeight
 
-    RowLayout {
-        Layout.fillWidth: true
-        Layout.topMargin: 4
-        Layout.bottomMargin: 2
-        spacing: 8
+    Rectangle {
+        anchors.fill: content
+        radius: 4
+        color: hover.hovered && row.checkEnabled
+            ? palette.alternateBase : "transparent"
+    }
 
-        AppSwitch {
-            id: box
+    MouseArea {
+        anchors.fill: content
+        enabled: row.checkEnabled
+        cursorShape: row.checkEnabled
+            ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: row.toggled(!row.checked)
+    }
 
-            objectName: "cacheCheck"
-            Layout.alignment: Qt.AlignVCenter
-            checked: row.checked
-            enabled: row.checkEnabled
-            tooltip: row.tooltip
-            onToggled: (checked) => row.toggled(checked)
-        }
+    ColumnLayout {
+        id: content
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        spacing: 2
 
-        Label {
-            id: titleLabel
-
+        RowLayout {
             Layout.fillWidth: true
-            Layout.alignment: Qt.AlignVCenter
-            text: row.title
-            color: row.checkEnabled ? palette.text : palette.placeholderText
-            font.pixelSize: 12
-            elide: Text.ElideRight
+            Layout.topMargin: 4
+            Layout.bottomMargin: 2
+            spacing: 8
 
-            HoverHandler { id: titleHover }
+            AppSwitch {
+                id: box
 
-            ToolTip.text: row.tooltip
-            ToolTip.visible: titleHover.hovered && row.tooltip.length > 0
-            ToolTip.delay: 600
+                objectName: "cacheCheck"
+                Layout.alignment: Qt.AlignVCenter
+                checked: row.checked
+                enabled: row.checkEnabled
+                interactive: false
+                tooltip: row.tooltip
+            }
+
+            Label {
+                id: titleLabel
+
+                objectName: "cacheRowTitle"
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: row.title
+                color: row.checkEnabled ? palette.text : palette.placeholderText
+                font.pixelSize: 12
+                elide: Text.ElideRight
+
+                HoverHandler { id: titleHover }
+
+                ToolTip.text: row.tooltip
+                ToolTip.visible: titleHover.hovered && row.tooltip.length > 0
+                ToolTip.delay: 600
+            }
+
+            AppButton {
+                objectName: row.buttonObjectName
+
+                visible: row.showButton
+                small: true
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                Layout.preferredWidth: 84
+                text: row.buttonText
+                enabled: row.buttonEnabled
+                onClicked: row.preloadClicked()
+
+                ToolTip.text: row.buttonTooltip
+                ToolTip.visible: hovered && row.buttonTooltip.length > 0
+                ToolTip.delay: 600
+            }
         }
 
-        AppButton {
-            objectName: row.buttonObjectName
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: 48
+            Layout.bottomMargin: 4
+            spacing: 6
 
-            visible: row.showButton
-            small: true
-            Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-            Layout.preferredWidth: 84
-            text: row.buttonText
-            enabled: row.buttonEnabled
-            onClicked: row.preloadClicked()
+            Label {
+                objectName: "cacheLastCached"
+                visible: row.lastCachedText.length > 0
+                text: row.lastCachedText
+                color: palette.placeholderText
+                font.pixelSize: 11
+            }
 
-            ToolTip.text: row.buttonTooltip
-            ToolTip.visible: hovered && row.buttonTooltip.length > 0
-            ToolTip.delay: 600
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Label {
+                objectName: "cacheSize"
+                text: row.sizeText
+                color: palette.placeholderText
+                font.pixelSize: 11
+            }
         }
     }
 
-    RowLayout {
-        Layout.fillWidth: true
-        Layout.leftMargin: 48
-        Layout.bottomMargin: 4
-        spacing: 6
-
-        Label {
-            objectName: "cacheLastCached"
-            visible: row.lastCachedText.length > 0
-            text: row.lastCachedText
-            color: palette.placeholderText
-            font.pixelSize: 11
-        }
-
-        Item {
-            Layout.fillWidth: true
-        }
-
-        Label {
-            objectName: "cacheSize"
-            text: row.sizeText
-            color: palette.placeholderText
-            font.pixelSize: 11
-        }
+    HoverHandler {
+        id: hover
+        cursorShape: row.checkEnabled
+            ? Qt.PointingHandCursor : Qt.ArrowCursor
     }
 }
