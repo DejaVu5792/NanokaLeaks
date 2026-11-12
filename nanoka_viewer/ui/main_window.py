@@ -27,6 +27,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
+from .. import __version__
 from ..api import GAMES, fetch_manifest
 from ..api.preload import PRELOAD_CACHE_LABELS
 from ..settings import get_enabled_games, get_setting
@@ -572,6 +573,11 @@ def main(argv=None):
     import pstats
 
     parser = argparse.ArgumentParser(prog="NanokaLeaks", description="Nanoka Viewer")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
     parser.add_argument(
         "-v",
         "--verbose",

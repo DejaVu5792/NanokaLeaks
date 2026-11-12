@@ -1,6 +1,8 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+# Written by hatch-vcs when the package is built
+/nanoka_viewer/_version.py
 build/
 dist/
 # Nuitka build artifacts

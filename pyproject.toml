@@ -1,6 +1,6 @@
 [project]
 name = "nanokaleaks"
-version = "6.1.1"
+dynamic = ["version"]
 description = "View newest characters from nanoka.cc"
 requires-python = ">=3.13"
 dependencies = [
@@ -10,8 +10,18 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+# Tag v6.1.1 -> 6.1.1; commits after a tag -> 6.1.2.devN.
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "nanoka_viewer/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["nanoka_viewer"]

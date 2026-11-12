@@ -43,7 +43,10 @@ just appimage   # AppImage + zsync under dist/
 | `dist/NanokaLeaks-<version>-x86_64.AppImage` | `just appimage` | self-contained, ~49 MB |
 | `dist/NanokaLeaks-<version>-x86_64.AppImage.zsync` | `just appimage` | delta-update control file, ~170 KB |
 
-The version comes from `pyproject.toml`.
+The version comes from the most recent git tag via
+[`hatch-vcs`](https://github.com/ofek/hatch-vcs), so `v6.1.1` builds as
+`6.1.1` and untagged commits become the next patch pre-release
+(`6.1.2.devN`). There is no version string to edit in `pyproject.toml`.
 
 ## Tests
 
@@ -326,35 +329,36 @@ NanokaLeaks-<version>-x86_64.AppImage.zsync
 
 ## Release checklist
 
-1. Update `version` in `pyproject.toml`, refresh the lockfile, and commit the
-   bump:
+The git tag is the single source of truth for the version:
 
-   ```sh
-   uv lock
-   git add pyproject.toml uv.lock
-   git commit -m "bump version"
-   ```
+- `v6.1.1` → package version `6.1.1`
+- commits after `v6.1.1` → `6.1.2.devN`
 
-2. Run the suite and a local build:
+1. Make sure the tree is clean and the suite passes:
 
    ```sh
    just test
    just build
-   just appimage
    ```
 
-3. Push `main`; optionally dispatch the workflow on `main` first to warm the CI
+2. Push `main`; optionally dispatch the workflow on `main` first to warm the CI
    cache.
 
-4. Tag the release commit (on `main`) and push the tag:
+3. Tag the release commit (on `main`) and push the tag:
 
    ```sh
    git tag v<version>
    git push origin v<version>
    ```
 
-5. Verify the release has both the AppImage and its `.zsync`, and that
-   `--appimage-updateinformation` prints the expected string.
+4. Verify the release has both the AppImage and its `.zsync`, that
+   `--appimage-updateinformation` prints the expected string, and that
+   `./NanokaLeaks --version` reports the tag version.
+
+No commit is needed just to bump the version. `uv.lock` records the root
+package as `(dynamic)`, so it does not change when a new tag is created.
+Builds need the tag history: CI checks out with `fetch-depth: 0`, and a shallow
+local clone should run `git fetch --tags` first.
 
 ## Troubleshooting
 

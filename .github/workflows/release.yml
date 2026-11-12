@@ -64,6 +64,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          # hatch-vcs derives the version from git tags, so tags must be present.
+          fetch-depth: 0
 
       - name: Install OS Dependencies
         run: ${{ matrix.setup_command }}
@@ -108,7 +111,9 @@ jobs:
         shell: bash
         env:
           QT_QPA_PLATFORM: offscreen
-        run: ./${{ matrix.binary_name }} --smoke-test
+        run: |
+          ./${{ matrix.binary_name }} --version
+          ./${{ matrix.binary_name }} --smoke-test
 
       - name: Upload Build Artifact
         if: startsWith(github.ref, 'refs/tags/')
@@ -126,6 +131,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v7
+        with:
+          # hatch-vcs derives the version from git tags, so tags must be present.
+          fetch-depth: 0
 
       - name: Install OS Dependencies
         run: sudo apt-get update && sudo apt-get install -y gcc patchelf ccache

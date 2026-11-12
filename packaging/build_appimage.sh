@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -n1)"
+VERSION="${VERSION:-$(uv run python -c 'from nanoka_viewer import __version__; print(__version__)')}"
 ARCH="$(uname -m)"
 
 if [ "$(uname -s)" != "Linux" ]; then
