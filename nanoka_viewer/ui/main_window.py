@@ -53,8 +53,15 @@ _DETACHED_THREADS = set()
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
 # Window geometry is kept in QSettings, which maps to the native store on each
-# platform (registry on Windows, plist on macOS, an INI file elsewhere).
-_WINDOW_GEOMETRY_KEY = "window/geometry"
+# platform (registry on Windows, plist on macOS, an INI file elsewhere).  The
+# separate key also leaves behind the old ``window/geometry`` value, which may
+# hold a maximised size written before the normal geometry was tracked.
+_WINDOW_GEOMETRY_KEY = "window/normal-geometry"
+
+# On Wayland the compositor resizes the surface to the maximised geometry
+# *before* it tells Qt about the new window state.  Wait for the size to settle
+# so that resize can be discarded instead of being mistaken for a normal size.
+_NORMAL_GEOMETRY_DEBOUNCE_MS = 150
 
 
 def _window_settings() -> QSettings:
@@ -90,7 +97,9 @@ def _write_rect(stream: QDataStream, rect: QRect) -> None:
     stream.writeInt32(rect.bottom())
 
 
-def _without_window_state(geometry: QByteArray) -> QByteArray:
+def _without_window_state(
+    geometry: QByteArray, normal_geometry: QRect | None = None
+) -> QByteArray:
     """Drop the maximised/fullscreen flags from a ``saveGeometry`` blob.
 
     ``saveGeometry`` stores the normal geometry as a separate rect and also
@@ -100,6 +109,12 @@ def _without_window_state(geometry: QByteArray) -> QByteArray:
     the blob is rewritten instead: both flags are cleared and the normal rect
     becomes the geometry ``restoreGeometry`` restores.  Qt still applies its
     off-screen correction to that geometry.
+
+    *normal_geometry* overrides the rect stored in the blob.  The caller uses
+    this to keep the size the window had before it was maximised: on Wayland
+    the compositor resizes the window first and reports the state afterwards,
+    so Qt never learns the pre-maximise geometry and records the maximised
+    rect as ``normalGeometry()``.
     """
     stream = QDataStream(geometry)
     stream.setVersion(QDataStream.Qt_4_0)
@@ -122,7 +137,9 @@ def _without_window_state(geometry: QByteArray) -> QByteArray:
 
     if stream.status() != QDataStream.Status.Ok:
         return geometry
-    if not (maximized or fullscreen) or not normal.isValid():
+    if normal_geometry is not None and normal_geometry.isValid():
+        normal = normal_geometry
+    elif not (maximized or fullscreen) or not normal.isValid():
         return geometry
 
     rewritten = QByteArray()
@@ -162,12 +179,21 @@ def restore_window_geometry(window: QWidget) -> bool:
     return False
 
 
-def save_window_geometry(window: QWidget) -> None:
-    """Persist *window*'s normal (unmaximised) size and position."""
+def save_window_geometry(
+    window: QWidget, normal_geometry: QRect | None = None
+) -> None:
+    """Persist *window*'s normal (unmaximised) size and position.
+
+    *normal_geometry* is the size tracked while the window was in its normal
+    state.  It wins over the normal rect inside ``saveGeometry``, which on
+    Wayland describes the maximised window after the compositor resized it.
+    """
     settings = _window_settings()
     blob = window.saveGeometry()
-    if window.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen):
-        blob = _without_window_state(blob)
+    if normal_geometry is not None or window.windowState() & (
+        Qt.WindowMaximized | Qt.WindowFullScreen
+    ):
+        blob = _without_window_state(blob, normal_geometry)
     settings.setValue(_WINDOW_GEOMETRY_KEY, blob)
     settings.sync()
 
@@ -269,11 +295,22 @@ class NanokaViewer(QMainWindow):
         logger.info("Initializing NanokaViewer...")
         init_start = time.time()
 
+        # The size/position to persist on close.  Window managers may resize
+        # the window to its maximised geometry before reporting the state
+        # change, leaving Qt without the normal geometry, so it is tracked
+        # while the window is actually normal instead of read at close time.
+        self._normal_geometry: QRect | None = None
+        self._normal_geometry_timer = QTimer(self)
+        self._normal_geometry_timer.setSingleShot(True)
+        self._normal_geometry_timer.setInterval(_NORMAL_GEOMETRY_DEBOUNCE_MS)
+        self._normal_geometry_timer.timeout.connect(self._commit_normal_geometry)
+
         self.setWindowTitle("Nanoka Viewer")
         self.setMinimumSize(800, 600)
         # Restore the size and position the user left the window in, always
         # unmaximised; on first run Qt's default window size applies.
         restore_window_geometry(self)
+        self._commit_normal_geometry()
         self._updating_theme = False
         # Kept for the widget-based popups (details/settings), which are
         # children of the QQuickWidget and still styled by this sheet.
@@ -652,6 +689,21 @@ class NanokaViewer(QMainWindow):
             logger.info(f"Finished loading all {len(chars)} characters for {game}")
             self._mark_section_done(game)
 
+    def _commit_normal_geometry(self) -> None:
+        """Snapshot the current geometry as the normal (unmaximised) size."""
+        if self.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen):
+            return
+        geometry = self.geometry()
+        if geometry.isValid() and not geometry.isEmpty():
+            self._normal_geometry = geometry
+
+    def _schedule_normal_geometry(self) -> None:
+        """Commit the geometry once the window has stopped resizing/moving."""
+        if self.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen):
+            self._normal_geometry_timer.stop()
+        else:
+            self._normal_geometry_timer.start()
+
     def closeEvent(self, event):
         """Stop accepting loader results and avoid deleting a live thread.
 
@@ -660,7 +712,10 @@ class NanokaViewer(QMainWindow):
         keeps a reference until it finishes instead of letting Qt destroy a
         running QThread.
         """
-        save_window_geometry(self)
+        # When the window is normal this picks up a resize from the last few
+        # milliseconds; when maximised it keeps the tracked normal geometry.
+        self._commit_normal_geometry()
+        save_window_geometry(self, self._normal_geometry)
         self._load_in_progress = False
         self._load_generation += 1
         for thread in list(self._load_threads):
@@ -688,7 +743,14 @@ class NanokaViewer(QMainWindow):
             self.setStyleSheet(STYLESHEET)
             self._updating_theme = False
         elif event.type() == QEvent.Type.WindowStateChange:
-            logger.debug("Window state changed: %s", self.windowState())
+            state = self.windowState()
+            logger.debug("Window state changed: %s", state)
+            if state & (Qt.WindowMaximized | Qt.WindowFullScreen):
+                # Any pending normal-size commit describes the window before
+                # the compositor resized it; keep that value instead.
+                self._normal_geometry_timer.stop()
+            else:
+                self._schedule_normal_geometry()
             # Forward state change to central widget so overlaid child popups update cleanly.
             # Guard against being called before the central widget is set (e.g. from
             # restoreGeometry() during __init__, which fires WindowStateChange).
@@ -696,6 +758,16 @@ class NanokaViewer(QMainWindow):
             if cw is not None:
                 QApplication.sendEvent(cw, event)
         super().changeEvent(event)
+
+    def resizeEvent(self, event):
+        """Note the new size so it can be committed once it settles."""
+        self._schedule_normal_geometry()
+        super().resizeEvent(event)
+
+    def moveEvent(self, event):
+        """Note the new position so it can be committed once it settles."""
+        self._schedule_normal_geometry()
+        super().moveEvent(event)
 
 
 def main(argv=None):

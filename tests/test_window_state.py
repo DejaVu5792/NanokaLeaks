@@ -14,12 +14,30 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QByteArray, QDataStream, QSettings
+from PySide6.QtCore import QByteArray, QDataStream, QRect, QSettings
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMainWindow
 
 from support import QtTestCase, flush
 
 import nanoka_viewer.ui.main_window as main_window
+
+
+def saved_window_state(settings: QSettings):
+    """Return the normal rect and window flags stored for the viewer."""
+    data = settings.value(main_window._WINDOW_GEOMETRY_KEY)
+    assert isinstance(data, QByteArray)
+    stream = QDataStream(data)
+    stream.setVersion(QDataStream.Qt_4_0)
+    assert stream.readUInt32() == main_window._GEOMETRY_MAGIC
+    stream.readUInt16()
+    stream.readUInt16()
+    main_window._read_rect(stream)  # frame geometry
+    normal = main_window._read_rect(stream)
+    stream.readInt32()  # screen number
+    maximized = stream.readUInt8()
+    fullscreen = stream.readUInt8()
+    return normal, maximized, fullscreen
 
 
 class WindowGeometryTests(QtTestCase):
@@ -71,19 +89,7 @@ class WindowGeometryTests(QtTestCase):
         return window
 
     def _saved_window_state(self):
-        data = self.settings.value(main_window._WINDOW_GEOMETRY_KEY)
-        self.assertIsInstance(data, QByteArray)
-        stream = QDataStream(data)
-        stream.setVersion(QDataStream.Qt_4_0)
-        self.assertEqual(stream.readUInt32(), main_window._GEOMETRY_MAGIC)
-        stream.readUInt16()
-        stream.readUInt16()
-        main_window._read_rect(stream)  # frame geometry
-        normal = main_window._read_rect(stream)
-        stream.readInt32()  # screen number
-        maximized = stream.readUInt8()
-        fullscreen = stream.readUInt8()
-        return normal, maximized, fullscreen
+        return saved_window_state(self.settings)
 
     def test_maximised_state_is_not_remembered(self):
         original = self._shown_window(720, 560)
@@ -134,6 +140,19 @@ class WindowGeometryTests(QtTestCase):
         self.assertFalse(reopened.isMaximized())
         self.assertEqual((reopened.width(), reopened.height()), (720, 560))
 
+    def test_explicit_normal_geometry_wins_over_the_saved_blob(self):
+        original = self._shown_window(720, 560)
+        original.showMaximized()
+        flush()
+        main_window.save_window_geometry(original, QRect(40, 30, 720, 560))
+
+        normal, maximized, fullscreen = self._saved_window_state()
+        self.assertEqual((maximized, fullscreen), (0, 0))
+        self.assertEqual(
+            (normal.x(), normal.y(), normal.width(), normal.height()),
+            (40, 30, 720, 560),
+        )
+
 
 class ViewerWindowStateTests(QtTestCase):
     def test_viewer_restores_on_startup_and_saves_on_close(self):
@@ -151,7 +170,49 @@ class ViewerWindowStateTests(QtTestCase):
             window.close()
             flush()
 
-            save.assert_called_once_with(window)
+            save.assert_called_once_with(window, window._normal_geometry)
+
+
+class ViewerNormalGeometryTests(QtTestCase):
+    def setUp(self):
+        super().setUp()
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.settings = QSettings(
+            os.path.join(self._temp.name, "window.ini"),
+            QSettings.IniFormat,
+        )
+        patcher = patch.object(
+            main_window, "_window_settings", return_value=self.settings
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_closing_maximised_saves_the_previous_normal_geometry(self):
+        window = main_window.NanokaViewer(load_data=False)
+        self.addCleanup(window.deleteLater)
+        window.show()
+        flush()
+        window.resize(900, 700)
+        flush()
+        # The normal size is committed only after the resize settles.
+        QTest.qWait(main_window._NORMAL_GEOMETRY_DEBOUNCE_MS + 100)
+        expected = (window.width(), window.height())
+
+        window.showMaximized()
+        flush()
+        self.assertTrue(window.isMaximized())
+        self.assertEqual(
+            (window._normal_geometry.width(), window._normal_geometry.height()),
+            expected,
+        )
+
+        window.close()
+        flush()
+
+        normal, maximized, fullscreen = saved_window_state(self.settings)
+        self.assertEqual((maximized, fullscreen), (0, 0))
+        self.assertEqual((normal.width(), normal.height()), expected)
 
 
 if __name__ == "__main__":
