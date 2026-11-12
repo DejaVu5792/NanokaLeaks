@@ -21,6 +21,7 @@ from PySide6.QtCore import (
     QObject,
     Property,
     QSettings,
+    Qt,
     QTimer,
     QUrl,
     Signal,
@@ -64,26 +65,42 @@ def _window_settings() -> QSettings:
 
 
 def restore_window_geometry(window: QWidget) -> bool:
-    """Restore a previously saved geometry and window state.
+    """Restore the window's last normal (unmaximised) size and position.
 
-    ``saveGeometry`` records size, position and the maximised/fullscreen flag,
-    and ``restoreGeometry`` moves windows that would open off-screen back onto
-    a connected display.  Returns whether a saved geometry was applied.
+    ``saveGeometry`` records the normal geometry together with the
+    maximised/fullscreen flag, and ``restoreGeometry`` reapplies that flag.
+    The viewer deliberately drops it: closing while maximised should still
+    remember the size and position the window had before it was maximised.
+    Restoring first and clearing the state afterwards leaves the window at
+    exactly that normal geometry, with ``restoreGeometry``'s off-screen
+    correction still applied.  Returns whether a saved geometry was applied.
     """
     geometry = _window_settings().value(_WINDOW_GEOMETRY_KEY)
     if isinstance(geometry, QByteArray):
         if geometry.isEmpty():
             return False
-        return bool(window.restoreGeometry(geometry))
-    if isinstance(geometry, (bytes, bytearray)):
+        restored = bool(window.restoreGeometry(geometry))
+    elif isinstance(geometry, (bytes, bytearray)):
         if not geometry:
             return False
-        return bool(window.restoreGeometry(QByteArray(geometry)))
-    return False
+        restored = bool(window.restoreGeometry(QByteArray(geometry)))
+    else:
+        return False
+
+    if restored:
+        window.setWindowState(
+            window.windowState() & ~(Qt.WindowMaximized | Qt.WindowFullScreen)
+        )
+    return restored
 
 
 def save_window_geometry(window: QWidget) -> None:
-    """Persist *window*'s size, position and maximised/fullscreen state."""
+    """Persist *window*'s geometry for the next session.
+
+    The stored blob also carries the maximised/fullscreen flag, but
+    :func:`restore_window_geometry` ignores it so only the normal geometry is
+    remembered.
+    """
     settings = _window_settings()
     settings.setValue(_WINDOW_GEOMETRY_KEY, window.saveGeometry())
     settings.sync()
@@ -188,8 +205,8 @@ class NanokaViewer(QMainWindow):
 
         self.setWindowTitle("Nanoka Viewer")
         self.setMinimumSize(800, 600)
-        # Restore the size, position and maximised state the user left the
-        # window in; on first run Qt's default window size applies.
+        # Restore the size and position the user left the window in, always
+        # unmaximised; on first run Qt's default window size applies.
         restore_window_geometry(self)
         self._updating_theme = False
         # Kept for the widget-based popups (details/settings), which are

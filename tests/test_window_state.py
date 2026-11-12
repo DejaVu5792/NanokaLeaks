@@ -1,8 +1,10 @@
 """Tests for native window geometry persistence.
 
-The window no longer carries a hardcoded initial size: it restores the size,
-position and maximised state from the platform-native ``QSettings`` store and
-falls back to Qt's default sizing (bounded by the minimum size) on first run.
+The window no longer carries a hardcoded initial size: it restores the normal
+(unmaximised) size and position from the platform-native ``QSettings`` store
+and falls back to Qt's default sizing (bounded by the minimum size) on first
+run.  Closing while maximised or fullscreen still remembers the size the
+window had before it entered that state.
 """
 
 from __future__ import annotations
@@ -61,6 +63,36 @@ class WindowGeometryTests(QtTestCase):
         self.assertIn(
             main_window._WINDOW_GEOMETRY_KEY, self.settings.allKeys()
         )
+
+    def _shown_window(self, width: int, height: int) -> QMainWindow:
+        window = self._window(width, height)
+        window.show()
+        flush()
+        return window
+
+    def test_maximised_state_is_not_remembered(self):
+        original = self._shown_window(720, 560)
+        original.showMaximized()
+        flush()
+        self.assertTrue(original.isMaximized())
+        main_window.save_window_geometry(original)
+
+        reopened = self._window(500, 400)
+        self.assertTrue(main_window.restore_window_geometry(reopened))
+        self.assertFalse(reopened.isMaximized())
+        self.assertEqual((reopened.width(), reopened.height()), (720, 560))
+
+    def test_fullscreen_state_is_not_remembered(self):
+        original = self._shown_window(720, 560)
+        original.showFullScreen()
+        flush()
+        self.assertTrue(original.isFullScreen())
+        main_window.save_window_geometry(original)
+
+        reopened = self._window(500, 400)
+        self.assertTrue(main_window.restore_window_geometry(reopened))
+        self.assertFalse(reopened.isFullScreen())
+        self.assertEqual((reopened.width(), reopened.height()), (720, 560))
 
 
 class ViewerWindowStateTests(QtTestCase):
