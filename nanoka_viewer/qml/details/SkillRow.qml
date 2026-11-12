@@ -4,6 +4,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import ".."
+
 // One collapsed-by-default skill disclosure inside the Skills card.
 DisclosureRow {
     id: row
@@ -14,19 +16,17 @@ DisclosureRow {
     toggleObjectName: "skillToggle"
     bodyObjectName: "skillBody"
 
-    Text {
+    SelectableText {
         objectName: "skillDescription"
         Layout.fillWidth: true
         visible: row.description.length > 0
         text: row.description
-        textFormat: Text.RichText
-        wrapMode: Text.WordWrap
+        textFormat: TextEdit.RichText
         color: palette.text
         font.pixelSize: 12
-        linkColor: palette.link
     }
 
-    Label {
+    SelectableText {
         visible: row.multipliers.length > 0
         text: "Multipliers"
         color: palette.text
@@ -44,15 +44,14 @@ DisclosureRow {
             Layout.fillWidth: true
             spacing: 16
 
-            Label {
+            SelectableText {
                 Layout.fillWidth: true
                 text: multiplier.modelData.label
                 color: palette.placeholderText
                 font.pixelSize: 11
-                wrapMode: Text.WordWrap
             }
 
-            Label {
+            SelectableText {
                 Layout.alignment: Qt.AlignRight | Qt.AlignTop
                 text: multiplier.modelData.value
                 color: palette.text

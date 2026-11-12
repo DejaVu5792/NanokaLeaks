@@ -20,6 +20,25 @@ Item {
     // corners.
     property int cornerRadius: 10
 
+    // Scroll to the Rule Terms entry *termId* and briefly flash it.
+    function revealTerm(termId) {
+        var wanted = String(termId)
+        for (var index = 0; index < details.terms.length; ++index) {
+            if (String(details.terms[index].id) !== wanted)
+                continue
+            var item = termsRepeater.itemAt(index)
+            if (!item)
+                return
+            var point = item.mapToItem(contentColumn, 0, 0)
+            var top = point.y + contentColumn.y
+            var maxY = Math.max(0, scroll.contentHeight - scroll.height)
+            scroll.contentY = Math.max(0, Math.min(top - 12, maxY))
+            if (item.flash)
+                item.flash()
+            return
+        }
+    }
+
     // -- header -----------------------------------------------------------
     Item {
         id: headerArea
@@ -158,12 +177,11 @@ Item {
                     visible: details.state === "error"
                     title: "Could not load details"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: details.errorMessage
                         color: palette.placeholderText
                         font.pixelSize: 12
-                        wrapMode: Text.WordWrap
                     }
 
                     AppButton {
@@ -194,7 +212,7 @@ Item {
                     visible: details.buildState === "ready"
                     title: "Recommended Build"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "Suggested by nanoka.cc"
                         color: palette.placeholderText
@@ -227,26 +245,24 @@ Item {
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 4
 
-                                        Label {
+                                        SelectableText {
                                             Layout.fillWidth: true
                                             text: buildSection.modelData.title
                                             color: palette.text
                                             font.pixelSize: 12
                                             font.bold: true
-                                            wrapMode: Text.WordWrap
                                         }
 
                                         Repeater {
                                             model: buildSection.modelData.items
 
-                                            delegate: Label {
+                                            delegate: SelectableText {
                                                 required property var modelData
 
                                                 Layout.fillWidth: true
                                                 text: "\u2022 " + modelData
                                                 color: palette.text
                                                 font.pixelSize: 11
-                                                wrapMode: Text.WordWrap
                                             }
                                         }
                                     }
@@ -269,27 +285,24 @@ Item {
                     visible: details.state === "ready" && details.hasOverview
                     title: "Overview"
 
-                    Text {
+                    SelectableText {
                         objectName: "detailsSubtitle"
                         Layout.fillWidth: true
                         visible: details.subtitle.length > 0
                         text: details.subtitle
-                        textFormat: Text.RichText
-                        wrapMode: Text.WordWrap
+                        textFormat: TextEdit.RichText
                         color: palette.placeholderText
                         font.pixelSize: 11
                     }
 
-                    Text {
+                    SelectableText {
                         objectName: "detailsOverview"
                         Layout.fillWidth: true
                         visible: details.overview.length > 0
                         text: details.overview
-                        textFormat: Text.RichText
-                        wrapMode: Text.WordWrap
+                        textFormat: TextEdit.RichText
                         color: palette.text
                         font.pixelSize: 12
-                        linkColor: palette.link
                     }
                 }
 
@@ -326,17 +339,16 @@ Item {
                                         Layout.alignment: Qt.AlignTop
                                         spacing: 8
 
-                                        Label {
+                                        SelectableText {
                                             Layout.preferredWidth: 112
                                             Layout.minimumWidth: 112
                                             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             text: stat.modelData.label
                                             color: palette.placeholderText
                                             font.pixelSize: 11
-                                            wrapMode: Text.WordWrap
                                         }
 
-                                        Label {
+                                        SelectableText {
                                             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
                                             horizontalAlignment: Text.AlignLeft
                                             text: stat.modelData.value
@@ -361,12 +373,11 @@ Item {
                         }
                     }
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "No constellation, sequence, mindscape, or resonance boosts."
                         color: palette.placeholderText
                         font.pixelSize: 11
-                        wrapMode: Text.WordWrap
                     }
                 }
 
@@ -377,13 +388,12 @@ Item {
                              && details.skills.length > 0
                     title: "Skills"
 
-                    Label {
+                    SelectableText {
                         Layout.fillWidth: true
                         text: "Descriptions and multipliers are collapsed. "
                               + "Click a skill to expand."
                         color: palette.placeholderText
                         font.pixelSize: 11
-                        wrapMode: Text.WordWrap
                     }
 
                     Repeater {
@@ -419,6 +429,79 @@ Item {
                         }
                     }
                 }
+
+                // -- rule terms -------------------------------------------
+                DetailCard {
+                    objectName: "detailsTermsCard"
+                    visible: details.state === "ready"
+                             && details.terms.length > 0
+                    title: "Rule Terms"
+
+                    Repeater {
+                        id: termsRepeater
+                        model: details.terms
+
+                        delegate: Rectangle {
+                            id: term
+                            required property var modelData
+
+                            function flash() {
+                                flashAnimation.restart()
+                            }
+
+                            Layout.fillWidth: true
+                            implicitHeight: termColumn.implicitHeight + 12
+                            radius: 6
+                            color: "transparent"
+
+                            Rectangle {
+                                id: termFlash
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: palette.highlight
+                                opacity: 0
+                            }
+
+                            SequentialAnimation {
+                                id: flashAnimation
+                                NumberAnimation {
+                                    target: termFlash
+                                    property: "opacity"
+                                    from: 0.28
+                                    to: 0
+                                    duration: 900
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+
+                            ColumnLayout {
+                                id: termColumn
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.margins: 6
+                                spacing: 3
+
+                                SelectableText {
+                                    Layout.fillWidth: true
+                                    text: term.modelData.name
+                                    color: palette.text
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+
+                                SelectableText {
+                                    Layout.fillWidth: true
+                                    visible: term.modelData.text.length > 0
+                                    text: term.modelData.text
+                                    textFormat: TextEdit.RichText
+                                    color: palette.text
+                                    font.pixelSize: 12
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -428,6 +511,10 @@ Item {
 
         function onStateChanged() {
             scroll.contentY = 0
+        }
+
+        function onTermActivated(termId) {
+            panel.revealTerm(termId)
         }
     }
 }

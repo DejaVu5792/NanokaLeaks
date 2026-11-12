@@ -7,6 +7,7 @@ skills, extras and builds; this module supplies the fields every game shares
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from .detail_games import gi, hsr, nte, ww, zzz
@@ -94,11 +95,17 @@ def subtitle_for(game: str, raw: dict[str, Any]) -> str:
     return ""
 
 
-def overview_for(game: str, raw: dict[str, Any]) -> str:
+def overview_for(
+    game: str,
+    raw: dict[str, Any],
+    term_names: Mapping[str, str] | None = None,
+) -> str:
     if game == "zzz":
         info = raw.get("partner_info") or {}
-        return format_markup(info.get("profile_desc") or "")
-    return format_markup(raw.get("desc") or "")
+        return format_markup(
+            info.get("profile_desc") or "", term_names=term_names
+        )
+    return format_markup(raw.get("desc") or "", term_names=term_names)
 
 
 def level_label_for(game: str) -> str:
@@ -120,14 +127,29 @@ def normalize(
     with_build: bool = True,
 ) -> CharacterDetail:
     name = str(raw.get("name") or get_name(game, raw, char_id) or "Unknown")
+
+    term_table = metadata.get("terms") or metadata.get("hyperlinks") or {}
+    if game == "gi":
+        terms = gi.linked_terms(raw, term_table)
+    elif game == "ww":
+        terms = ww.linked_terms(raw, term_table)
+    elif game == "zzz":
+        terms = zzz.linked_terms(raw, term_table)
+    elif game == "nte":
+        terms = nte.linked_terms(raw)
+    else:
+        terms = []
+    term_names = {term.term_id: term.name for term in terms if term.term_id}
+
     detail = CharacterDetail(
         game=game,
         char_id=str(char_id),
         name=name,
         subtitle=subtitle_for(game, raw),
-        overview=overview_for(game, raw),
+        overview=overview_for(game, raw, term_names),
         level_label=level_label_for(game),
         badges=badges_for(game, raw),
+        terms=terms,
     )
 
     if game == "hsr":
@@ -138,22 +160,22 @@ def normalize(
         detail.extras = hsr.extras(raw)
     elif game == "gi":
         detail.stats = gi.stats(raw)
-        detail.skills = gi.skills(raw)
-        detail.extras = gi.extras(raw)
+        detail.skills = gi.skills(raw, term_names)
+        detail.extras = gi.extras(raw, term_names)
     elif game == "ww":
         detail.stats = ww.stats(raw)
         if with_build:
             detail.build = ww.build(raw, metadata)
-        detail.skills, extras = ww.skills(raw)
+        detail.skills, extras = ww.skills(raw, term_names)
         detail.extras = extras
     elif game == "zzz":
         detail.stats = zzz.stats(raw)
         if with_build:
             detail.build = zzz.build(raw, metadata)
-        detail.skills = zzz.skills(raw)
-        detail.extras = zzz.extras(raw)
+        detail.skills = zzz.skills(raw, term_names)
+        detail.extras = zzz.extras(raw, term_names)
     elif game == "nte":
         detail.stats = nte.stats(raw)
-        detail.skills = nte.skills(raw)
-        detail.extras = nte.extras(raw)
+        detail.skills = nte.skills(raw, term_names)
+        detail.extras = nte.extras(raw, term_names)
     return detail

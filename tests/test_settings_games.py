@@ -190,6 +190,24 @@ class SettingsGamesTabTests(QtTestCase):
         self.assertFalse(self.settings["single_filter_selection"])
         self.assertEqual(self.filter_selection_changes, [False])
 
+    def test_clicking_a_filter_row_toggles_its_setting(self):
+        self._view_tab()
+        page = self._qml("settingsViewPage")
+        page.setProperty(
+            "contentY", page.property("contentHeight") - page.property("height")
+        )
+        flush()
+
+        row = self._qml("singleFilterRow")
+        title = find_qml_item(row, "cacheRowTitle")
+
+        click_qml(self.popup._qml, title)
+        flush()
+
+        self.assertFalse(self.model.singleFilterSelection)
+        self.assertFalse(self.settings["single_filter_selection"])
+        self.assertEqual(self.filter_selection_changes, [False])
+
     # -- toggling games ----------------------------------------------------
 
     def test_all_games_are_checked_by_default(self):

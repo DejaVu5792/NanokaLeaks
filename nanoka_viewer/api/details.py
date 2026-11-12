@@ -33,6 +33,9 @@ from .cache_info import (
 from .cache_io import directory_size_bytes, write_bytes_atomic
 from .characters import cached_versions
 from .constants import BASE_URL, CACHE_DIR
+from .detail_games import gi as _gi
+from .detail_games import ww as _ww
+from .detail_games import zzz as _zzz
 from .detail_games.hsr import build as _hsr_build
 from .detail_games.ww import build as _ww_build
 from .detail_games.zzz import build as _zzz_build
@@ -322,6 +325,7 @@ def _fetch_metadata_file(
     url: str,
     *,
     refresh: bool = False,
+    record: bool = True,
 ) -> Any:
     cache_key = (game, version, resource_name)
     # Build tables change with each live version, so they keep their own
@@ -371,14 +375,15 @@ def _fetch_metadata_file(
                                 exc,
                             )
                         else:
-                            record_build_cache_write()
+                            if record:
+                                record_build_cache_write()
                         return data
 
         if not refresh and caching and disk_path.exists():
             data = _load_metadata_pickle(disk_path)
             if data is not None:
                 _metadata_cache[cache_key] = data
-                if build_cache_last_cached() <= 0:
+                if record and build_cache_last_cached() <= 0:
                     # Backfill metadata for caches written before the
                     # last-cached record existed.
                     try:
@@ -402,7 +407,8 @@ def _fetch_metadata_file(
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Could not write cached metadata %s: %s", disk_path, exc)
             else:
-                record_build_cache_write()
+                if record:
+                    record_build_cache_write()
         return data
 
 
@@ -443,6 +449,38 @@ def _fetch_metadata(game: str, version: str, raw: dict[str, Any]) -> dict[str, A
             "item": _fetch_metadata_file(game, version, "item", specs["item"])
         }
     return {}
+
+
+def _fetch_detail_text_metadata(
+    game: str, version: str, raw: dict[str, Any]
+) -> dict[str, Any]:
+    """Fetch shared text tables the detail normalizer needs.
+
+    Genshin, Wuthering Waves and ZZZ keep rule-term names and descriptions in
+    a per-version table rather than inside each character payload.  NTE embeds
+    them in the payload itself, so it needs no extra request.
+    """
+    if game == "gi":
+        term_ids = _gi.linked_term_ids(raw)
+        resource, filename = "hyperlink", "hyperlink.json"
+    elif game == "ww":
+        term_ids = _ww.linked_term_ids(raw)
+        resource, filename = "hyperlink", "hyperlink.json"
+    elif game == "zzz":
+        term_ids = _zzz.linked_term_ids(raw)
+        resource, filename = "noun", "noun.json"
+    else:
+        return {}
+    if not term_ids:
+        return {}
+    table = _fetch_metadata_file(
+        game,
+        version,
+        resource,
+        f"{BASE_URL}/{game}/{version}/en/{filename}",
+        record=False,
+    )
+    return {"terms": table or {}}
 
 
 def prefetch_build_metadata(
@@ -626,7 +664,13 @@ def load_character_detail(
             "Could not reach nanoka.cc. Check your connection."
         ) from exc
 
-    detail = _normalize(game, char_id, raw, {}, with_build=False)
+    detail = _normalize(
+        game,
+        char_id,
+        raw,
+        _fetch_detail_text_metadata(game, version, raw),
+        with_build=False,
+    )
     detail.art_url = _art_url(game, char_id, raw)
     detail.source_url = get_character_url(game, char_id, raw)
 

@@ -38,6 +38,7 @@ def make_detail(**overrides) -> CharacterDetail:
         ],
         "skills": [SkillDetail("Basic", "Attack", "Hits.", [("Lv1", "50%")], 3)],
         "extras": [ExtraSection("Passives", [ContentEntry("Trace", "Body")])],
+        "terms": [ContentEntry("Rule Term", "Term body", "term-1")],
         "art_url": "https://example.test/art.png",
     }
     values.update(overrides)
@@ -105,6 +106,16 @@ class DetailsViewModelTests(QtTestCase):
                 }
             ],
         )
+        self.assertEqual(
+            self.model.terms,
+            [{"id": "term-1", "name": "Rule Term", "text": "Term body"}],
+        )
+        # termName() returns just the display name; termTooltip() returns
+        # just the description text (the card renders them separately).
+        self.assertEqual(self.model.termName("term-1"), "Rule Term")
+        self.assertEqual(self.model.termTooltip("term-1"), "Term body")
+        self.assertEqual(self.model.termName("missing"), "")
+        self.assertEqual(self.model.termTooltip("missing"), "")
 
     def test_empty_build_removes_the_card(self):
         self.model.set_detail(make_detail())
@@ -181,6 +192,15 @@ class DetailsViewModelTests(QtTestCase):
 
         self.assertEqual(closed, [1])
         self.assertEqual(retried, [1])
+
+    def test_activating_a_term_emits_its_id(self):
+        self.model.set_detail(make_detail())
+        activated = []
+        self.model.termActivated.connect(activated.append)
+
+        self.model.activateTerm("term-1")
+
+        self.assertEqual(activated, ["term-1"])
 
 
 if __name__ == "__main__":

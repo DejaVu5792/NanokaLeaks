@@ -55,6 +55,9 @@ class DetailsViewModel(QObject):
     closeRequested = Signal()
     retryRequested = Signal()
 
+    # A rule-term link in a description was clicked; the panel scrolls to it.
+    termActivated = Signal(str)
+
     state = Property(str, lambda self: self._state, notify=stateChanged)
     errorMessage = Property(
         str, lambda self: self._error_message, notify=stateChanged
@@ -80,6 +83,9 @@ class DetailsViewModel(QObject):
     )
     extras = Property(
         "QVariantList", lambda self: self._extras, notify=contentChanged
+    )
+    terms = Property(
+        "QVariantList", lambda self: self._terms, notify=contentChanged
     )
 
     buildState = Property(
@@ -119,6 +125,7 @@ class DetailsViewModel(QObject):
         self._stat_rows: list[list[dict]] = []
         self._skills: list[dict] = []
         self._extras: list[dict] = []
+        self._terms: list[dict] = []
         self._build_state = BUILD_HIDDEN
         self._build_rows: list[list[dict]] = []
         self._art_state = ART_HIDDEN
@@ -191,6 +198,14 @@ class DetailsViewModel(QObject):
                 ],
             }
             for section in detail.extras
+        ]
+        self._terms = [
+            {
+                "id": getattr(term, "term_id", ""),
+                "name": term.name,
+                "text": term.text,
+            }
+            for term in getattr(detail, "terms", [])
         ]
 
         # A payload that already carries its build needs no worker thread.
@@ -269,6 +284,37 @@ class DetailsViewModel(QObject):
         self._art_state = ART_UNAVAILABLE
         self._art_message = message
         self.artChanged.emit()
+
+    # -- rule terms --------------------------------------------------------
+
+    @Slot(str, result=str)
+    def termName(self, term_id: str) -> str:  # noqa: N802 - QML calls this
+        """Return the display name of a linked term, or an empty string."""
+        for term in self._terms:
+            if str(term.get("id", "")) != str(term_id):
+                continue
+            return str(term.get("name") or "")
+        return ""
+
+    @Slot(str, result=str)
+    def termTooltip(self, term_id: str) -> str:  # noqa: N802 - QML calls this
+        """Return the description text for a linked term, or an empty string.
+
+        Returns the rich-text description as stored (HTML anchors intact so the
+        card can render it with ``Text.RichText``).  The name is surfaced
+        separately via :meth:`termName` so the card can render them in
+        different styles.
+        """
+        for term in self._terms:
+            if str(term.get("id", "")) != str(term_id):
+                continue
+            return str(term.get("text") or "")
+        return ""
+
+    @Slot(str)
+    def activateTerm(self, term_id: str):  # noqa: N802 - QML calls this name
+        """Ask the panel to reveal the matching Rule Terms entry."""
+        self.termActivated.emit(str(term_id))
 
     # -- actions -----------------------------------------------------------
 

@@ -185,6 +185,51 @@ class SettingsCacheTabTests(QtTestCase):
             self.popup._model.buildsLast, "Last cached: never"
         )
 
+    def test_switch_click_toggles_the_cache_setting(self):
+        row = self._qml("cacheRow-details")
+        box = find_qml_item(row, "cacheCheck")
+        self.assertTrue(box.property("checked"))
+
+        click_qml(self.popup._qml, box)
+        flush()
+
+        self.assertFalse(self.popup._model.cacheDetails)
+        self.assertFalse(self.saved[-1]["cache_character_details"])
+
+    def test_clicking_the_row_title_toggles_the_cache_setting(self):
+        row = self._qml("cacheRow-details")
+        title = find_qml_item(row, "cacheRowTitle")
+
+        click_qml(self.popup._qml, title)
+        flush()
+
+        self.assertFalse(self.popup._model.cacheDetails)
+        self.assertFalse(self.saved[-1]["cache_character_details"])
+
+    def test_preload_button_does_not_toggle_the_row(self):
+        changes = []
+        self.popup._model.cacheSettingChanged.connect(changes.append)
+
+        click_qml(self.popup._qml, self._qml("preloadDetails"))
+
+        self.assertEqual(changes, [])
+        self.assertTrue(self.popup._model.cacheDetails)
+        self.assertEqual(self.manager.started, [PRELOAD_DETAILS])
+
+    def test_disabled_row_does_not_toggle(self):
+        changes = []
+        self.popup._model.cacheSettingChanged.connect(changes.append)
+        self.manager.running = True
+        self.manager.kind = PRELOAD_DETAILS
+        self.popup._sync_preload_state()
+
+        row = self._qml("cacheRow-details")
+        click_qml(self.popup._qml, find_qml_item(row, "cacheRowTitle"))
+        flush()
+
+        self.assertEqual(changes, [])
+        self.assertTrue(self.popup._model.cacheDetails)
+
     def test_checkboxes_are_disabled_while_preloading(self):
         self.manager.running = True
         self.manager.kind = PRELOAD_DETAILS

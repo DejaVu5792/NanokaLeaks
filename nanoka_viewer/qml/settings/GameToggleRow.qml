@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+import ".."
+
 // One game in the Toggle View card: clicking anywhere on the row toggles it.
 Item {
     id: row
@@ -27,25 +29,11 @@ Item {
         anchors.rightMargin: 8
         spacing: 8
 
-        Rectangle {
-            id: indicator
-
+        AppSwitch {
+            objectName: "gameToggleSwitch"
             Layout.alignment: Qt.AlignVCenter
-            implicitWidth: 16
-            implicitHeight: 16
-            radius: 3
-            border.width: 1
-            border.color: row.checked ? palette.highlight : palette.mid
-            color: row.checked ? palette.highlight : "transparent"
-
-            Text {
-                anchors.centerIn: parent
-                visible: row.checked
-                text: "\u2713"
-                color: palette.highlightedText
-                font.pixelSize: 11
-                font.bold: true
-            }
+            checked: row.checked
+            interactive: false
         }
 
         Label {
