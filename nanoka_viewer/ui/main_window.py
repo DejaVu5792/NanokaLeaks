@@ -17,9 +17,12 @@ from pathlib import Path
 from PySide6.QtCore import (
     QByteArray,
     QCoreApplication,
+    QDataStream,
     QEvent,
+    QIODevice,
     QObject,
     Property,
+    QRect,
     QSettings,
     Qt,
     QTimer,
@@ -64,45 +67,108 @@ def _window_settings() -> QSettings:
     return QSettings()
 
 
+# Header of the version-3 blob written by QWidget.saveGeometry():
+# magic number, major version, minor version.
+_GEOMETRY_MAGIC = 0x1D9D0CB
+_GEOMETRY_MAJOR_VERSION = 3
+
+
+def _read_rect(stream: QDataStream) -> QRect:
+    """Read a ``QRect`` serialised by a ``Qt_4_0`` data stream."""
+    left = stream.readInt32()
+    top = stream.readInt32()
+    right = stream.readInt32()
+    bottom = stream.readInt32()
+    return QRect(left, top, right - left + 1, bottom - top + 1)
+
+
+def _write_rect(stream: QDataStream, rect: QRect) -> None:
+    """Write *rect* in the format used by a ``Qt_4_0`` data stream."""
+    stream.writeInt32(rect.left())
+    stream.writeInt32(rect.top())
+    stream.writeInt32(rect.right())
+    stream.writeInt32(rect.bottom())
+
+
+def _without_window_state(geometry: QByteArray) -> QByteArray:
+    """Drop the maximised/fullscreen flags from a ``saveGeometry`` blob.
+
+    ``saveGeometry`` stores the normal geometry as a separate rect and also
+    records the maximised/fullscreen flags, which ``restoreGeometry``
+    reapplies.  Clearing the state after restoring is not reliable (on
+    Wayland the window falls back to the size it had before the restore), so
+    the blob is rewritten instead: both flags are cleared and the normal rect
+    becomes the geometry ``restoreGeometry`` restores.  Qt still applies its
+    off-screen correction to that geometry.
+    """
+    stream = QDataStream(geometry)
+    stream.setVersion(QDataStream.Qt_4_0)
+    if stream.readUInt32() != _GEOMETRY_MAGIC:
+        return geometry
+    major = stream.readUInt16()
+    minor = stream.readUInt16()
+    # Version 3 is the first one that stores the current geometry separately;
+    # older blobs cannot be rewritten safely.
+    if major < _GEOMETRY_MAJOR_VERSION:
+        return geometry
+
+    frame = _read_rect(stream)
+    normal = _read_rect(stream)
+    screen_number = stream.readInt32()
+    maximized = stream.readUInt8()
+    fullscreen = stream.readUInt8()
+    screen_width = stream.readInt32()
+    _read_rect(stream)  # current geometry, unused
+
+    if stream.status() != QDataStream.Status.Ok:
+        return geometry
+    if not (maximized or fullscreen) or not normal.isValid():
+        return geometry
+
+    rewritten = QByteArray()
+    writer = QDataStream(rewritten, QIODevice.WriteOnly)
+    writer.setVersion(QDataStream.Qt_4_0)
+    writer.writeUInt32(_GEOMETRY_MAGIC)
+    writer.writeUInt16(major)
+    writer.writeUInt16(minor)
+    _write_rect(writer, frame)
+    _write_rect(writer, normal)
+    writer.writeInt32(screen_number)
+    writer.writeUInt8(0)  # maximised
+    writer.writeUInt8(0)  # fullscreen
+    writer.writeInt32(screen_width)
+    _write_rect(writer, normal)
+    return rewritten if writer.status() == QDataStream.Status.Ok else geometry
+
+
 def restore_window_geometry(window: QWidget) -> bool:
     """Restore the window's last normal (unmaximised) size and position.
 
-    ``saveGeometry`` records the normal geometry together with the
-    maximised/fullscreen flag, and ``restoreGeometry`` reapplies that flag.
-    The viewer deliberately drops it: closing while maximised should still
-    remember the size and position the window had before it was maximised.
-    Restoring first and clearing the state afterwards leaves the window at
-    exactly that normal geometry, with ``restoreGeometry``'s off-screen
-    correction still applied.  Returns whether a saved geometry was applied.
+    The stored blob records the normal geometry alongside the current window
+    state; :func:`_without_window_state` strips the state so a window closed
+    while maximised still reopens at the size and position it had before it
+    was maximised.  Returns whether a saved geometry was applied.
     """
     geometry = _window_settings().value(_WINDOW_GEOMETRY_KEY)
     if isinstance(geometry, QByteArray):
         if geometry.isEmpty():
             return False
-        restored = bool(window.restoreGeometry(geometry))
-    elif isinstance(geometry, (bytes, bytearray)):
+        return bool(window.restoreGeometry(_without_window_state(geometry)))
+    if isinstance(geometry, (bytes, bytearray)):
         if not geometry:
             return False
-        restored = bool(window.restoreGeometry(QByteArray(geometry)))
-    else:
-        return False
-
-    if restored:
-        window.setWindowState(
-            window.windowState() & ~(Qt.WindowMaximized | Qt.WindowFullScreen)
-        )
-    return restored
+        blob = _without_window_state(QByteArray(geometry))
+        return bool(window.restoreGeometry(blob))
+    return False
 
 
 def save_window_geometry(window: QWidget) -> None:
-    """Persist *window*'s geometry for the next session.
-
-    The stored blob also carries the maximised/fullscreen flag, but
-    :func:`restore_window_geometry` ignores it so only the normal geometry is
-    remembered.
-    """
+    """Persist *window*'s normal (unmaximised) size and position."""
     settings = _window_settings()
-    settings.setValue(_WINDOW_GEOMETRY_KEY, window.saveGeometry())
+    blob = window.saveGeometry()
+    if window.windowState() & (Qt.WindowMaximized | Qt.WindowFullScreen):
+        blob = _without_window_state(blob)
+    settings.setValue(_WINDOW_GEOMETRY_KEY, blob)
     settings.sync()
 
 

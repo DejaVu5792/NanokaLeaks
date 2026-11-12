@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QByteArray, QDataStream, QSettings
 from PySide6.QtWidgets import QMainWindow
 
 from support import QtTestCase, flush
@@ -70,6 +70,21 @@ class WindowGeometryTests(QtTestCase):
         flush()
         return window
 
+    def _saved_window_state(self):
+        data = self.settings.value(main_window._WINDOW_GEOMETRY_KEY)
+        self.assertIsInstance(data, QByteArray)
+        stream = QDataStream(data)
+        stream.setVersion(QDataStream.Qt_4_0)
+        self.assertEqual(stream.readUInt32(), main_window._GEOMETRY_MAGIC)
+        stream.readUInt16()
+        stream.readUInt16()
+        main_window._read_rect(stream)  # frame geometry
+        normal = main_window._read_rect(stream)
+        stream.readInt32()  # screen number
+        maximized = stream.readUInt8()
+        fullscreen = stream.readUInt8()
+        return normal, maximized, fullscreen
+
     def test_maximised_state_is_not_remembered(self):
         original = self._shown_window(720, 560)
         original.showMaximized()
@@ -92,6 +107,31 @@ class WindowGeometryTests(QtTestCase):
         reopened = self._window(500, 400)
         self.assertTrue(main_window.restore_window_geometry(reopened))
         self.assertFalse(reopened.isFullScreen())
+        self.assertEqual((reopened.width(), reopened.height()), (720, 560))
+
+    def test_maximised_geometry_is_saved_as_normal(self):
+        original = self._shown_window(720, 560)
+        original.showMaximized()
+        flush()
+        main_window.save_window_geometry(original)
+
+        normal, maximized, fullscreen = self._saved_window_state()
+        self.assertEqual((maximized, fullscreen), (0, 0))
+        self.assertEqual((normal.width(), normal.height()), (720, 560))
+
+    def test_maximised_blob_from_an_older_version_restores_unmaximised(self):
+        original = self._shown_window(720, 560)
+        original.showMaximized()
+        flush()
+        # Before the fix the viewer stored saveGeometry() untouched.
+        self.settings.setValue(
+            main_window._WINDOW_GEOMETRY_KEY, original.saveGeometry()
+        )
+        self.settings.sync()
+
+        reopened = self._window(500, 400)
+        self.assertTrue(main_window.restore_window_geometry(reopened))
+        self.assertFalse(reopened.isMaximized())
         self.assertEqual((reopened.width(), reopened.height()), (720, 560))
 
 
