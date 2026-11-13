@@ -29,6 +29,7 @@ _CONFIG_HOME = os.environ.get("XDG_CONFIG_HOME")
 CONFIG_DIR = Path(_CONFIG_HOME) if _CONFIG_HOME else Path.home() / ".config"
 SETTINGS_DIR = CONFIG_DIR / "nanoka_leaks"
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+WINDOW_SETTINGS_FILE = SETTINGS_DIR / "window.ini"
 
 # The game list lives in the API package, which itself imports this module.
 # Resolve it lazily so importing ``nanoka_viewer.settings`` on its own never

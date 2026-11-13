@@ -53,10 +53,9 @@ _DETACHED_THREADS = set()
 
 PALETTE_CHANGE_EVENT = QEvent.Type.PaletteChange
 
-# Window geometry is kept in QSettings, which maps to the native store on each
-# platform (registry on Windows, plist on macOS, an INI file elsewhere).  The
-# separate key also leaves behind the old ``window/geometry`` value, which may
-# hold a maximised size written before the normal geometry was tracked.
+# Window geometry is persisted in an INI file through QSettings under the
+# application's existing settings directory (SETTINGS_DIR / "window.ini"),
+# avoiding an extra ~/.config/ subfolder.
 _WINDOW_GEOMETRY_KEY = "window/normal-geometry"
 
 # On Wayland the compositor resizes the surface to the maximised geometry
@@ -65,14 +64,52 @@ _WINDOW_GEOMETRY_KEY = "window/normal-geometry"
 _NORMAL_GEOMETRY_DEBOUNCE_MS = 150
 
 
+def _migrate_legacy_window_settings() -> None:
+    """Migrate window settings from legacy ~/.config/NanokaLeaks if present."""
+    try:
+        from .. import settings as app_settings
+
+        legacy_dir = app_settings.CONFIG_DIR / "NanokaLeaks"
+        legacy_file = legacy_dir / "NanokaLeaks.conf"
+        if not legacy_file.is_file():
+            return
+        target = app_settings.SETTINGS_DIR / "window.ini"
+        if not target.is_file():
+            legacy_settings = QSettings(
+                str(legacy_file), QSettings.Format.IniFormat
+            )
+            val = legacy_settings.value(_WINDOW_GEOMETRY_KEY)
+            if val is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                new_settings = QSettings(
+                    str(target), QSettings.Format.IniFormat
+                )
+                new_settings.setValue(_WINDOW_GEOMETRY_KEY, val)
+                new_settings.sync()
+        try:
+            legacy_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
+            legacy_dir.rmdir()
+        except OSError:
+            pass
+    except Exception:
+        logger.debug("Could not migrate legacy window settings", exc_info=True)
+
+
 def _window_settings() -> QSettings:
     """Return the store used for geometry and other window state.
 
-    ``_run_app`` sets the organisation and application names, so the default
-    ``QSettings`` constructor resolves the per-application native location.
+    The window state is stored under ``nanoka_viewer.settings.SETTINGS_DIR``
+    so it shares the existing configuration directory with ``settings.json``.
     Tests replace this helper to redirect the store into a temporary file.
     """
-    return QSettings()
+    _migrate_legacy_window_settings()
+    from .. import settings as app_settings
+
+    target = app_settings.SETTINGS_DIR / "window.ini"
+    return QSettings(str(target), QSettings.Format.IniFormat)
 
 
 # Header of the version-3 blob written by QWidget.saveGeometry():
@@ -889,9 +926,6 @@ def _run_app(argv, *, smoke_test=False):
     app = QApplication(argv if argv else sys.argv)
     app.setStyle("Fusion")
     app.setApplicationName("NanokaLeaks")
-    # QSettings uses both names to pick the per-user, native configuration
-    # location where the window geometry is persisted.
-    app.setOrganizationName("NanokaLeaks")
     # Match the installed desktop entry and give KWin the icon through
     # xdg_toplevel_icon_v1, which Wayland compositors use for titlebars.
     app.setDesktopFileName("nanokaleaks")

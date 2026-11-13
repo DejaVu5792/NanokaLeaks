@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from PySide6.QtCore import QByteArray, QDataStream, QRect, QSettings
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import QMainWindow
 from support import QtTestCase, flush
 
 import nanoka_viewer.ui.main_window as main_window
+from nanoka_viewer import settings as app_settings
 
 
 def saved_window_state(settings: QSettings):
@@ -213,6 +215,77 @@ class ViewerNormalGeometryTests(QtTestCase):
         normal, maximized, fullscreen = saved_window_state(self.settings)
         self.assertEqual((maximized, fullscreen), (0, 0))
         self.assertEqual((normal.width(), normal.height()), expected)
+
+
+class WindowSettingsLocationTests(QtTestCase):
+    def setUp(self):
+        super().setUp()
+        self._temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp.cleanup)
+        self.config_dir = Path(self._temp.name) / ".config"
+        self.settings_dir = self.config_dir / "nanoka_leaks"
+        self.config_dir.mkdir(parents=True)
+        self.settings_dir.mkdir(parents=True)
+
+        self._patches = [
+            patch.object(app_settings, "CONFIG_DIR", self.config_dir),
+            patch.object(app_settings, "SETTINGS_DIR", self.settings_dir),
+            patch.object(
+                app_settings,
+                "WINDOW_SETTINGS_FILE",
+                self.settings_dir / "window.ini",
+            ),
+        ]
+        for p in self._patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_default_window_settings_uses_existing_settings_dir(self):
+        settings = main_window._window_settings()
+        self.assertEqual(
+            Path(settings.fileName()).resolve(),
+            (self.settings_dir / "window.ini").resolve(),
+        )
+        self.assertFalse((self.config_dir / "NanokaLeaks").exists())
+
+    def test_legacy_window_settings_migration(self):
+        legacy_dir = self.config_dir / "NanokaLeaks"
+        legacy_dir.mkdir(parents=True)
+        legacy_file = legacy_dir / "NanokaLeaks.conf"
+
+        legacy_settings = QSettings(
+            str(legacy_file), QSettings.Format.IniFormat
+        )
+        legacy_settings.setValue(
+            main_window._WINDOW_GEOMETRY_KEY, QByteArray(b"legacy_geometry")
+        )
+        legacy_settings.sync()
+        self.assertTrue(legacy_file.is_file())
+
+        settings = main_window._window_settings()
+        self.assertEqual(
+            settings.value(main_window._WINDOW_GEOMETRY_KEY),
+            QByteArray(b"legacy_geometry"),
+        )
+        self.assertFalse(legacy_file.exists())
+        self.assertFalse(legacy_dir.exists())
+
+    def test_saving_window_geometry_does_not_create_nanokaleaks_subfolder(self):
+        window = QMainWindow()
+        window.resize(720, 560)
+        self.addCleanup(window.deleteLater)
+
+        main_window.save_window_geometry(window)
+
+        self.assertTrue((self.settings_dir / "window.ini").is_file())
+        self.assertFalse((self.config_dir / "NanokaLeaks").exists())
+
+        restored_settings = QSettings(
+            str(self.settings_dir / "window.ini"), QSettings.Format.IniFormat
+        )
+        self.assertIn(
+            main_window._WINDOW_GEOMETRY_KEY, restored_settings.allKeys()
+        )
 
 
 if __name__ == "__main__":
