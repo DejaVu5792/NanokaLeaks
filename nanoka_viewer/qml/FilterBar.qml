@@ -44,6 +44,11 @@ Rectangle {
         }
 
         Item {
+            width: 6
+            height: 1
+        }
+
+        Item {
             id: selectAll
 
             width: 24
