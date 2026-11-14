@@ -44,8 +44,11 @@ IGNORED_KEYS = frozenset({"", "None", "Unknown"})
 
 # Genshin's Traveler avatars report no element, which the card helper maps to
 # its "Physical" fallback.  Physical is not a Genshin element, so it must not
-# become a filter entry.
-EXCLUDED_CATEGORIES = {"gi": frozenset({"Physical"})}
+# become a filter entry.  The same avatars report a placeholder crossbow, which
+# no playable Genshin character uses.
+EXCLUDED_CATEGORIES = {
+    "gi": frozenset({"Physical", "Crossbow"}),
+}
 
 
 def _category(key: str, icon: str) -> dict[str, str]:
@@ -244,13 +247,15 @@ class FilterModel(QAbstractListModel):
 
     @Slot(str)
     def setMode(self, mode: str):
-        """Switch between the element and weapon catalogs."""
+        """Switch catalogs, selecting every filter in the new mode."""
         if mode not in MODES or mode == self._mode:
             return
         if not self._categories[mode]:
             return
         self.beginResetModel()
         self._mode = mode
+        for key in self._enabled[mode]:
+            self._enabled[mode][key] = True
         self.endResetModel()
         self.modeChanged.emit()
         self.stateChanged.emit()

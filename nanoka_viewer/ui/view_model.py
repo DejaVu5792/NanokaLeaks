@@ -269,9 +269,9 @@ class Section(QObject):
     def _sync_filter_categories(self, *_args) -> None:
         """Add categories the loaded cards revealed beyond the static catalog.
 
-        Catalog data can lag behind the API (a new element, GI's crossbow
-        users).  Every card with a usable icon therefore contributes its own
-        category, so filtering can never hide a card behind a missing toggle.
+        Catalog data can lag behind the API (a new element or weapon).  Every
+        card with a usable icon therefore contributes its own category, so
+        filtering can never hide a card behind a missing toggle.
         """
         elements = []
         weapons = []

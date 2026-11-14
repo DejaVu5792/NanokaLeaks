@@ -60,7 +60,10 @@ class FilterCatalogTests(unittest.TestCase):
                 "Elation",
             ],
         )
-        self.assertIn("Sword", _keys(weapon_catalog("gi")))
+        self.assertEqual(
+            _keys(weapon_catalog("gi")),
+            ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"],
+        )
         self.assertIn("Broadblade", _keys(weapon_catalog("ww")))
         self.assertIn("Attack", _keys(weapon_catalog("zzz")))
 
@@ -146,20 +149,24 @@ class FilterModelTests(QtTestCase):
         self.assertFalse(self.model.allEnabled)
         self.assertEqual(self.model.enabled_keys(), set())
 
-    def test_mode_switch_preserves_each_catalog_selection(self):
+    def test_mode_switch_selects_all_filters_in_the_new_mode(self):
         self.model.toggle("Fire")
         self.model.setMode(MODE_WEAPON)
 
         self.assertEqual(self.model.mode, MODE_WEAPON)
         self.assertTrue(self.model.allEnabled)
-        self.assertIn("Destruction", self.model.enabled_keys())
+        self.assertEqual(
+            self.model.enabled_keys(), set(self.model.keys())
+        )
 
         self.model.toggle("The Hunt")
-        self.assertEqual(self.model.enabled_keys(), {"The Hunt"})
+        self.assertFalse(self.model.allEnabled)
         self.model.setMode(MODE_ELEMENT)
 
-        self.assertEqual(self.model.enabled_keys(), {"Fire"})
-        self.assertNotIn("Physical", self.model.enabled_keys())
+        self.assertTrue(self.model.allEnabled)
+        self.assertEqual(
+            self.model.enabled_keys(), set(self.model.keys())
+        )
 
     def test_mode_switch_stays_on_elements_without_a_weapon_catalog(self):
         model = FilterModel("nte")
@@ -201,6 +208,82 @@ class FilterModelTests(QtTestCase):
         )
 
         self.assertNotIn("Physical", model.keys())
+
+
+class GenshinWeaponFilterTests(QtTestCase):
+    """GI cards report raw weapon codes; the filters use display names."""
+
+    def _filters_for(self, chars):
+        source = CharacterModel("gi")
+        self.addCleanup(source.deleteLater)
+        source.append_many(
+            (char_id, data, False) for char_id, data in chars.items()
+        )
+        filters = FilterModel("gi")
+        self.addCleanup(filters.deleteLater)
+        filters.add_categories(
+            MODE_WEAPON,
+            [
+                {"key": specialty, "icon": icon}
+                for _, _, specialty, icon in source.filter_values()
+            ],
+        )
+        return source, filters
+
+    def test_weapon_categories_merge_without_duplicates(self):
+        _, filters = self._filters_for(
+            {
+                "10000002": {
+                    "en": "Kamisato Ayaka",
+                    "element": "Cryo",
+                    "weapon": "WEAPON_SWORD_ONE_HAND",
+                }
+            }
+        )
+
+        self.assertEqual(
+            filters.keys(MODE_WEAPON),
+            ["Sword", "Claymore", "Polearm", "Bow", "Catalyst"],
+        )
+
+    def test_sword_filter_matches_the_sword_card(self):
+        source, filters = self._filters_for(
+            {
+                "10000002": {
+                    "en": "Kamisato Ayaka",
+                    "element": "Cryo",
+                    "weapon": "WEAPON_SWORD_ONE_HAND",
+                }
+            }
+        )
+        filters.setMode(MODE_WEAPON)
+        filters.setAllEnabled(False)
+        filters.toggle("Sword")
+        proxy = CharacterFilterProxy(
+            source,
+            filters,
+            element_role=CharacterModel.ElementRole,
+            weapon_role=CharacterModel.SpecialtyRole,
+        )
+        self.addCleanup(proxy.deleteLater)
+
+        ids = [
+            proxy.data(proxy.index(row, 0), CharacterModel.CharIdRole)
+            for row in range(proxy.rowCount())
+        ]
+        self.assertEqual(ids, ["10000002"])
+
+    def test_traveler_crossbow_is_not_a_filter(self):
+        _, filters = self._filters_for(
+            {
+                "10000134": {
+                    "en": "Traveler",
+                    "weapon": "WEAPON_CROSSBOW",
+                }
+            }
+        )
+
+        self.assertNotIn("Crossbow", filters.keys(MODE_WEAPON))
 
 
 class CharacterFilterProxyTests(QtTestCase):

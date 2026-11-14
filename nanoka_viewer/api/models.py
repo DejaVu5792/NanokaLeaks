@@ -3,6 +3,7 @@
 from .constants import BASE_URL, GAMES
 from .game_data import (
     GI_ELEMENTS,
+    GI_WEAPONS,
     HSR_PATHS,
     WW_ELEMENT_ICONS,
     WW_ELEMENTS,
@@ -156,7 +157,13 @@ def get_specialty(game, char_data):
         base_type = char_data.get("baseType", "Unknown")
         return HSR_PATHS.get(base_type, base_type)
     elif game == "gi":
-        return char_data.get("weapon", "Unknown")
+        weapon = str(char_data.get("weapon") or "")
+        if not weapon:
+            return "Unknown"
+        return GI_WEAPONS.get(
+            weapon,
+            weapon.removeprefix("WEAPON_").replace("_", " ").title(),
+        )
     elif game == "ww":
         return WW_WEAPONS.get(char_data.get("weapon", 1), "Unknown")
     elif game == "nte":
