@@ -247,13 +247,15 @@ class FilterModel(QAbstractListModel):
 
     @Slot(str)
     def setMode(self, mode: str):
-        """Switch between the element and weapon catalogs."""
+        """Switch catalogs, selecting every filter in the new mode."""
         if mode not in MODES or mode == self._mode:
             return
         if not self._categories[mode]:
             return
         self.beginResetModel()
         self._mode = mode
+        for key in self._enabled[mode]:
+            self._enabled[mode][key] = True
         self.endResetModel()
         self.modeChanged.emit()
         self.stateChanged.emit()

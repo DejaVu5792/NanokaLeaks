@@ -149,20 +149,24 @@ class FilterModelTests(QtTestCase):
         self.assertFalse(self.model.allEnabled)
         self.assertEqual(self.model.enabled_keys(), set())
 
-    def test_mode_switch_preserves_each_catalog_selection(self):
+    def test_mode_switch_selects_all_filters_in_the_new_mode(self):
         self.model.toggle("Fire")
         self.model.setMode(MODE_WEAPON)
 
         self.assertEqual(self.model.mode, MODE_WEAPON)
         self.assertTrue(self.model.allEnabled)
-        self.assertIn("Destruction", self.model.enabled_keys())
+        self.assertEqual(
+            self.model.enabled_keys(), set(self.model.keys())
+        )
 
         self.model.toggle("The Hunt")
-        self.assertEqual(self.model.enabled_keys(), {"The Hunt"})
+        self.assertFalse(self.model.allEnabled)
         self.model.setMode(MODE_ELEMENT)
 
-        self.assertEqual(self.model.enabled_keys(), {"Fire"})
-        self.assertNotIn("Physical", self.model.enabled_keys())
+        self.assertTrue(self.model.allEnabled)
+        self.assertEqual(
+            self.model.enabled_keys(), set(self.model.keys())
+        )
 
     def test_mode_switch_stays_on_elements_without_a_weapon_catalog(self):
         model = FilterModel("nte")
