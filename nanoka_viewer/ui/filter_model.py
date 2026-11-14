@@ -44,8 +44,11 @@ IGNORED_KEYS = frozenset({"", "None", "Unknown"})
 
 # Genshin's Traveler avatars report no element, which the card helper maps to
 # its "Physical" fallback.  Physical is not a Genshin element, so it must not
-# become a filter entry.
-EXCLUDED_CATEGORIES = {"gi": frozenset({"Physical"})}
+# become a filter entry.  The same avatars report a placeholder crossbow, which
+# no playable Genshin character uses.
+EXCLUDED_CATEGORIES = {
+    "gi": frozenset({"Physical", "Crossbow"}),
+}
 
 
 def _category(key: str, icon: str) -> dict[str, str]:

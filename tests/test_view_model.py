@@ -113,6 +113,32 @@ class CharacterModelTests(QtTestCase):
         )
         self.assertIs(model.data(index, CharacterModel.IsNewRole), False)
 
+    def test_genshin_weapon_codes_are_shown_as_names(self):
+        model = CharacterModel("gi")
+        self.addCleanup(model.deleteLater)
+        model.append_many(
+            [
+                (
+                    "10000002",
+                    {
+                        "en": "Kamisato Ayaka",
+                        "element": "Cryo",
+                        "weapon": "WEAPON_SWORD_ONE_HAND",
+                    },
+                    False,
+                )
+            ]
+        )
+
+        index = model.index(0, 0)
+        self.assertEqual(
+            model.data(index, CharacterModel.SpecialtyRole), "Sword"
+        )
+        self.assertEqual(
+            model.data(index, CharacterModel.SpecialtyImageRole),
+            "https://static.nanoka.cc/assets/gi/WEAPON_SWORD_ONE_HAND.webp",
+        )
+
     def test_append_many_is_one_insertion(self):
         model = self._model()
         insertions = []
