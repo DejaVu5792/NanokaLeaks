@@ -55,15 +55,19 @@ Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: 4
-                color: selectAllHover.hovered
-                    ? palette.alternateBase : "transparent"
+                color: selectAll.active
+                    ? palette.highlight
+                    : (selectAllHover.hovered
+                        ? palette.alternateBase : "transparent")
             }
 
             Text {
                 anchors.centerIn: parent
+                // The asterisk glyph sits near the top of its line box.
+                anchors.verticalCenterOffset: 3
                 text: "*"
                 color: selectAll.active
-                    ? palette.highlight : palette.placeholderText
+                    ? palette.highlightedText : palette.placeholderText
                 font.pixelSize: 16
                 font.bold: true
             }
@@ -109,8 +113,10 @@ Rectangle {
                         anchors.fill: parent
                         anchors.margins: 1
                         radius: 4
-                        color: categoryHover.hovered
-                            ? palette.alternateBase : "transparent"
+                        color: category.model.enabled && !bar.filters.allEnabled
+                            ? palette.highlight
+                            : (categoryHover.hovered
+                                ? palette.alternateBase : "transparent")
                     }
 
                     IconBadge {
