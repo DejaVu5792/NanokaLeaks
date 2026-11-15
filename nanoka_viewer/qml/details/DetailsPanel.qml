@@ -20,6 +20,12 @@ Item {
     // corners.
     property int cornerRadius: 10
 
+    // Content offsets from before each rule-term jump.  The newest entry is
+    // popped by the Back button; the array is reassigned on every change so
+    // canGoBack's binding re-evaluates.
+    property var scrollHistory: []
+    readonly property bool canGoBack: scrollHistory.length > 0
+
     // Scroll to the Rule Terms entry *termId* and briefly flash it.
     function revealTerm(termId) {
         var wanted = String(termId)
@@ -32,11 +38,32 @@ Item {
             var point = item.mapToItem(contentColumn, 0, 0)
             var top = point.y + contentColumn.y
             var maxY = Math.max(0, scroll.contentHeight - scroll.height)
-            scroll.contentY = Math.max(0, Math.min(top - 12, maxY))
+            var target = Math.max(0, Math.min(top - 12, maxY))
+            // Only record a jump that actually moves the page, so repeated
+            // clicks on an already visible term do not fill the history.
+            if (Math.abs(target - scroll.contentY) > 0.5) {
+                scrollHistory = scrollHistory.concat([scroll.contentY])
+                scroll.contentY = target
+            }
             if (item.flash)
                 item.flash()
             return
         }
+    }
+
+    // Return to the scroll position saved before the last term jump.
+    function goBack() {
+        if (scrollHistory.length === 0)
+            return
+        var previous = scrollHistory[scrollHistory.length - 1]
+        scrollHistory = scrollHistory.slice(0, -1)
+        scroll.contentY = previous
+    }
+
+    Shortcut {
+        sequence: "Alt+Left"
+        enabled: panel.canGoBack
+        onActivated: panel.goBack()
     }
 
     // -- header -----------------------------------------------------------
@@ -63,6 +90,17 @@ Item {
             anchors.leftMargin: 16
             anchors.rightMargin: 12
             spacing: 10
+
+            AppButton {
+                objectName: "detailsBackButton"
+                text: "Back"
+                small: true
+                visible: panel.canGoBack
+                ToolTip.text: "Back to where you were (Alt+Left)"
+                ToolTip.visible: hovered
+                ToolTip.delay: 600
+                onClicked: panel.goBack()
+            }
 
             Item { Layout.fillWidth: true }
 
@@ -511,6 +549,7 @@ Item {
 
         function onStateChanged() {
             scroll.contentY = 0
+            panel.scrollHistory = []
         }
 
         function onTermActivated(termId) {
