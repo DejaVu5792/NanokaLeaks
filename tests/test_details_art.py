@@ -11,13 +11,24 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
+from unittest.mock import patch
 
-from PySide6.QtCore import QBuffer, QIODevice, QPointF, QSize
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtCore import (
+    QBuffer,
+    QEvent,
+    QIODevice,
+    QPoint,
+    QPointF,
+    QSize,
+    Qt,
+)
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QWheelEvent
+from PySide6.QtWidgets import QApplication
 
 from support import (
     SAMPLE_DETAIL,
     QtTestCase,
+    click_qml,
     find_qml_item,
     flush,
     make_details_host,
@@ -53,8 +64,10 @@ def make_banded_png(width: int = 100, height: int = 400) -> bytes:
 
 
 class ArtworkTests(QtTestCase):
-    def _open_with_art(self):
-        details_ui.load_character_art = lambda url: make_banded_png()
+    def _open_with_art(self, art_bytes=None):
+        details_ui.load_character_art = lambda url: (
+            art_bytes if art_bytes is not None else make_banded_png()
+        )
         details_ui.load_character_detail = lambda game, char_id: replace(
             SAMPLE_DETAIL, art_url=ART_URL
         )
@@ -97,6 +110,51 @@ class ArtworkTests(QtTestCase):
             6,
             f"{message}: got {actual.name()}, expected {expected}",
         )
+
+    def _point_in(self, popup, item, x, y):
+        point = item.mapToItem(popup._qml.rootObject(), x, y)
+        return QPoint(round(point.x()), round(point.y()))
+
+    def _send_mouse(self, popup, kind, point, buttons, button):
+        event = QMouseEvent(
+            kind,
+            QPointF(point),
+            QPointF(popup._qml.mapToGlobal(point)),
+            button,
+            buttons,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(popup._qml, event)
+        flush(2)
+
+    def _drag(self, popup, item, start, dx, dy, steps=6):
+        left = Qt.MouseButton.LeftButton
+        none = Qt.MouseButton.NoButton
+        end = QPoint(start.x() + dx, start.y() + dy)
+        self._send_mouse(popup, QEvent.Type.MouseButtonPress, start, left, left)
+        for step in range(1, steps + 1):
+            point = QPoint(
+                round(start.x() + dx * step / steps),
+                round(start.y() + dy * step / steps),
+            )
+            self._send_mouse(popup, QEvent.Type.MouseMove, point, left, none)
+        self._send_mouse(popup, QEvent.Type.MouseButtonRelease, end, none, left)
+        wait(40)
+
+    def _wheel(self, popup, item, delta=120):
+        point = self._point_in(popup, item, item.width() / 2, item.height() / 2)
+        event = QWheelEvent(
+            QPointF(point),
+            QPointF(popup._qml.mapToGlobal(point)),
+            QPoint(0, 0),
+            QPoint(0, delta),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,
+        )
+        QApplication.sendEvent(popup._qml, event)
+        flush()
 
     def test_art_is_cover_cropped_and_keeps_the_top(self):
         popup = self._open_with_art()
@@ -200,6 +258,159 @@ class ArtworkTests(QtTestCase):
         flush()
         wait(80)
         self.assertEqual(popup._model.artState, "unavailable")
+
+    def test_drag_pans_artwork_and_reset_restores_the_crop(self):
+        popup = self._open_with_art()
+        art = self._find(popup, "detailArt")
+        drag = self._find(popup, "detailArtDrag")
+        reset = self._find(popup, "detailArtReset")
+
+        original = (art.x(), art.y())
+        self.assertFalse(
+            reset.isVisible(),
+            "the reset button must stay hidden until the artwork moves",
+        )
+
+        # Start in the upper part of the column: the bottom is the selectable
+        # name/meta overlay, which owns drags there.
+        start = self._point_in(popup, drag, drag.width() / 2, drag.height() * 0.2)
+        self._drag(popup, drag, start, 0, -120)
+
+        self.assertLess(
+            art.y(), original[1], "dragging up must move the artwork up"
+        )
+        self.assertTrue(
+            reset.isVisible(),
+            "a moved artwork must expose the reset button",
+        )
+
+        click_qml(popup._qml, reset)
+        flush()
+        self.assertEqual((art.x(), art.y()), original)
+        self.assertFalse(
+            reset.isVisible(),
+            "the reset button must disappear again after resetting",
+        )
+
+    def test_wheel_zooms_artwork_and_reset_restores_the_crop(self):
+        popup = self._open_with_art()
+        art = self._find(popup, "detailArt")
+        drag = self._find(popup, "detailArtDrag")
+        reset = self._find(popup, "detailArtReset")
+
+        original = (art.x(), art.y(), art.width(), art.height())
+
+        # Wheel down at the minimum zoom is a no-op, so nothing to reset.
+        self._wheel(popup, drag, -120)
+        self.assertEqual(
+            (art.x(), art.y(), art.width(), art.height()), original
+        )
+        self.assertFalse(reset.isVisible())
+
+        self._wheel(popup, drag, 240)
+        self.assertGreater(art.width(), original[2], "the artwork must grow")
+        self.assertGreater(art.height(), original[3], "the artwork must grow")
+        self.assertTrue(
+            reset.isVisible(),
+            "a zoomed artwork must expose the reset button",
+        )
+
+        click_qml(popup._qml, reset)
+        flush()
+        self.assertEqual((art.x(), art.y(), art.width(), art.height()), original)
+        self.assertFalse(reset.isVisible())
+
+    def test_new_artwork_starts_from_its_default_crop(self):
+        popup = self._open_with_art()
+        drag = self._find(popup, "detailArtDrag")
+        reset = self._find(popup, "detailArtReset")
+
+        self._wheel(popup, drag, 240)
+        self.assertTrue(reset.isVisible())
+        old_source = popup._model.artSource
+
+        popup.open_character("hsr", "2")
+        wait_for(
+            lambda: popup._art_thread is None
+            and popup._model.artState == "ready"
+            and popup._model.artSource != old_source,
+            timeout=4000,
+            message="the second character's artwork never loaded",
+        )
+        wait(80)
+
+        frame = self._find(popup, "detailArtFrame")
+        self.assertEqual(frame.property("zoom"), 1.0)
+        self.assertFalse(
+            reset.isVisible(),
+            "a new character must not inherit the previous zoom/pan",
+        )
+
+    def test_reset_returns_to_the_smart_centered_crop(self):
+        # A square artwork is wider than the column once it covers it, so the
+        # centroid can actually shift the crop.
+        with (
+            patch.object(details_ui, "get_setting", return_value=True),
+            patch.object(details_ui, "detail_centroid_x", return_value=0.2),
+        ):
+            popup = self._open_with_art(make_banded_png(400, 400))
+
+        art = self._find(popup, "detailArt")
+        drag = self._find(popup, "detailArtDrag")
+        reset = self._find(popup, "detailArtReset")
+        frame_width = round(popup.panel_rect().width() * 0.25)
+        centred_x = round(frame_width / 2 - 0.5 * art.width())
+        smart_x = round(frame_width / 2 - 0.2 * art.width())
+
+        self.assertAlmostEqual(popup._model.artFocusX, 0.2)
+        self.assertAlmostEqual(
+            art.x(),
+            smart_x,
+            delta=1,
+            msg="the default crop must follow the detail centroid",
+        )
+        self.assertGreater(
+            abs(art.x() - centred_x),
+            5,
+            "the fixture must make the smart crop differ from the centre",
+        )
+
+        start = self._point_in(popup, drag, drag.width() / 2, drag.height() * 0.2)
+        self._drag(popup, drag, start, 100, 0)
+        self.assertNotEqual(art.x(), smart_x)
+
+        click_qml(popup._qml, reset)
+        flush()
+        self.assertAlmostEqual(
+            art.x(),
+            smart_x,
+            delta=1,
+            msg="reset must return to the smart-centred crop, not the centre",
+        )
+        self.assertFalse(reset.isVisible())
+
+    def test_geometric_crop_when_smart_centering_is_off(self):
+        with (
+            patch.object(details_ui, "get_setting", return_value=False),
+            patch.object(
+                details_ui,
+                "detail_centroid_x",
+                side_effect=AssertionError("centroid must not be computed"),
+            ),
+        ):
+            popup = self._open_with_art(make_banded_png(400, 400))
+
+        art = self._find(popup, "detailArt")
+        frame_width = round(popup.panel_rect().width() * 0.25)
+        centred_x = round(frame_width / 2 - 0.5 * art.width())
+
+        self.assertEqual(popup._model.artFocusX, 0.5)
+        self.assertAlmostEqual(
+            art.x(),
+            centred_x,
+            delta=1,
+            msg="smart centering off must restore the geometric centre crop",
+        )
 
     def test_artwork_replaces_the_skeleton(self):
         popup = self._open_with_art()
