@@ -20,6 +20,12 @@ Item {
     // corners.
     property int cornerRadius: 10
 
+    // Content offsets from before each rule-term jump.  The newest entry is
+    // popped by the Back button; the array is reassigned on every change so
+    // canGoBack's binding re-evaluates.
+    property var scrollHistory: []
+    readonly property bool canGoBack: scrollHistory.length > 0
+
     // Scroll to the Rule Terms entry *termId* and briefly flash it.
     function revealTerm(termId) {
         var wanted = String(termId)
@@ -32,11 +38,32 @@ Item {
             var point = item.mapToItem(contentColumn, 0, 0)
             var top = point.y + contentColumn.y
             var maxY = Math.max(0, scroll.contentHeight - scroll.height)
-            scroll.contentY = Math.max(0, Math.min(top - 12, maxY))
+            var target = Math.max(0, Math.min(top - 12, maxY))
+            // Only record a jump that actually moves the page, so repeated
+            // clicks on an already visible term do not fill the history.
+            if (Math.abs(target - scroll.contentY) > 0.5) {
+                scrollHistory = scrollHistory.concat([scroll.contentY])
+                scroll.contentY = target
+            }
             if (item.flash)
                 item.flash()
             return
         }
+    }
+
+    // Return to the scroll position saved before the last term jump.
+    function goBack() {
+        if (scrollHistory.length === 0)
+            return
+        var previous = scrollHistory[scrollHistory.length - 1]
+        scrollHistory = scrollHistory.slice(0, -1)
+        scroll.contentY = previous
+    }
+
+    Shortcut {
+        sequence: "Alt+Left"
+        enabled: panel.canGoBack
+        onActivated: panel.goBack()
     }
 
     // -- header -----------------------------------------------------------
@@ -506,11 +533,50 @@ Item {
         }
     }
 
+    // Unobtrusive return link for the last rule-term jump.  It floats over
+    // the bottom-right corner instead of taking space in the header.
+    Text {
+        id: backHint
+        objectName: "detailsBackHint"
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 16
+        anchors.bottomMargin: 12
+        z: 2
+        visible: panel.canGoBack
+        text: "\u2191 return to previous position"
+        color: palette.placeholderText
+        font.pixelSize: 11
+        opacity: backHintArea.containsMouse ? 1.0 : 0.85
+        Accessible.name: "Return to the previous scroll position"
+        Accessible.role: Accessible.Button
+
+        MouseArea {
+            id: backHintArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: panel.goBack()
+        }
+    }
+
+    // Page Back buttons on mice are not shortcuts, so catch them over the
+    // whole panel.  Only BackButton is accepted; every other button, wheel
+    // and gesture still reaches the content underneath.
+    MouseArea {
+        objectName: "detailsBackMouseArea"
+        anchors.fill: parent
+        acceptedButtons: Qt.BackButton
+        enabled: panel.canGoBack
+        onClicked: panel.goBack()
+    }
+
     Connections {
         target: details
 
         function onStateChanged() {
             scroll.contentY = 0
+            panel.scrollHistory = []
         }
 
         function onTermActivated(termId) {
