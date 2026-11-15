@@ -4,7 +4,8 @@ The details text used to be plain ``Label``/``Text`` items, so nothing could be
 copied.  ``SelectableText`` wraps a read-only ``TextEdit``: double-clicking
 picks the word under the pointer, dragging after the double-click extends the
 selection word by word, and the character name in the artwork column takes part
-too.
+too.  Dragging blank space beside the glyphs scrolls the pane instead, because
+text rows are full-width layout items.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from support import (
 )
 
 import nanoka_viewer.ui.details as details_ui
+from nanoka_viewer.api.detail_models import SkillDetail
 
 OVERVIEW = "Alpha beta gamma delta epsilon"
 
@@ -108,6 +110,20 @@ class SelectableDetailsTests(QtTestCase):
         self._send_mouse(popup, QEvent.Type.MouseButtonRelease, end, none, left)
         flush()
 
+    def _drag_vertically(self, popup, item, x, start_y, delta_y):
+        """Press at (*x*, *start_y*) inside *item* and drag by *delta_y*."""
+        start = self._point_in(popup, item, x, start_y)
+        left = Qt.MouseButton.LeftButton
+        none = Qt.MouseButton.NoButton
+
+        self._send_mouse(popup, QEvent.Type.MouseButtonPress, start, left, left)
+        for step in range(1, 7):
+            point = QPoint(start.x(), round(start.y() + delta_y * step / 6))
+            self._send_mouse(popup, QEvent.Type.MouseMove, point, left, none)
+        end = QPoint(start.x(), start.y() + delta_y)
+        self._send_mouse(popup, QEvent.Type.MouseButtonRelease, end, none, left)
+        wait(80)
+
     def test_double_click_selects_the_word_under_the_pointer(self):
         popup = self._open()
         overview = self._find(popup, "detailsOverview")
@@ -141,6 +157,74 @@ class SelectableDetailsTests(QtTestCase):
         self._double_click(popup, name)
 
         self.assertEqual(name.property("selectedText"), "Test")
+
+    def _open_with_scrollable_overview(self):
+        detail = replace(
+            SAMPLE_DETAIL,
+            overview="Short",
+            # Enough collapsed skills to make the pane scrollable, so a drag
+            # over blank space has somewhere to go.
+            skills=[
+                SkillDetail(f"Skill {index}", "Attack", "Body", [], 1)
+                for index in range(20)
+            ],
+        )
+        return self._open(detail)
+
+    def test_dragging_blank_space_scrolls_the_pane(self):
+        popup = self._open_with_scrollable_overview()
+        overview = self._find(popup, "detailsOverview")
+        scroll = self._find(popup, "detailsScroll")
+        scroll.setProperty("contentY", 0.0)
+        flush()
+
+        # Far right of the overview row: past the end of "Short", so the press
+        # lands on blank space and must reach the Flickable.
+        self._drag_vertically(
+            popup,
+            overview,
+            overview.width() * 0.9,
+            overview.height() / 2,
+            -120,
+        )
+
+        self.assertGreater(
+            scroll.property("contentY"),
+            0.0,
+            "dragging blank space must scroll the details pane",
+        )
+        self.assertEqual(
+            overview.property("selectedText"),
+            "",
+            "dragging blank space must not start a text selection",
+        )
+
+    def test_dragging_across_text_still_selects(self):
+        popup = self._open_with_scrollable_overview()
+        overview = self._find(popup, "detailsOverview")
+        scroll = self._find(popup, "detailsScroll")
+        scroll.setProperty("contentY", 0.0)
+        flush()
+
+        # Start on a glyph: this drag belongs to the TextEdit, not the pane.
+        self._drag_vertically(
+            popup,
+            overview,
+            2,
+            overview.height() / 2,
+            -120,
+        )
+
+        self.assertNotEqual(
+            overview.property("selectedText"),
+            "",
+            "dragging across text must still select it",
+        )
+        self.assertEqual(
+            scroll.property("contentY"),
+            0.0,
+            "a text drag must not scroll the details pane",
+        )
 
 
 if __name__ == "__main__":

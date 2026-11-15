@@ -71,6 +71,33 @@ TextEdit {
         details.activateTerm(link.substring(5))
     }
 
+    // Whether a point is over an actual character.  positionAt() always snaps
+    // to the nearest cursor position, so compare against the end of the line
+    // at that height: text rows are full-width layout items, and dragging the
+    // blank part of one must scroll the pane instead of starting a selection.
+    function pointIsOnText(x, y) {
+        if (length <= 0 || width <= 0)
+            return false
+        var endPos = positionAt(width - 1, y)
+        var endRect = positionToRectangle(endPos)
+        if (y < endRect.y || y > endRect.y + endRect.height)
+            return false
+        return x <= endRect.x + endRect.width
+    }
+
+    // Turn mouse selection on before TextEdit sees the press, but only when
+    // the pointer is on a glyph.  Rejecting this proxy press lets the TextEdit
+    // (over text) or the parent Flickable (over empty space) handle it.
+    MouseArea {
+        objectName: "selectableTextMouseProxy"
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        onPressed: (mouse) => {
+            editor.selectByMouse = editor.pointIsOnText(mouse.x, mouse.y)
+            mouse.accepted = false
+        }
+    }
+
     // Styled card tooltip for rule-term links.
     //
     // ToolTip is a Popup: it renders at the window overlay layer and
