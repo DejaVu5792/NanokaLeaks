@@ -92,7 +92,7 @@ class PopupHost(QWidget):
     #: QML source, relative to the QML directory.
     source = ""
 
-    #: Whether the QML tree uses SelectableText and needs widget-side cursors.
+    #: Whether the QML tree needs its cursors resolved on the widget side.
     text_cursor = False
 
     width_ratio = 0.92

@@ -28,7 +28,7 @@ from PySide6.QtQuickControls2 import QQuickStyle
 from PySide6.QtQuickWidgets import QQuickWidget
 
 from .image_provider import PROVIDER_ID, NanokaImageProvider
-from .text_cursor import SelectableTextCursor
+from .qml_cursor import QmlCursorTracker
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +104,8 @@ def create_qml_widget(
     ``image://`` providers beside the shared ``image://nanoka`` one.
     *translucent* lets the widget composite over what is behind it, which the
     popups need so their rounded corners show the dimmed backdrop.
-    *text_cursor* installs the QWidget-side cursor tracker that
-    ``SelectableText`` needs because QQuickWidget drops Qt Quick cursors.
+    *text_cursor* installs the QWidget-side cursor tracker that resolves the
+    cursors QQuickWidget drops (text I-beams, link hands, drag hands).
 
     Everything the tree needs is registered *before* ``setSource``: QML
     evaluates bindings while loading, so a context property added afterwards
@@ -125,8 +125,8 @@ def create_qml_widget(
     widget.setResizeMode(QQuickWidget.ResizeMode.SizeRootObjectToView)
     if text_cursor:
         # QQuickWidget does not forward Qt Quick cursor shapes to the widget,
-        # so SelectableText cursors are handled on the widget side instead.
-        SelectableTextCursor(widget)
+        # so cursors are resolved on the widget side instead.
+        QmlCursorTracker(widget)
     if translucent:
         widget.setClearColor(Qt.GlobalColor.transparent)
         widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)

@@ -172,6 +172,8 @@ Item {
             anchors.fill: parent
             acceptedButtons: Qt.LeftButton
             preventStealing: true
+            // QQuickWidget never shows QML cursors, so the widget-side tracker
+            // (ui/qml_cursor.py) reads this binding and applies it instead.
             cursorShape: pressed
                 ? Qt.ClosedHandCursor
                 : (art.canPan ? Qt.OpenHandCursor : Qt.ArrowCursor)

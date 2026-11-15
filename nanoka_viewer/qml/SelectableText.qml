@@ -13,7 +13,7 @@ import QtQuick.Layouts
 // description after a short delay, and clicking asks the details model to
 // reveal that term in the Rule Terms card.
 //
-// The cursor itself is set by ``nanoka_viewer/ui/text_cursor.py``: this tree
+// The cursor itself is set by ``nanoka_viewer/ui/qml_cursor.py``: this tree
 // lives in a QQuickWidget, which never forwards Qt Quick cursor shapes to the
 // widget, so the hover cursor is resolved on the widget side instead.
 TextEdit {

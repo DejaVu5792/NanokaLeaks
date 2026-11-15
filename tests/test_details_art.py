@@ -156,6 +156,44 @@ class ArtworkTests(QtTestCase):
         QApplication.sendEvent(popup._qml, event)
         flush()
 
+    def _cursor_after(self, popup, kind, point, buttons, button):
+        """Send one mouse event and return the widget cursor it produced."""
+        self._send_mouse(popup, kind, point, buttons, button)
+        return popup._qml.cursor().shape()
+
+    def test_artwork_shows_drag_cursors(self):
+        popup = self._open_with_art()
+        drag = self._find(popup, "detailArtDrag")
+
+        # Stay clear of the selectable name/meta overlay at the bottom.
+        point = self._point_in(
+            popup, drag, drag.width() / 2, drag.height() * 0.2
+        )
+        left = Qt.MouseButton.LeftButton
+        none = Qt.MouseButton.NoButton
+
+        self.assertEqual(
+            self._cursor_after(
+                popup, QEvent.Type.MouseMove, point, none, none
+            ),
+            Qt.CursorShape.OpenHandCursor,
+            "draggable artwork must advertise itself with the open hand",
+        )
+        self.assertEqual(
+            self._cursor_after(
+                popup, QEvent.Type.MouseButtonPress, point, left, left
+            ),
+            Qt.CursorShape.ClosedHandCursor,
+            "dragging the artwork must show the closed hand",
+        )
+        self.assertEqual(
+            self._cursor_after(
+                popup, QEvent.Type.MouseButtonRelease, point, none, left
+            ),
+            Qt.CursorShape.OpenHandCursor,
+            "releasing must restore the open hand",
+        )
+
     def test_art_is_cover_cropped_and_keeps_the_top(self):
         popup = self._open_with_art()
         art = self._find(popup, "detailArt")
