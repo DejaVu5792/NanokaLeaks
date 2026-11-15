@@ -37,26 +37,42 @@ DisclosureRow {
     Repeater {
         model: row.multipliers
 
-        delegate: RowLayout {
-            id: multiplier
+        delegate: Rectangle {
+            id: multiplierRow
+            required property int index
             required property var modelData
 
+            objectName: "skillMultiplierRow"
             Layout.fillWidth: true
-            spacing: 16
+            implicitHeight: multiplierLayout.implicitHeight + 6
+            radius: 4
+            // Zebra banding so wide tables stay readable: every other row is
+            // lifted out of the framed body's background.
+            color: multiplierRow.index % 2 === 1 ? palette.base : "transparent"
 
-            SelectableText {
-                Layout.fillWidth: true
-                text: multiplier.modelData.label
-                color: palette.placeholderText
-                font.pixelSize: 11
-            }
+            RowLayout {
+                id: multiplierLayout
+                anchors.fill: parent
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                anchors.topMargin: 3
+                anchors.bottomMargin: 3
+                spacing: 16
 
-            SelectableText {
-                Layout.alignment: Qt.AlignRight | Qt.AlignTop
-                text: multiplier.modelData.value
-                color: palette.text
-                font.pixelSize: 11
-                font.bold: true
+                SelectableText {
+                    Layout.fillWidth: true
+                    text: multiplierRow.modelData.label
+                    color: palette.placeholderText
+                    font.pixelSize: 11
+                }
+
+                SelectableText {
+                    Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                    text: multiplierRow.modelData.value
+                    color: palette.text
+                    font.pixelSize: 11
+                    font.bold: true
+                }
             }
         }
     }
