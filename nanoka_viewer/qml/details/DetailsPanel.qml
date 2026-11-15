@@ -91,17 +91,6 @@ Item {
             anchors.rightMargin: 12
             spacing: 10
 
-            AppButton {
-                objectName: "detailsBackButton"
-                text: "Back"
-                small: true
-                visible: panel.canGoBack
-                ToolTip.text: "Back to where you were (Alt+Left)"
-                ToolTip.visible: hovered
-                ToolTip.delay: 600
-                onClicked: panel.goBack()
-            }
-
             Item { Layout.fillWidth: true }
 
             AppButton {
@@ -542,6 +531,44 @@ Item {
                 }
             }
         }
+    }
+
+    // Unobtrusive return link for the last rule-term jump.  It floats over
+    // the bottom-right corner instead of taking space in the header.
+    Text {
+        id: backHint
+        objectName: "detailsBackHint"
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 16
+        anchors.bottomMargin: 12
+        z: 2
+        visible: panel.canGoBack
+        text: "\u2191 return to previous position"
+        color: palette.placeholderText
+        font.pixelSize: 11
+        opacity: backHintArea.containsMouse ? 1.0 : 0.85
+        Accessible.name: "Return to the previous scroll position"
+        Accessible.role: Accessible.Button
+
+        MouseArea {
+            id: backHintArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: panel.goBack()
+        }
+    }
+
+    // Page Back buttons on mice are not shortcuts, so catch them over the
+    // whole panel.  Only BackButton is accepted; every other button, wheel
+    // and gesture still reaches the content underneath.
+    MouseArea {
+        objectName: "detailsBackMouseArea"
+        anchors.fill: parent
+        acceptedButtons: Qt.BackButton
+        enabled: panel.canGoBack
+        onClicked: panel.goBack()
     }
 
     Connections {

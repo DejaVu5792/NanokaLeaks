@@ -10,7 +10,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 
 from support import (
@@ -71,10 +71,10 @@ class RuleTermNavigationTests(QtTestCase):
         flush()
         wait(40)
 
-    def test_back_button_returns_to_the_scroll_position_before_the_jump(self):
+    def test_back_hint_returns_to_the_scroll_position_before_the_jump(self):
         popup = self._open()
         scroll = self._find(popup, "detailsScroll")
-        back = self._find(popup, "detailsBackButton")
+        back = self._find(popup, "detailsBackHint")
 
         self.assertFalse(
             back.isVisible(),
@@ -102,7 +102,7 @@ class RuleTermNavigationTests(QtTestCase):
     def test_alt_left_returns_to_the_previous_scroll_position(self):
         popup = self._open()
         scroll = self._find(popup, "detailsScroll")
-        back = self._find(popup, "detailsBackButton")
+        back = self._find(popup, "detailsBackHint")
 
         scroll.setProperty("contentY", 80.0)
         flush()
@@ -121,10 +121,35 @@ class RuleTermNavigationTests(QtTestCase):
         self.assertAlmostEqual(scroll.property("contentY"), 80.0, delta=0.5)
         self.assertFalse(back.isVisible())
 
+    def test_mouse_back_button_returns_to_the_previous_scroll_position(self):
+        popup = self._open()
+        root = popup._qml.rootObject()
+        scroll = self._find(popup, "detailsScroll")
+        back = self._find(popup, "detailsBackHint")
+
+        scroll.setProperty("contentY", 60.0)
+        flush()
+        self._activate_term(popup)
+        self.assertTrue(back.isVisible())
+
+        point = scroll.mapToItem(
+            root, scroll.width() / 2, scroll.height() / 2
+        )
+        QTest.mouseClick(
+            popup._qml,
+            Qt.MouseButton.BackButton,
+            pos=QPoint(round(point.x()), round(point.y())),
+        )
+        flush()
+        wait(40)
+
+        self.assertAlmostEqual(scroll.property("contentY"), 60.0, delta=0.5)
+        self.assertFalse(back.isVisible())
+
     def test_repeated_jumps_stack_and_unwind_one_at_a_time(self):
         popup = self._open()
         scroll = self._find(popup, "detailsScroll")
-        back = self._find(popup, "detailsBackButton")
+        back = self._find(popup, "detailsBackHint")
 
         self._activate_term(popup)
         first_jump = scroll.property("contentY")
