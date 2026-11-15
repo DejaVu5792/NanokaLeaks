@@ -12,6 +12,10 @@ import QtQuick.Layouts
 // becomes a pointing hand, a styled card tooltip shows the term's name and
 // description after a short delay, and clicking asks the details model to
 // reveal that term in the Rule Terms card.
+//
+// The cursor itself is set by ``nanoka_viewer/ui/text_cursor.py``: this tree
+// lives in a QQuickWidget, which never forwards Qt Quick cursor shapes to the
+// widget, so the hover cursor is resolved on the widget side instead.
 TextEdit {
     id: editor
 
@@ -59,10 +63,9 @@ TextEdit {
     padding: 0
     textMargin: 0
 
+    // Tracks the pointer position used to anchor the rule-term tooltip.
     HoverHandler {
         id: hoverHandler
-        cursorShape: editor.hoveringTerm
-                     ? Qt.PointingHandCursor : Qt.IBeamCursor
     }
 
     onLinkActivated: function(link) {

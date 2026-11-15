@@ -119,6 +119,7 @@ class CharacterDetailsPopup(PopupHost):
 
     overlay_object_name = "detailsOverlay"
     source = "details/DetailsOverlay.qml"
+    text_cursor = True
     blocks_host_input = True
     log_name = "details popup"
     logger = logging.getLogger(__name__)

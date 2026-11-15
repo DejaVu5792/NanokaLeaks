@@ -110,6 +110,21 @@ class SelectableDetailsTests(QtTestCase):
         self._send_mouse(popup, QEvent.Type.MouseButtonRelease, end, none, left)
         flush()
 
+    def _hover(self, popup, item, x):
+        """Move the pointer inside *item* and return the widget cursor shape."""
+        point = self._point_in(popup, item, x, item.height() / 2)
+        event = QMouseEvent(
+            QEvent.Type.MouseMove,
+            QPointF(point),
+            QPointF(popup._qml.mapToGlobal(point)),
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(popup._qml, event)
+        flush()
+        return popup._qml.cursor().shape()
+
     def _drag_vertically(self, popup, item, x, start_y, delta_y):
         """Press at (*x*, *start_y*) inside *item* and drag by *delta_y*."""
         start = self._point_in(popup, item, x, start_y)
@@ -170,6 +185,38 @@ class SelectableDetailsTests(QtTestCase):
             ],
         )
         return self._open(detail)
+
+    def test_cursor_is_an_i_beam_over_glyphs(self):
+        popup = self._open()
+        overview = self._find(popup, "detailsOverview")
+
+        self.assertEqual(
+            self._hover(popup, overview, 2),
+            Qt.CursorShape.IBeamCursor,
+        )
+
+    def test_cursor_is_an_arrow_over_blank_space(self):
+        popup = self._open_with_scrollable_overview()
+        overview = self._find(popup, "detailsOverview")
+
+        self.assertEqual(
+            self._hover(popup, overview, overview.width() * 0.9),
+            Qt.CursorShape.ArrowCursor,
+        )
+
+    def test_cursor_is_a_hand_over_rule_term_links(self):
+        popup = self._open(
+            replace(
+                SAMPLE_DETAIL,
+                overview='<a href="term:term-1">Gradient</a> is a rule term.',
+            )
+        )
+        overview = self._find(popup, "detailsOverview")
+
+        self.assertEqual(
+            self._hover(popup, overview, 8),
+            Qt.CursorShape.PointingHandCursor,
+        )
 
     def test_dragging_blank_space_scrolls_the_pane(self):
         popup = self._open_with_scrollable_overview()
