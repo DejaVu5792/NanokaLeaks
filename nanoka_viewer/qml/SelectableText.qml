@@ -12,6 +12,10 @@ import QtQuick.Layouts
 // becomes a pointing hand, a styled card tooltip shows the term's name and
 // description after a short delay, and clicking asks the details model to
 // reveal that term in the Rule Terms card.
+//
+// The cursor itself is set by ``nanoka_viewer/ui/text_cursor.py``: this tree
+// lives in a QQuickWidget, which never forwards Qt Quick cursor shapes to the
+// widget, so the hover cursor is resolved on the widget side instead.
 TextEdit {
     id: editor
 
@@ -59,16 +63,42 @@ TextEdit {
     padding: 0
     textMargin: 0
 
+    // Tracks the pointer position used to anchor the rule-term tooltip.
     HoverHandler {
         id: hoverHandler
-        cursorShape: editor.hoveringTerm
-                     ? Qt.PointingHandCursor : Qt.IBeamCursor
     }
 
     onLinkActivated: function(link) {
         if (link.indexOf("term:") !== 0 || typeof details === "undefined")
             return
         details.activateTerm(link.substring(5))
+    }
+
+    // Whether a point is over an actual character.  positionAt() always snaps
+    // to the nearest cursor position, so compare against the end of the line
+    // at that height: text rows are full-width layout items, and dragging the
+    // blank part of one must scroll the pane instead of starting a selection.
+    function pointIsOnText(x, y) {
+        if (length <= 0 || width <= 0)
+            return false
+        var endPos = positionAt(width - 1, y)
+        var endRect = positionToRectangle(endPos)
+        if (y < endRect.y || y > endRect.y + endRect.height)
+            return false
+        return x <= endRect.x + endRect.width
+    }
+
+    // Turn mouse selection on before TextEdit sees the press, but only when
+    // the pointer is on a glyph.  Rejecting this proxy press lets the TextEdit
+    // (over text) or the parent Flickable (over empty space) handle it.
+    MouseArea {
+        objectName: "selectableTextMouseProxy"
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        onPressed: (mouse) => {
+            editor.selectByMouse = editor.pointIsOnText(mouse.x, mouse.y)
+            mouse.accepted = false
+        }
     }
 
     // Styled card tooltip for rule-term links.

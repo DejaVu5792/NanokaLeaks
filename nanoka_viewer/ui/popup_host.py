@@ -92,6 +92,9 @@ class PopupHost(QWidget):
     #: QML source, relative to the QML directory.
     source = ""
 
+    #: Whether the QML tree uses SelectableText and needs widget-side cursors.
+    text_cursor = False
+
     width_ratio = 0.92
     min_width = 560
     max_width = 1180
@@ -167,6 +170,7 @@ class PopupHost(QWidget):
             source=self.source,
             image_providers=image_providers,
             translucent=True,
+            text_cursor=self.text_cursor,
         )
         self.layout().addWidget(self._qml, 1)
 
